@@ -5,50 +5,114 @@ Work done on site, money moved at the bank.
 
 ## Run
 
-Requires PostgreSQL 16 and Node 22.
+Requires PostgreSQL 16 or later and Node 22 or later. Developed against
+PostgreSQL 18 and Node 24.
 
 ```bash
-createdb plint
-psql -d plint -v ON_ERROR_STOP=1 -f db/schema.sql   # tables, RLS, plint_app role
-node db/seed.js                                     # 48 villas, three logins
+cp .env.example .env      # then fill it in; nothing has a credential default
 npm install
-node src/server.js                                  # http://localhost:3000
+npm run setup             # bootstrap the role, migrate, seed 48 villas
+npm start                 # http://localhost:3000
 ```
 
-`db/seed.js` connects as a superuser to write past RLS. Everything else
-connects as `plint_app`, which cannot.
+`npm run setup` is three separate steps and each can be run alone:
+
+```bash
+npm run db:bootstrap      # create the database and the runtime role
+npm run db:migrate        # apply db/migrations, forward-only, idempotent
+npm run db:seed           # development data only
+```
+
+`db/migrate.js` is safe to run against a populated database: it applies only
+what has not been applied, in a transaction each, and records a checksum. It
+never drops anything. `db/seed.js` connects as the schema owner because seeding
+has to write past the row-level security every other path obeys; the server has
+no path to those credentials.
+
+`db/schema.sql` is the schema as the sandbox shipped it, kept as a historical
+record. Nothing runs it. It still opens with `DROP SCHEMA`.
 
 ## Test
 
 ```bash
-node test/isolation.test.js   # 24 assertions, buyer isolation at the database
-node test/smoke.test.js       # 14 assertions, three logins end to end, writes both PDFs
+npm test
 ```
 
+Creates a scratch database, bootstraps, migrates, seeds, proves the migrator is
+a no-op the second time, runs every suite in its own process, then drops the
+database and the temporary evidence directory. Your development database is
+untouched.
+
+| Suite | Assertions | What it holds down |
+|---|---|---|
+| `money` | 18 | rounding, the stage schedule, GST, interest, the ledger |
+| `isolation` | 24 | buyer isolation, at the database, as the real app role |
+| `smoke` | 14 | three logins end to end, both PDFs, the worklist |
+| `session` | 8 | sessions survive a restart; sign-out actually revokes |
+| `ledger` | 10 | demands immutable; the audit trail is append-only |
+| `evidence` | 10 | photographs stored and readable only by their own buyer |
+| `pack` | 6 | delivery is recorded, and the copy about it is true |
+
 `isolation.test.js` runs against the real database as the real application
-role. It was written and passing before the buyer screen existed.
+role. It was written and passing before the buyer screen existed. If a change
+breaks one of its assertions, the change is wrong.
+
+## Configuration
+
+Every value comes from the environment; see `.env.example`. No credential
+carries a default anywhere in `src/` or `db/`, and a missing one names itself
+on stderr and exits 1 before a connection is opened.
+
+Two credential sets, because they are two privileges: `PGUSER`/`PGPASSWORD` is
+the runtime role, which is not a superuser, not `BYPASSRLS`, does not own the
+tables and holds no `DELETE` grant. `PGADMINUSER`/`PGADMINPASSWORD` owns the
+schema and is used by migrations and the seed only.
+
+`PLINT_SECRET` signs session lookups. Rotating it signs everyone out.
 
 ## Logins
 
 | Email | Role | Password |
 |---|---|---|
 | arjun@example.in | Buyer, villa B-14 | plint |
+| sharma@example.in | Buyer, villa A-07 | plint |
 | ramachandran@nvt.in | S. Ramachandran, certifying engineer | plint |
 | priya@nvt.in | Priya Menon, head office | plint |
+
+## Operating
+
+`GET /health` returns 200 with `{"status":"ok","database":"up"}`, or 503 when
+the database does not answer. It runs before session lookup, so a database that
+is down reports as down rather than as an authentication failure.
+
+Logs are one JSON object per line on stdout. Every request line carries the
+actor id and a request id. Nothing logs a cookie, a token or a password. An
+unhandled error gives the browser only its request id; the stack goes to the
+log against that id.
 
 ## Layout
 
 ```
-db/schema.sql          tables, row-level security, the plint_app role
+db/migrations/         forward-only, checksummed, applied by db/migrate.js
+db/bootstrap.js        the database and the runtime role. Not a migration.
+db/migrate.js          the runner
 db/seed.js             NVT Eterna Phase 1, 48 villas, deterministic
+db/schema.sql          what the sandbox shipped. Historical. Nothing runs it.
+src/config.js          every value from the environment, no credential defaults
 src/money.js           the only place a rupee is computed
 src/db.js              pooling, transaction-local identity, scrypt passwords
-src/pdf.js             demand letter, completion certificate
+src/session.js         database-backed sessions, HMAC of the cookie token
+src/evidence.js        content-addressed photographs, verified on write
+src/multipart.js       a small form-data reader, so uploads need no dependency
+src/audit.js           the append-only record of who signed what
+src/log.js             structured logs, actor id on every request
+src/pdf.js             demand letter, completion certificate with thumbnails
 src/server.js          routes and the three screens
 public/plint.css       lines 14-609 of plint-v15.html, unchanged
 assets/                Inter TTF, embedded in the documents
-test/                  isolation, then everything else
-DECISIONS.md           every rule inferred because the brief was missing
+var/evidence/          uploaded photographs. Not in the repo.
+test/run.js            npm test: scratch database, all suites, drop
+DECISIONS.md           every rule inferred, and every choice made since
 ```
 
 ## The chain
@@ -56,6 +120,8 @@ DECISIONS.md           every rule inferred because the brief was missing
 A supervisor marks a stage complete on site with stamped photographs. Nothing
 moves. A qualified engineer opens the stage, sees the photograph count, and
 signs. That signature is the only event that raises a demand: the calculation
-layer prices the stage, writes the demand, and the letter and certificate are
-generated from the stored figures. The buyer sees the amount and both
-documents. Head office sees only who is holding each villa up.
+layer prices the stage, writes the demand, writes one audit row carrying the
+figures as at that moment, and queues the evidence pack for the lender. The
+letter and certificate are generated from the stored figures. The buyer sees
+the amount, both documents, and only his own villa's photographs. Head office
+sees only who is holding each villa up.

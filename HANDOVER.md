@@ -50,22 +50,96 @@ not treat a missing database as a blocker.
 
 ## State of play
 
-Working and tested in the sandbox where this was built. Reproduce these first,
-then do not regress them:
+Rewritten after the punch list was worked. Everything below was run on the
+machine this repo now lives on, not in the sandbox it was built in.
 
-- PostgreSQL schema with `ENABLE` plus `FORCE ROW LEVEL SECURITY` on every
-  table. `db/schema.sql`.
-- `test/isolation.test.js`, 24 assertions, all passing. This is the highest
-  value artefact in the repo. If a change breaks one of these, the change is
-  wrong, not the test.
-- `test/smoke.test.js`, 14 assertions, all passing. Three logins end to end,
-  buyer screen, certification, both PDFs, head-office worklist.
-- One calculation layer in `src/money.js`. Integer paise, `BigInt`
-  intermediates, half-up rounding, basis points for percentages. No screen and
-  no document computes a rupee.
-- 48 villas seeded deterministically. B-14 opens as Arjun Nair with correct
-  isolation. S. Ramachandran certifies blockwork and that single act raises the
-  demand and produces both PDFs.
+`npm test` is green from nothing: it creates a scratch database, bootstraps,
+migrates, seeds, proves the migrator is a no-op on a populated database, runs
+all seven suites, and drops the database again. **90 assertions, all passing.**
+
+    money       18   the calculation layer, called directly
+    isolation   24   the boundary, unchanged from the sandbox
+    smoke       14   three logins end to end, unchanged from the sandbox
+    session      8   survives a restart of the server module
+    ledger      10   demands immutable, audit trail append-only
+    evidence    10   photographs stored, hashed, and fetchable only by their buyer
+    pack         6   delivery recorded, and the copy that says so is true
+
+### Built
+
+- **Configuration is entirely environmental.** No credential default exists in
+  `src/` or `db/`. A missing one names itself on stderr and exits 1 before a
+  connection is opened. Two credential sets: the runtime role, and the schema
+  owner used only by migrations and the seed.
+- **Forward-only migrations** under `db/migrations`, applied by
+  `node db/migrate.js`, recorded in `plint.schema_migrations` with a checksum.
+  Running it twice on a populated database changes nothing. There is no `DROP`
+  in the path. `db/schema.sql` is kept as the historical record and nothing
+  runs it. Roles are created by `db/bootstrap.js`, not by a migration.
+- **Sessions live in the database.** A restart signs nobody out and a second
+  instance authenticates cookies the first one issued. The cookie carries a
+  random token; the table stores its HMAC under `PLINT_SECRET`, so reading
+  every row yields no usable cookie and rotating the secret ends every session.
+  The application role has no grant on the table at all - three
+  `SECURITY DEFINER` functions are the whole vocabulary.
+- **`PLINT_SECRET` is load-bearing**, which is what item 2 asked for. No unused
+  security-shaped identifier remains in `src/`.
+- **Demands are immutable**, behind two independent locks: the `UPDATE` grant
+  is revoked, and a trigger refuses any change to the money columns, the
+  document number or the dates for every role including a superuser. The one
+  permitted transition is `demand_settle()`, which takes its actor from the
+  transaction identity rather than a parameter. Corrections are `credits` rows.
+- **`audit_log` is append-only** the same way: insert-and-select grants, plus
+  triggers that raise on UPDATE and DELETE whoever is asking. An actor can only
+  write rows in their own name. Certification writes exactly one row carrying
+  the figures as at the moment it was signed.
+- **Evidence photographs are real files**, content-addressed by the sha256 the
+  schema already carried, verified by reading back off the disk after writing.
+  JPEG and PNG by magic bytes, never by the declared type; 8 MB cap; the client
+  filename never reaches a path. Reads are authorised by row-level security, so
+  a buyer holding a neighbour's exact hash gets the same 404 as a hash that was
+  never issued. The completion certificate embeds the photographs.
+- **Uploads are a plain HTML form** on the engineer worklist, received by a
+  small multipart reader in `src/multipart.js`. No dependency was added.
+- **Pack delivery is recorded, not asserted.** One `pack_deliveries` row per
+  certification with state, attempts and lender response. The copy now says
+  "queued", which is true.
+- **Operational basics**: JSON request logs carrying the actor id, `/health`
+  that fails 503 when the database does, and an error handler that gives the
+  browser a request id and never a stack.
+
+### Not built, and why
+
+- **Nothing sends a pack to a lender.** There is no channel to send one to. The
+  queue, the states and the attempt counter exist; the sender does not, because
+  a worker that marked rows delivered without delivering them would be the same
+  lie in a more expensive form. Wiring a real channel means moving rows out of
+  `queued` and nothing else.
+- **No image resizing.** A certificate thumbnail is the stored photograph
+  scaled into its box for display, so an 8 MB photograph is embedded at 8 MB.
+  Adding a resize means adding an image library, which was not worth it for one
+  panel. If certificates get heavy, this is the reason.
+- **There is no supervisor role.** Item 7 asked for uploads by "the engineer
+  and supervisor roles"; the system has `buyer`, `engineer` and `office`, and
+  Suresh Kumar is a name on `unit_stages.marked_by`, not a login. Uploads are
+  open to engineer and office. A supervisor is a role value, a seeded login and
+  one entry in each of two policy lists.
+- **`credits` has no screen.** The table exists because "a correction is a new
+  credit row" is otherwise unimplementable, but nothing renders or writes one
+  outside the tests.
+- Buyer finish selections, warranty and snag flows, the site-engineer screens
+  and the document-chase list remain unbuilt, as they were.
+
+### One thing the brief still has to settle
+
+Per-stage half-up rounding sums to the agreement value exactly **only when the
+agreement value divides cleanly by the basis points**. Every villa in this
+project is on ₹3,20,00,000, where the ten stages land on the agreement value to
+the paise, and `money.test.js` asserts it. But `100000001` paise schedules one
+paise short and `333333333` two paise short. Nothing was changed, because
+altering how a stage is priced is a money rule and the brief has not arrived.
+A test walks every agreement value in the database and fails if one ever drifts,
+so the decision gets made deliberately rather than discovered in a ledger.
 
 ## Punch list, in order
 

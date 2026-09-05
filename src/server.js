@@ -3,7 +3,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { asUser, login } = require('./db');
+const { asUser, login, pool } = require('./db');
 const M = require('./money');
 const PDF = require('./pdf');
 
@@ -12,6 +12,7 @@ const config = require('./config');
 const AUDIT = require('./audit');
 const EV = require('./evidence');
 const MP = require('./multipart');
+const LOG = require('./log');
 
 const esc = s => String(s == null ? '' : s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -237,10 +238,26 @@ async function certify(sess, stageId) {
         photographs: shots, certificate_hash: hash,
       },
     });
-    await c.query(`UPDATE blockers SET holder=$2, holder_role='lender',
-       reason='Pack sent. Awaiting the lender.' WHERE unit_stage_id=$1`,
-      [stageId, (await c.query('SELECT bank FROM units WHERE id=$1', [s.unit_id])).rows[0].bank || 'Buyer']);
-    return { code: s.code, stage: s.name, total: price.totalPaise, stageId };
+    const bank = (await c.query('SELECT bank FROM units WHERE id=$1', [s.unit_id])).rows[0].bank;
+
+    // The evidence pack, recorded rather than asserted. Nothing sends it yet,
+    // so the row is queued and the copy says queued. A villa with no lender
+    // has nowhere to send one, which is a state and not a failure.
+    await c.query(
+      `INSERT INTO pack_deliveries (id, unit_stage_id, lender, state)
+       VALUES ($1,$2,$3,$4) ON CONFLICT (unit_stage_id) DO NOTHING`,
+      ['pk-' + s.code + '-' + s.stage_code, stageId, bank,
+       bank ? 'queued' : 'not_applicable']);
+
+    await c.query(`UPDATE blockers SET holder=$2, holder_role=$3, reason=$4
+       WHERE unit_stage_id=$1`,
+      [stageId,
+       bank || 'Priya Menon',
+       bank ? 'lender' : 'office',
+       bank ? 'Certified. Evidence pack queued for ' + bank + '.'
+            : 'No lender on file. Pack cannot be sent.']);
+
+    return { code: s.code, stage: s.name, total: price.totalPaise, stageId, bank };
   });
 }
 
@@ -335,11 +352,31 @@ const sessionOf = req => S.lookup(S.tokenFrom(req));
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   const p = url.pathname;
-  const sess = await sessionOf(req);
+  const start = Date.now();
+  const reqId = crypto.randomBytes(8).toString('hex');
+  let sess = null;
+
   const send = (code, type, b) => { res.writeHead(code, { 'content-type': type }); res.end(b); };
   const html = (code, b) => send(code, 'text/html; charset=utf-8', b);
+  res.on('finish', () => LOG.request(req, res, { start, sess, id: reqId }));
 
   try {
+    // Liveness and readiness in one: it is only healthy if the database
+    // answers, because without one this process can do nothing at all.
+    if (p === '/health') {
+      try {
+        const r = await pool.query('SELECT 1 ok');
+        return send(200, 'application/json',
+          JSON.stringify({ status: 'ok', database: r.rows.length === 1 ? 'up' : 'odd' }));
+      } catch (e) {
+        LOG.error('health.database', e, { id: reqId });
+        return send(503, 'application/json',
+          JSON.stringify({ status: 'unavailable', database: 'down' }));
+      }
+    }
+
+    sess = await sessionOf(req);
+
     if (p === '/plint.css') return send(200, 'text/css', fs.readFileSync(path.join(__dirname, '../public/plint.css')));
 
     if (p === '/' ) {
@@ -384,7 +421,9 @@ const server = http.createServer(async (req, res) => {
       const f = form(await body(req));
       const r = await certify(sess, f.id);
       const msg = r
-        ? `${r.code} ${r.stage.toLowerCase()} certified. Demand for ${M.money(r.total)} raised and the pack has gone to the lender.`
+        ? `${r.code} ${r.stage.toLowerCase()} certified. Demand for ${M.money(r.total)} raised. `
+          + (r.bank ? `The evidence pack is queued for ${r.bank}.`
+                    : 'No lender is on file, so there is no pack to send.')
         : 'That stage could not be certified.';
       res.writeHead(302, { location: '/engineer?m=' + encodeURIComponent(msg) });
       return res.end();
@@ -478,13 +517,27 @@ const server = http.createServer(async (req, res) => {
 
     html(404, page('Not found', sess, '<div class="gap l"></div><div class="blk"><h1 class="h1">Not found.</h1></div>'));
   } catch (e) {
-    console.error(e);
-    html(500, page('Error', null, '<div class="blk"><h1 class="h1">Something failed.</h1></div>'));
+    // The stack goes to the log, with the request id. The browser gets the id
+    // and nothing else: no message, no class name, no query, no stack. A user
+    // can quote the id and an operator can find the line.
+    LOG.error('request.failed', e, {
+      id: reqId, method: req.method, path: p,
+      actor: sess ? sess.id : null, role: sess ? sess.role : null,
+    });
+    if (res.headersSent) return res.destroy();
+    html(500, page('Error', null,
+      '<div class="gap l"></div><div class="blk"><h1 class="h1">Something failed.</h1>'
+      + '<p class="b cap">Nothing was changed. Quote reference '
+      + esc(reqId) + ' if you report this.</p></div>'));
   }
 });
 
 if (require.main === module) {
   const port = config.port();
-  server.listen(port, () => console.log('plint on http://localhost:' + port));
+  server.listen(port, () => LOG.info('listening', { port, url: 'http://localhost:' + port }));
+
+  // A crash that is not caught is still a crash, but it is a logged one.
+  process.on('unhandledRejection', e => LOG.error('unhandledRejection', e));
+  process.on('uncaughtException', e => { LOG.error('uncaughtException', e); process.exit(1); });
 }
 module.exports = server;

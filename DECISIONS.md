@@ -268,3 +268,52 @@ the brief, which still does not exist. The money rules above were left alone.
 - An unreadable file prints "photograph unavailable" in its box rather than
   taking the certificate down. A row with no stored file prints as an evidence
   line and no thumbnail, exactly as the certificate did before files existed.
+
+## 9. Pack delivery
+
+- **Both halves of the choice, because only doing one leaves a lie in place.**
+  There is now a `pack_deliveries` row per certification, carrying state,
+  attempts, the lender and its response. And the copy was changed to say
+  "queued", which is what actually happened.
+- **No sender was built, deliberately.** There is no lender channel to send
+  anything to, and a worker that marked rows delivered without delivering them
+  would be the same untruth in a more expensive form. Rows stay `queued`. When
+  a real channel exists, the work is moving rows out of `queued` and nothing
+  else: the table, the states and the attempt counter are already there.
+- A villa with no lender gets `not_applicable`, not `failed`. Having nowhere to
+  send a pack is a state, not an error.
+- Three pieces of copy changed: the engineer's confirmation ("the pack has gone
+  to the lender" became "the evidence pack is queued for HDFC Ltd"), the demand
+  letter ("went to HDFC Ltd on the same day" became "are queued for HDFC Ltd"),
+  and the blocker reason certification writes. A test greps `src/` for the old
+  phrasings so the claim cannot creep back in.
+- The seeded blockers still describe packs sitting with lenders. That is
+  scenario data describing a project mid-flight, not the system claiming it
+  acted, and the worklist needs it to have anything to show.
+
+## 10. Operational basics
+
+- **Structured logs**, one JSON object per line on stdout, every request line
+  carrying the actor id and a request id. `PLINT_LOG=silent` for test runs.
+  Nothing logs a cookie, a token or a password: the session token passes
+  through this process on every request and a log file is exactly where it
+  must not land.
+- **`/health` checks the database**, because without one this process can do
+  nothing at all. It answers 200 with `{"status":"ok","database":"up"}` or 503.
+  It runs before session lookup, so a database that is down reports as down
+  rather than as an authentication failure.
+- **The error handler gives the browser a request id and nothing else.** No
+  message, no exception class, no query, no stack. The stack goes to the log
+  against that id, so a user can quote the id and an operator can find the
+  line. `unhandledRejection` and `uncaughtException` are logged rather than
+  printed bare.
+- **`npm test` runs against a scratch database it creates and drops.**
+  `test/run.js` makes `plint_test_<random>`, bootstraps, migrates, seeds, runs
+  the migrator a second time to prove it is a no-op on populated data, then
+  runs all seven suites in separate processes, then drops the database and the
+  temporary evidence directory. The developer database is never touched, and a
+  suite that leaves behind a row it cannot delete - a settled demand, an audit
+  line - does not poison the next run.
+- Suites run in their own processes and in a deliberate order: the calculation
+  layer first, because if that is wrong nothing else means anything, then the
+  isolation boundary, then the screens, then everything that mutates.

@@ -86,8 +86,9 @@ function demandLetter(ctx) {
   gap(doc, 30);
   para(doc, 'This demand was raised because ' + stage.name.toLowerCase()
     + ' was verified on site and certified by a qualified engineer. The engineer\u2019s completion '
-    + 'certificate and the date, time and GPS stamped photographs accompany this letter and went to '
-    + (unit.bank || 'you') + ' on the same day.', { size: 9.5, width: 460 });
+    + 'certificate and the date, time and GPS stamped photographs accompany this letter'
+    + (unit.bank ? ' and are queued for ' + unit.bank + '.' : '.'),
+    { size: 9.5, width: 460 });
   gap(doc, 16);
   para(doc, 'Project ' + project.name + ', ' + project.phase
     + '.   RERA reference on the agreement of sale.   Certificate hash '
