@@ -9,6 +9,7 @@ const PDF = require('./pdf');
 
 const S = require('./session');
 const config = require('./config');
+const AUDIT = require('./audit');
 
 const esc = s => String(s == null ? '' : s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -199,11 +200,30 @@ async function certify(sess, stageId) {
     const seq = (await c.query(
       `SELECT count(*)::int n FROM demands d JOIN unit_stages t ON t.id=d.unit_stage_id
         WHERE t.unit_id=$1`, [s.unit_id])).rows[0].n + 1;
+    const demandId = 'dm-' + s.code + '-' + s.stage_code;
+    const docNo = 'PL/' + s.code.replace('-', '') + '/' + String(seq).padStart(2, '0');
     await c.query(
       `INSERT INTO demands VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,null)`,
-      ['dm-' + s.code + '-' + s.stage_code, stageId,
-       'PL/' + s.code.replace('-', '') + '/' + String(seq).padStart(2, '0'),
+      [demandId, stageId, docNo,
        price.raisedAt, price.dueAt, price.basePaise, price.gstPaise, price.extrasPaise, price.totalPaise]);
+
+    // One row for the act, inside the same transaction. Certification is the
+    // only place a demand is created, so the demand's figures are recorded
+    // here, as at the moment the engineer signed for them.
+    await AUDIT.write(c, sess, {
+      action: 'certified',
+      targetKind: 'unit_stage',
+      targetId: stageId,
+      figures: {
+        unit: s.code, stage: s.stage_code, stage_name: s.name,
+        pct_bp: s.pct_bp, agreement_value_paise: Number(s.agreement_value_paise),
+        demand_id: demandId, doc_no: docNo,
+        base_paise: price.basePaise, gst_paise: price.gstPaise,
+        extras_paise: price.extrasPaise, total_paise: price.totalPaise,
+        raised_at: price.raisedAt, due_at: price.dueAt,
+        photographs: shots, certificate_hash: hash,
+      },
+    });
     await c.query(`UPDATE blockers SET holder=$2, holder_role='lender',
        reason='Pack sent. Awaiting the lender.' WHERE unit_stage_id=$1`,
       [stageId, (await c.query('SELECT bank FROM units WHERE id=$1', [s.unit_id])).rows[0].bank || 'Buyer']);

@@ -176,3 +176,49 @@ the brief, which still does not exist. The money rules above were left alone.
   a month past expiry.
 - The cookie header is now parsed by name rather than by a regular expression
   that would have matched a cookie called `notplint`.
+
+## 5 and 6. Immutable demands, and the audit trail
+
+- **Two independent locks on a demand, not one.** The `UPDATE` grant is
+  revoked from the application role, so a direct update raises permission
+  denied. Behind that, a trigger refuses any change to `base_paise`,
+  `gst_paise`, `extras_paise`, `total_paise`, the document number or either
+  date - for every role including the owner and a superuser. The grant is the
+  lock that matters day to day; the trigger is the one that still holds after
+  somebody re-grants `UPDATE` by accident in six months.
+- The single permitted transition is `demand_settle(demand_id, reference)`,
+  `SECURITY DEFINER`. It writes `paid_at`, moves the stage to `paid`, and
+  writes the audit row. It cannot touch the money columns: it does not name
+  them, and the trigger would refuse if it did. Settling twice returns false
+  rather than raising, because a duplicate bank file is an ordinary event.
+- **The actor is the transaction identity, never a parameter.** An earlier
+  draft took `actor_id` as an argument, which would have let any caller settle
+  a demand in someone else's name. It reads
+  `current_setting('plint.user_id')` instead, and refuses when there is no
+  identity or the role is not staff.
+- An `UPDATE` policy exists on `demands` permitting everything. That is not a
+  hole: a policy cannot return a privilege that was never granted, and the
+  application role has no `UPDATE` grant. It is there so the definer function
+  works whether or not the owning role happens to be a superuser, which is a
+  thing this schema should not depend on.
+- **Corrections are credit rows.** `credits` is insert-only under RLS, keyed
+  to a demand, readable by the buyer it concerns under the same ownership test
+  every other buyer-visible table uses. No screen renders it yet. It exists
+  because the rule "a correction is a new credit row, never an edit" is
+  otherwise unimplementable, and a stated rule with no mechanism is a comment.
+- **`audit_log` is append-only twice over**, the same way: `SELECT, INSERT`
+  and no more for the application role, plus triggers that raise on any UPDATE
+  or DELETE regardless of who is asking. The insert policy requires
+  `actor_id = current_user_id()`, so a staff session cannot forge a row in
+  another name.
+- **"Exactly one audit row per certification" is taken literally.** In this
+  system certification *is* the raising of the demand - `certify` is the only
+  place a demand is created - so one act gets one row, and the demand's figures
+  ride in that row rather than in a second one. A settlement is a separate act
+  and gets its own. If demands ever gain a second creation path, that path
+  writes its own row.
+- The audit row is written on the same client, inside the same transaction, as
+  the act. An act cannot land without its record, and a record cannot outlive
+  an act that rolled back.
+- A buyer cannot read `audit_log`. His evidence of what was signed is the
+  certificate PDF, which carries the same figures.
