@@ -82,3 +82,66 @@ simplest option:
 Buyer finish selections, warranty and snag flows, the site-engineer screens,
 lender-facing pack delivery, and the document-chase list. All exist in the
 prototype and none are in the first deliverable.
+
+---
+
+# Production build, second pass
+
+Written on the machine the zip landed on. Everything below was decided without
+the brief, which still does not exist. The money rules above were left alone.
+
+## Environment
+
+- **The repo was not where the handover said it was.** The zip had unpacked to
+  `Downloads/plint/plint`, not the working directory. Copied to
+  `Documents/Blueprint/plint`, alongside the other projects on this machine.
+  The Downloads copy is untouched and is now a pristine record of what shipped.
+- **PostgreSQL 18.6 inside WSL2 Ubuntu**, not Docker. Docker Desktop is
+  installed but its daemon would not stay up, and a package install needs no
+  daemon. The `postgresql` package left a valid data directory that its own
+  postinst never registered as a Debian cluster, because WSL has no systemd, so
+  the server is started directly with `pg_ctl` rather than through
+  `pg_ctlcluster`. Node runs on Windows and reaches it over TCP on
+  `127.0.0.1:5432`; WSL2 localhost forwarding makes that work unchanged.
+- The README says PostgreSQL 16. Nothing in the schema is version-specific and
+  18 is what this distribution ships. Left at 18.
+- `db/seed.js` connected over a unix socket as `root`, which is a sandbox-ism
+  that cannot work from Windows. It now uses the same TCP configuration as
+  everything else, as the owning role.
+
+## 3. Configuration
+
+- All configuration moved to `src/config.js`. **No credential carries a
+  default anywhere in `src/` or `db/`.** A missing one writes the variable's
+  name and what it is for to stderr and exits 1 before a connection is opened.
+- Two credential sets, because they are two privileges: `PGUSER`/`PGPASSWORD`
+  is the runtime role that cannot bypass RLS, and `PGADMINUSER`/
+  `PGADMINPASSWORD` owns the schema and is used by migrations and the seed
+  only. `src/server.js` has no path to the admin credentials.
+- Non-secret values may carry a default (`PGPORT`, `PORT`). Credentials may
+  not. That is the whole rule.
+- `.env` is read with Node's own `process.loadEnvFile`, so there is no
+  dotenv dependency. In production no `.env` exists and the supervisor sets
+  the variables.
+- `.env.example` lists every variable with empty values, and is committed.
+  `.env` is not.
+
+## 4. Migrations
+
+- `db/schema.sql` is superseded by `db/migrations/`, applied by
+  `node db/migrate.js`. It is kept on disk unchanged as the historical record
+  of what the sandbox shipped, and nothing runs it.
+- `001_initial_schema.sql` is that schema with the `DROP SCHEMA` removed and
+  the `CREATE ROLE` lifted out. Otherwise byte-for-byte the same objects.
+- **Roles are not migrations.** A role is a cluster-level object shared by
+  every database in the cluster, and its password belongs to the environment,
+  so creating it inside a schema migration is a category error and would put a
+  password in a committed file. `db/bootstrap.js` creates the database and the
+  runtime role, idempotently, and re-asserts `NOSUPERUSER NOBYPASSRLS` on every
+  run, because that assertion is the isolation boundary.
+- Each migration runs in its own transaction and is recorded in
+  `plint.schema_migrations` with a sha256 of its text. A file that changes
+  after it has been applied stops the runner rather than being silently
+  re-applied or silently ignored: migrations are history, and you add to
+  history rather than editing it.
+- The seed stays separate and development-only.

@@ -6,14 +6,11 @@ const { Pool, types } = require('pg');
 types.setTypeParser(20, v => parseInt(v, 10));
 types.setTypeParser(1700, v => parseFloat(v));
 const crypto = require('crypto');
+const config = require('./config');
 
-const pool = new Pool({
-  host: process.env.PGHOST || '127.0.0.1',
-  database: process.env.PGDATABASE || 'plint',
-  user: process.env.PGUSER || 'plint_app',
-  password: process.env.PGPASSWORD || 'plint_app_dev',
-  max: 8,
-});
+// Every connection value comes from the environment. A missing one stops the
+// process here, at boot, rather than letting it start and fail per request.
+const pool = new Pool({ ...config.appDb(), max: 8 });
 
 /**
  * Every read and write goes through here. The session identity is set with

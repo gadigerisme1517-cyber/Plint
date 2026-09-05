@@ -4,6 +4,8 @@
 const { Client } = require('pg');
 const crypto = require('crypto');
 const { hash } = require('../src/db');
+const config = require('../src/config');
+const M = require('../src/money');
 
 const PROJECT = 'eterna-p1';
 const AGV = 3200000000;              // ₹3.2 Cr in paise
@@ -31,7 +33,10 @@ function lcg(seed) { let s = seed; return () => { s = (s * 9301 + 49297) % 23328
 const sha = s => crypto.createHash('sha256').update(s).digest('hex');
 
 async function main() {
-  const c = new Client({ host: '/var/run/postgresql', database: 'plint', user: 'root' });
+  // Connects as the owning role, which is a superuser in development, because
+  // seeding has to write past the row-level security every other path obeys.
+  // Development only. Nothing in src/ ever opens this connection.
+  const c = new Client(config.adminDb());
   await c.connect();
   await c.query('SET search_path = plint, public');
 
@@ -129,8 +134,10 @@ async function main() {
     // demands already raised for everything up to the live stage
     for (let i = 0; i < at; i++) {
       const [code, , bp] = MILES[i];
-      const base = Math.round(AGV * bp / 10000);
-      const gst = Math.round(base * 0.05);
+      // The one calculation layer prices this, exactly as certification will.
+      // The seed does not get its own arithmetic.
+      const base = M.stageBase(AGV, bp);
+      const gst = M.gstOn(base);
       const raised = new Date(Date.UTC(2026, 2 + i, 18));
       const due = new Date(raised.getTime() + 14 * 86400000);
       await c.query(`INSERT INTO demands VALUES ($1,$2,$3,$4,$5,$6,$7,0,$8,$9)`, [
