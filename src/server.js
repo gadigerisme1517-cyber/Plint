@@ -10,6 +10,8 @@ const PDF = require('./pdf');
 const S = require('./session');
 const config = require('./config');
 const AUDIT = require('./audit');
+const EV = require('./evidence');
+const MP = require('./multipart');
 
 const esc = s => String(s == null ? '' : s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -159,7 +161,18 @@ ${thin
   : `<form method="post" action="/engineer/certify" style="flex:0 0 130px;text-align:right">
 <input type="hidden" name="id" value="${esc(x.id)}">
 <button class="wbtn st" style="background:var(--brand);color:#fff;border:0;border-radius:7px;padding:10px 14px;font:500 12.5px Inter;cursor:pointer">Certify</button></form>`}
-</div>`;
+</div>
+<form method="post" action="/evidence/upload" enctype="multipart/form-data"
+  style="display:flex;gap:10px;align-items:center;padding:10px 26px 16px;border-bottom:1px solid var(--hair-2)">
+<input type="hidden" name="stage" value="${esc(x.id)}">
+<input class="s" type="file" name="photo" accept="image/jpeg,image/png" required
+  style="flex:0 0 210px;font:400 12px Inter;color:var(--ink-2)">
+<input class="s" name="caption" placeholder="Caption" required maxlength="120"
+  style="flex:1;min-width:0;border:1px solid var(--hair);border-radius:7px;padding:8px 10px;font:400 12.5px Inter">
+<input class="s n" name="gps" placeholder="12.8391, 77.7724" required maxlength="40"
+  style="flex:0 0 150px;border:1px solid var(--hair);border-radius:7px;padding:8px 10px;font:400 12.5px Inter">
+<button class="wbtn st" style="flex:0 0 130px;background:#fff;color:var(--ink);border:1px solid var(--hair);border-radius:7px;padding:9px 14px;font:500 12.5px Inter;cursor:pointer">Add photograph</button>
+</form>`;
   }).join('');
 
   return page('Certify', sess, `
@@ -292,6 +305,12 @@ async function docContext(sess, stageId) {
     if (!s) return null;
     const d = (await c.query('SELECT * FROM demands WHERE unit_stage_id=$1', [stageId])).rows[0];
     const ev = (await c.query('SELECT * FROM evidence WHERE unit_stage_id=$1 ORDER BY taken_at', [stageId])).rows;
+    // Read the bytes here, inside the identity that was allowed to see the row.
+    // A row without a stored file simply has no image and prints as a line.
+    for (const e of ev) {
+      if (!e.mime) continue;
+      try { e.image = EV.readSync(e.sha256); } catch { e.image = null; }
+    }
     const eng = s.certified_by
       ? (await c.query('SELECT * FROM users WHERE id=$1', [s.certified_by])).rows[0]
       : null;
@@ -372,6 +391,79 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (p === '/office' && sess.role === 'office') return html(200, await officeScreen(sess));
+
+    // Evidence photographs. Authorised by row-level security and nothing else:
+    // the row is fetched as the asking session, and the disk is touched only if
+    // one came back. A buyer guessing a neighbour's hash gets the same 404 as a
+    // hash that was never issued.
+    const img = /^\/evidence\/([0-9a-f]{64})$/.exec(p);
+    if (img) {
+      const row = await asUser(sess, c => c.query(
+        'SELECT sha256, mime FROM evidence WHERE sha256 = $1 LIMIT 1', [img[1]]))
+        .then(r => r.rows[0]);
+      if (!row || !row.mime) return html(404, page('Not found', sess,
+        '<div class="gap l"></div><div class="blk"><h1 class="h1">No such photograph.</h1></div>'));
+      let bytes;
+      try { bytes = await EV.read(row.sha256); }
+      catch { return html(404, page('Not found', sess,
+        '<div class="gap l"></div><div class="blk"><h1 class="h1">No such photograph.</h1></div>')); }
+      res.writeHead(200, {
+        'content-type': row.mime,
+        'content-length': bytes.length,
+        'cache-control': 'private, max-age=3600',
+        'x-content-type-options': 'nosniff',
+      });
+      return res.end(bytes);
+    }
+
+    if (p === '/evidence/upload' && req.method === 'POST') {
+      if (sess.role !== 'engineer' && sess.role !== 'office') {
+        return html(404, page('Not found', sess,
+          '<div class="gap l"></div><div class="blk"><h1 class="h1">Not found.</h1></div>'));
+      }
+      const back = m => { res.writeHead(302, { location: '/engineer?m=' + encodeURIComponent(m) }); res.end(); };
+      let parsed;
+      try {
+        const raw = await MP.read(req, EV.MAX_BYTES + 4096);
+        parsed = MP.parse(raw, req.headers['content-type']);
+      } catch (e) {
+        return back(e.code === 'TOO_LARGE'
+          ? 'That photograph is larger than the ' + Math.round(EV.MAX_BYTES / 1048576) + ' MB limit.'
+          : 'That upload could not be read.');
+      }
+      const file = parsed.files.photo;
+      const stage = (parsed.fields.stage || '').trim();
+      const caption = (parsed.fields.caption || '').trim().slice(0, 120);
+      const gps = (parsed.fields.gps || '').trim().slice(0, 40);
+      if (!file || !stage || !caption || !gps) return back('A photograph, a caption and a GPS reading are all required.');
+
+      let stored;
+      try { stored = await EV.store(file.data); }
+      catch (e) {
+        return back(e.code === 'BAD_TYPE' ? 'Only JPEG and PNG photographs are accepted.'
+                  : e.code === 'TOO_LARGE' ? 'That photograph is larger than the ' + Math.round(EV.MAX_BYTES / 1048576) + ' MB limit.'
+                  : 'That photograph could not be stored.');
+      }
+
+      try {
+        await asUser(sess, async c => {
+          // The row id is derived from the stage and the content hash, so the
+          // same photograph filed twice against one stage collides rather than
+          // duplicating.
+          const id = 'ev-' + crypto.createHash('sha256')
+            .update(stage + '|' + stored.sha256).digest('hex').slice(0, 24);
+          await c.query(
+            `INSERT INTO evidence (id, unit_stage_id, caption, taken_at, gps, sha256,
+                                   mime, byte_size, uploaded_by, uploaded_at)
+             VALUES ($1,$2,$3,now(),$4,$5,$6,$7,$8,now())
+             ON CONFLICT (id) DO NOTHING`,
+            [id, stage, caption, gps, stored.sha256, stored.mime, stored.byteSize, sess.id]);
+        });
+      } catch (e) {
+        return back('That stage would not accept the photograph.');
+      }
+      return back('Photograph filed against ' + stage + '.');
+    }
 
     const doc = /^\/doc\/(demand|certificate)\/(.+)\.pdf$/.exec(p);
     if (doc) {

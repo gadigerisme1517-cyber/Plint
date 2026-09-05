@@ -210,25 +210,29 @@ test('a correction is a credit row, and it is insert-only', async () => {
   const d = (await asUser(OFFICE, c =>
     c.query('SELECT id FROM demands ORDER BY id LIMIT 1'))).rows[0];
 
+  // A fresh id each run: a credit cannot be cleaned up afterwards, which is
+  // the property under test.
+  const id = 'cr-test-' + require('crypto').randomBytes(8).toString('hex');
+
   await asUser(OFFICE, c => c.query(
     `INSERT INTO credits (id, demand_id, amount_paise, reason, raised_by)
      VALUES ($1,$2,$3,$4,$5)`,
-    ['cr-test-1', d.id, 100000, 'Measurement corrected after re-survey', OFFICE.id]));
+    [id, d.id, 100000, 'Measurement corrected after re-survey', OFFICE.id]));
 
   const back = await asUser(OFFICE, c =>
-    c.query('SELECT * FROM credits WHERE id=$1', ['cr-test-1']));
+    c.query('SELECT * FROM credits WHERE id=$1', [id]));
   assert.strictEqual(back.rows.length, 1);
   assert.strictEqual(back.rows[0].amount_paise, 100000);
 
   let raised = null, hit = null;
   try {
     const r = await asUser(OFFICE, c =>
-      c.query(`UPDATE credits SET amount_paise=1 WHERE id=$1`, ['cr-test-1']));
+      c.query(`UPDATE credits SET amount_paise=1 WHERE id=$1`, [id]));
     hit = r.rowCount;
   } catch (e) { raised = e.message; }
   assert.ok(raised !== null || hit === 0, 'a credit cannot be edited either');
 
-  await asUser(OFFICE, c => c.query('DELETE FROM credits WHERE id=$1', ['cr-test-1']))
+  await asUser(OFFICE, c => c.query('DELETE FROM credits WHERE id=$1', [id]))
     .then(r => assert.strictEqual(r.rowCount, 0, 'nor deleted'))
     .catch(e => assert.match(e.message, /permission denied/i));
 });

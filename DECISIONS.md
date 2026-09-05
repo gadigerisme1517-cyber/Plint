@@ -222,3 +222,49 @@ the brief, which still does not exist. The money rules above were left alone.
   an act that rolled back.
 - A buyer cannot read `audit_log`. His evidence of what was signed is the
   certificate PDF, which carries the same figures.
+
+## 7. Evidence storage
+
+- **Content-addressed on disk**, at `var/evidence/ab/cd/<sha256>`, sharded two
+  levels so no directory becomes unlistable. The name of a file is a fact about
+  its contents, so nothing the client sends is ever used to build a path: not
+  the filename, not the declared content-type, not the caption.
+- **Verified on write.** The bytes are written to a temporary name in the same
+  directory and renamed into place, so a reader cannot observe a half-written
+  file at a content address. Then the file is read back off the disk and hashed
+  again. If a content address is a claim, that read-back is what makes it true.
+- **JPEG and PNG by magic bytes**, never by the declared type or the extension.
+  A part claiming `image/jpeg` with a corrupt PNG signature is refused. Capped
+  at 8 MB, refused as the body streams rather than after buffering it.
+- **Reading is authorised by RLS and nothing else.** `GET /evidence/<sha256>`
+  fetches the evidence row as the asking session and touches the disk only if a
+  row came back. A buyer holding the exact hash of a neighbour's photograph
+  gets 404 - the same answer as a hash that was never issued. The test proves
+  it with the real hash of a file that is genuinely on disk and that its own
+  buyer can read, so the 404 is about authorisation and not a missing file.
+- `sha256` is deliberately not unique: one photograph may be evidence for two
+  stages, and the store already de-duplicates. So the fetch returns the rows
+  the session may see, which is what makes hash-guessing pointless rather than
+  merely hard.
+- **"Engineer and supervisor roles" was read as engineer and head office.**
+  There is no supervisor login in this system - `DECISIONS.md` above records
+  that Suresh Kumar is a name on `unit_stages.marked_by`, not a user - so there
+  was no supervisor role to grant. If the brief wants one, it is a role value,
+  a seeded login and one more entry in the two policy lists.
+- **A plain HTML form, and a small multipart reader to receive it.** The design
+  is locked and carries no JavaScript, so the upload had to be a native form
+  post, which means multipart. `src/multipart.js` is about eighty lines and
+  handles one file and a few text fields, in Buffers throughout. That was
+  smaller than taking a dependency for the one endpoint that needs it.
+- The upload form sits on the engineer worklist under each row, which is where
+  the need is: rows with fewer than two photographs show "Too few photographs"
+  and no Certify button, and until now there was no way to fix that from the
+  screen.
+- **Thumbnails are the stored image scaled into a box, not a resized file.** A
+  genuine resize needs an image library; none was added for one certificate
+  panel. The consequence is honest and worth stating: an 8 MB photograph is
+  embedded at 8 MB. If certificates get heavy, that is the reason, and the fix
+  is a resize at upload time.
+- An unreadable file prints "photograph unavailable" in its box rather than
+  taking the certificate down. A row with no stored file prints as an evidence
+  line and no thumbnail, exactly as the certificate did before files existed.

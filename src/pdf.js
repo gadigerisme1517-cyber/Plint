@@ -126,6 +126,11 @@ function completionCertificate(ctx) {
   evidence.forEach(e => row(doc, e.caption,
     M.longDate(e.taken_at) + '   \u00B7   ' + e.gps + '   \u00B7   ' + e.sha256.slice(0, 12) + '\u2026'));
 
+  // The photographs themselves, for the rows that have a stored file. A row
+  // without one prints as a line above and nothing here, which is what the
+  // certificate did before any file existed.
+  thumbnails(doc, evidence.filter(e => e.image));
+
   gap(doc, 46);
   doc.moveTo(L, doc.y).lineTo(L + 190, doc.y).lineWidth(0.7).strokeColor(HAIR).stroke();
   gap(doc, 10);
@@ -135,6 +140,41 @@ function completionCertificate(ctx) {
      .text([engineer.engineer_qual, engineer.engineer_reg].filter(Boolean).join('   \u00B7   '), L, doc.y);
   doc.end();
   return doc;
+}
+
+/* A row of thumbnails, each captioned with its hash so the picture on the page
+   ties to the evidence line above it and to the file on disk. pdfkit embeds
+   JPEG and PNG directly; `fit` scales them into the box for display. */
+function thumbnails(doc, shots) {
+  if (!shots.length) return;
+  gap(doc, 14);
+
+  const COLS = 3, BOX = 150, H = 108, GUTTER = (W - COLS * BOX) / (COLS - 1);
+  let rowTop = doc.y;
+
+  shots.forEach((e, i) => {
+    const col = i % COLS;
+    if (col === 0 && i) rowTop += H + 26;
+    // A new page rather than a thumbnail sliced by the bottom margin.
+    if (rowTop + H + 30 > 780) { doc.addPage(); rowTop = 72; }
+    const x = L + col * (BOX + GUTTER);
+
+    doc.save();
+    doc.rect(x, rowTop, BOX, H).lineWidth(0.7).strokeColor(HAIR).stroke();
+    try {
+      doc.image(e.image, x + 1, rowTop + 1, { fit: [BOX - 2, H - 2], align: 'center', valign: 'center' });
+    } catch {
+      // An unreadable file must not take the whole certificate down with it.
+      doc.font(REG).fontSize(8).fillColor(INK3)
+         .text('photograph unavailable', x + 8, rowTop + H / 2 - 4, { width: BOX - 16, align: 'center' });
+    }
+    doc.restore();
+
+    doc.font(REG).fontSize(7.5).fillColor(INK3)
+       .text(e.sha256.slice(0, 16) + '…', x, rowTop + H + 5, { width: BOX });
+  });
+
+  doc.y = rowTop + H + 26;
 }
 
 module.exports = { demandLetter, completionCertificate };
