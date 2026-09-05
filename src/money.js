@@ -15,9 +15,52 @@ const DUE_DAYS = 14;             // demand is due on the fourteenth day
 const INTEREST_BP_PER_YEAR = 1200; // 12% a year after the due date
 const DAYS_IN_YEAR = 365;
 
-/** base for a stage = agreement value x stage percentage */
+/**
+ * Base for a stage taken in isolation = agreement value x stage percentage.
+ *
+ * This is the right figure for stages one to nine and the wrong one for the
+ * last, because ten independently rounded stages need not sum to the
+ * agreement value. Price a whole schedule with stageBases below; this is
+ * exported for that function, and for tests that reason about one stage.
+ */
 function stageBase(agreementValuePaise, pctBp) {
   return divRound(BigInt(agreementValuePaise) * BigInt(pctBp), 10000n);
+}
+
+/**
+ * Bases for a whole schedule, in schedule order.
+ *
+ * Stages one to nine are priced as above. The last stage is the residual:
+ * the agreement value minus everything already allocated. A buyer therefore
+ * pays exactly the value he agreed, whatever the agreement value is and
+ * however the percentages round, and the last stage absorbs at most a few
+ * paise of difference.
+ *
+ * ORDER MATTERS. Pass the stages in schedule order, or the residual lands on
+ * the wrong one.
+ */
+function stageBases(agreementValuePaise, orderedPctBps) {
+  const agv = Number(agreementValuePaise);
+  const out = [];
+  let allocated = 0;
+  for (let i = 0; i < orderedPctBps.length; i++) {
+    if (i === orderedPctBps.length - 1) {
+      out.push(agv - allocated);
+    } else {
+      const b = stageBase(agv, orderedPctBps[i]);
+      out.push(b);
+      allocated += b;
+    }
+  }
+  return out;
+}
+
+/** Every stage's money for one unit, in schedule order. */
+function schedule(agreementValuePaise, orderedPctBps) {
+  return stageBases(agreementValuePaise, orderedPctBps).map((basePaise, i) => {
+    const gstPaise = gstOn(basePaise);
+    return { pctBp: orderedPctBps[i], basePaise, gstPaise, totalPaise: basePaise + gstPaise };
+  });
 }
 
 function gstOn(basePaise) {
@@ -41,8 +84,15 @@ function addDays(date, n) {
  * extrasPaise: buyer's finish upgrades above allowance, which ride on the next
  * demand rather than a separate bill.
  */
-function priceStage({ agreementValuePaise, pctBp, extrasPaise = 0, raisedAt = new Date() }) {
-  const base = stageBase(agreementValuePaise, pctBp);
+function priceStage({ agreementValuePaise, pctBp, scheduleBps, index,
+                      extrasPaise = 0, raisedAt = new Date() }) {
+  // Given the whole schedule, the stage is priced within it, so the last one
+  // carries the residual. Given a single percentage, it is priced alone. The
+  // first form is what certification uses; the second is for a stage
+  // considered on its own.
+  const base = Array.isArray(scheduleBps) && Number.isInteger(index)
+    ? stageBases(agreementValuePaise, scheduleBps)[index]
+    : stageBase(agreementValuePaise, pctBp);
   const gst = gstOn(base + extrasPaise);
   const total = base + extrasPaise + gst;
   const dueAt = addDays(raisedAt, DUE_DAYS);
@@ -76,14 +126,15 @@ function payableNow(demand, asOf = new Date()) {
 
 /** what the buyer has paid, what has been demanded, what is not yet due */
 function ledger({ agreementValuePaise, stages }) {
+  // stages must arrive in schedule order: the last one carries the residual.
+  const priced = schedule(agreementValuePaise, stages.map(s => s.pct_bp));
   let paid = 0, demanded = 0, remaining = 0;
-  for (const s of stages) {
-    const base = stageBase(agreementValuePaise, s.pct_bp);
-    const withGst = base + gstOn(base);
+  stages.forEach((s, i) => {
+    const withGst = priced[i].totalPaise;
     if (s.status === 'paid') paid += withGst;
     else if (s.status === 'demanded') demanded += withGst;
     else remaining += withGst;
-  }
+  });
   return { paidPaise: paid, demandedPaise: demanded, remainingPaise: remaining };
 }
 
@@ -108,6 +159,7 @@ const longDate = d => new Date(d).toLocaleDateString('en-IN', DATE);
 
 module.exports = {
   GST_BP, DUE_DAYS, INTEREST_BP_PER_YEAR,
-  priceStage, interestOn, payableNow, ledger, stageBase, gstOn,
+  priceStage, interestOn, payableNow, ledger,
+  stageBase, stageBases, schedule, gstOn,
   money, crore, longDate,
 };

@@ -156,8 +156,9 @@ function thumbnails(doc, shots) {
   shots.forEach((e, i) => {
     const col = i % COLS;
     if (col === 0 && i) rowTop += H + 26;
-    // A new page rather than a thumbnail sliced by the bottom margin.
-    if (rowTop + H + 30 > 780) { doc.addPage(); rowTop = 72; }
+    // A new page rather than a thumbnail sliced by the bottom margin. Only at
+    // the start of a row, so a row is never split across two pages.
+    if (col === 0 && rowTop + H + 30 > 780) { doc.addPage(); rowTop = 72; }
     const x = L + col * (BOX + GUTTER);
 
     doc.save();

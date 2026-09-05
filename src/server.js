@@ -13,6 +13,7 @@ const AUDIT = require('./audit');
 const EV = require('./evidence');
 const MP = require('./multipart');
 const LOG = require('./log');
+const THROTTLE = require('./throttle');
 
 const esc = s => String(s == null ? '' : s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -87,9 +88,13 @@ async function buyerScreen(sess, code) {
   const marks = stages.map(s =>
     `<i class="${s.status === 'paid' ? 'on' : s.status === 'demanded' ? 'due' : ''}"></i>`).join('');
 
+  // The whole schedule at once: the last stage carries the rounding residual,
+  // so no stage on this screen is priced on its own. `stages` is ordered by
+  // t.seq above, which is what makes the residual land on the right one.
+  const priced = M.schedule(u.agreement_value_paise, stages.map(s => s.pct_bp));
+
   const stageRows = stages.map((s, i) => {
-    const base = M.stageBase(u.agreement_value_paise, s.pct_bp);
-    const amt = base + M.gstOn(base);
+    const amt = priced[i].totalPaise;
     const done = s.status === 'paid';
     const live = s.status === 'demanded' || s.status === 'marked' || s.status === 'certified';
     const pics = ev.filter(e => e.stage_code === s.stage_code);
@@ -137,26 +142,52 @@ ${stageRows}
 <div class="gap l"></div>`);
 }
 
+/**
+ * The ordered basis points of every project's schedule, so a stage can be
+ * priced inside the schedule it belongs to rather than on its own. A screen
+ * that lists stages from many units needs this before it can name a figure.
+ */
+async function schedules(c) {
+  const rows = (await c.query(
+    'SELECT project_id, seq, pct_bp FROM stage_templates ORDER BY project_id, seq')).rows;
+  const byProject = new Map();
+  for (const r of rows) {
+    if (!byProject.has(r.project_id)) byProject.set(r.project_id, []);
+    byProject.get(r.project_id)[r.seq] = r.pct_bp;
+  }
+  return byProject;
+}
+
+/** The total for one stage, priced within its schedule. */
+function stageTotal(byProject, row) {
+  const bps = byProject.get(row.project_id);
+  const priced = M.schedule(row.agreement_value_paise, bps);
+  return priced[row.seq].totalPaise;
+}
+
 // ------------------------------------------------------------ engineer view
 async function engineerScreen(sess, flash) {
-  const rows = await asUser(sess, c => c.query(
-    `SELECT s.id, s.status, s.marked_by, s.marked_at, u.code, u.buyer_name, u.bank,
-            u.agreement_value_paise, t.name stage_name, t.pct_bp,
-            (SELECT count(*)::int FROM evidence e WHERE e.unit_stage_id = s.id) shots
-       FROM unit_stages s
-       JOIN units u ON u.id = s.unit_id
-       JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
-      WHERE s.status = 'marked'
-      ORDER BY s.marked_at`));
+  const { rows, byProject } = await asUser(sess, async c => ({
+    rows: (await c.query(
+      `SELECT s.id, s.status, s.marked_by, s.marked_at, u.code, u.buyer_name, u.bank,
+              u.agreement_value_paise, u.project_id, t.name stage_name, t.pct_bp, t.seq,
+              (SELECT count(*)::int FROM evidence e WHERE e.unit_stage_id = s.id) shots
+         FROM unit_stages s
+         JOIN units u ON u.id = s.unit_id
+         JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
+        WHERE s.status = 'marked'
+        ORDER BY s.marked_at`)).rows,
+    byProject: await schedules(c),
+  }));
 
-  const list = rows.rows.map(x => {
-    const base = M.stageBase(x.agreement_value_paise, x.pct_bp);
+  const list = rows.map(x => {
+    const total = stageTotal(byProject, x);
     const thin = x.shots < 2;
     return `<div class="wrow" style="display:flex;gap:20px;align-items:center;padding:18px 26px;border-bottom:1px solid var(--hair-2)">
 <div style="flex:1;min-width:0"><h4 class="h2">${esc(x.code)} &middot; ${esc(x.stage_name)}</h4>
 <p class="s">${esc(x.buyer_name)} &middot; marked by ${esc(x.marked_by)} on ${M.longDate(x.marked_at)}
  &middot; ${x.shots} photograph${x.shots === 1 ? '' : 's'}</p></div>
-<span class="amt n" style="color:var(--ink-2)">${M.money(base + M.gstOn(base))}</span>
+<span class="amt n" style="color:var(--ink-2)">${M.money(total)}</span>
 ${thin
   ? `<span class="s hot" style="flex:0 0 130px;text-align:right">Too few photographs</span>`
   : `<form method="post" action="/engineer/certify" style="flex:0 0 130px;text-align:right">
@@ -179,7 +210,7 @@ ${thin
   return page('Certify', sess, `
 <div class="top"><div class="g"><p class="s">${esc(sess.name)} &middot; certifying engineer</p></div></div>
 <div class="lede"><p class="k">Stages awaiting your certificate</p>
-<span class="mega">${rows.rows.length}</span>
+<span class="mega">${rows.length}</span>
 <p class="b cap">A stage cannot go to the lender without a certificate signed by a qualified engineer.
 A supervisor marking it done on site is not the same thing.</p></div>
 <div class="gap"></div>
@@ -192,7 +223,8 @@ ${list || '<div class="blk"><p class="b">Nothing is waiting on you.</p></div>'}
 async function certify(sess, stageId) {
   return asUser(sess, async c => {
     const s = (await c.query(
-      `SELECT s.*, u.id unit_id, u.code, u.agreement_value_paise, u.project_id, t.pct_bp, t.name
+      `SELECT s.*, u.id unit_id, u.code, u.agreement_value_paise, u.project_id,
+              t.pct_bp, t.name, t.seq
          FROM unit_stages s JOIN units u ON u.id = s.unit_id
          JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
         WHERE s.id = $1`, [stageId])).rows[0];
@@ -206,9 +238,13 @@ async function certify(sess, stageId) {
       `UPDATE unit_stages SET status='demanded', certified_by=$2, certified_at=now(), certificate_hash=$3
         WHERE id=$1`, [stageId, sess.id, hash]);
 
+    // Priced inside its own schedule, not on its own, so the last stage
+    // carries the residual and the ten demands sum to the agreement value.
+    const bps = (await schedules(c)).get(s.project_id);
     const price = M.priceStage({
       agreementValuePaise: s.agreement_value_paise,
-      pctBp: s.pct_bp,
+      scheduleBps: bps,
+      index: s.seq,
       raisedAt: new Date(),
     });
     const seq = (await c.query(
@@ -263,22 +299,24 @@ async function certify(sess, stageId) {
 
 // --------------------------------------------------------- head office view
 async function officeScreen(sess) {
-  const rows = await asUser(sess, c => c.query(
-    `SELECT u.code, u.buyer_name, u.bank, u.agreement_value_paise,
-            t.name stage_name, t.pct_bp, s.status,
-            b.holder, b.holder_role, b.reason, b.since,
-            (CURRENT_DATE - b.since) age
-       FROM blockers b
-       JOIN unit_stages s ON s.id = b.unit_stage_id
-       JOIN units u ON u.id = s.unit_id
-       JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
-      ORDER BY b.holder_role, (CURRENT_DATE - b.since) DESC`));
+  const { rows, byProject } = await asUser(sess, async c => ({
+    rows: await c.query(
+      `SELECT u.code, u.buyer_name, u.bank, u.agreement_value_paise, u.project_id,
+              t.name stage_name, t.pct_bp, t.seq, s.status,
+              b.holder, b.holder_role, b.reason, b.since,
+              (CURRENT_DATE - b.since) age
+         FROM blockers b
+         JOIN unit_stages s ON s.id = b.unit_stage_id
+         JOIN units u ON u.id = s.unit_id
+         JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
+        ORDER BY b.holder_role, (CURRENT_DATE - b.since) DESC`),
+    byProject: await schedules(c),
+  }));
 
   const groups = {};
   let stuck = 0;
   for (const x of rows.rows) {
-    const base = M.stageBase(x.agreement_value_paise, x.pct_bp);
-    x.value = base + M.gstOn(base);
+    x.value = stageTotal(byProject, x);
     stuck += x.value;
     (groups[x.holder_role] ||= []).push(x);
   }
@@ -322,11 +360,13 @@ async function docContext(sess, stageId) {
     if (!s) return null;
     const d = (await c.query('SELECT * FROM demands WHERE unit_stage_id=$1', [stageId])).rows[0];
     const ev = (await c.query('SELECT * FROM evidence WHERE unit_stage_id=$1 ORDER BY taken_at', [stageId])).rows;
-    // Read the bytes here, inside the identity that was allowed to see the row.
-    // A row without a stored file simply has no image and prints as a line.
+    // Thumbnails, not the originals: a certificate carrying four full site
+    // photographs is a 40 MB PDF. Read inside the identity that was allowed to
+    // see the row. A row without a stored file has no image and prints as a
+    // line, exactly as it did before files existed.
     for (const e of ev) {
       if (!e.mime) continue;
-      try { e.image = EV.readSync(e.sha256); } catch { e.image = null; }
+      try { e.image = await EV.thumbnail(e.sha256); } catch { e.image = null; }
     }
     const eng = s.certified_by
       ? (await c.query('SELECT * FROM users WHERE id=$1', [s.certified_by])).rows[0]
@@ -387,8 +427,28 @@ const server = http.createServer(async (req, res) => {
 
     if (p === '/login' && req.method === 'POST') {
       const f = form(await body(req));
-      const u = await login((f.email || '').trim(), f.pw || '');
-      if (!u) return html(200, loginPage('That email and password do not match.'));
+      const email = (f.email || '').trim();
+
+      // Counted before the password is looked at, so a blocked key costs an
+      // attacker a round trip and not a scrypt.
+      const blocked = await THROTTLE.check(req, email);
+      if (blocked) {
+        LOG.warn('login.blocked', {
+          id: reqId, email, addr: THROTTLE.addressOf(req), until: blocked.until,
+        });
+        return html(429, loginPage(
+          'Too many sign-in attempts. Try again in '
+          + blocked.minutes + ' minute' + (blocked.minutes === 1 ? '' : 's') + '.'));
+      }
+
+      const u = await login(email, f.pw || '');
+      if (!u) {
+        LOG.warn('login.failed', { id: reqId, email, addr: THROTTLE.addressOf(req) });
+        return html(200, loginPage('That email and password do not match.'));
+      }
+      // It worked, so the counters go back to zero: only failures accumulate.
+      await THROTTLE.clear(req, email);
+
       if (u.role === 'buyer') {
         u.unit = (await asUser(u, c => c.query('SELECT code FROM units'))).rows[0].code;
       }

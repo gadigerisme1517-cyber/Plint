@@ -69,13 +69,9 @@ test('the ten stages are a hundred per cent of the agreement value', () => {
 });
 
 test('stage by stage, the schedule sums to the agreement value to the paise', () => {
-  let sum = 0;
-  const each = [];
-  for (const bp of SCHEDULE) {
-    const base = M.stageBase(AGV, bp);
-    each.push(base);
-    sum += base;
-  }
+  const each = M.stageBases(AGV, SCHEDULE);
+  const sum = each.reduce((a, b) => a + b, 0);
+
   // The acceptance line: no drift across the ten stages.
   assert.strictEqual(sum, AGV,
     `the ten stages summed to ${sum}, the agreement value is ${AGV}`);
@@ -88,31 +84,64 @@ test('stage by stage, the schedule sums to the agreement value to the paise', ()
 });
 
 test('every agreement value in the database schedules without drift', async () => {
-  // A guard, not a restatement. Per-stage half-up rounding is exact only when
-  // the agreement value divides cleanly by the basis points; see DECISIONS.md.
-  // Every villa in this project is on the same figure, so the property holds.
-  // If a villa is ever seeded on a value that drifts, this fails and the
-  // decision gets made deliberately instead of by accident.
+  // The guard. Every villa in this project is on the same figure today, but a
+  // villa seeded on any other value must schedule exactly too.
   const rows = await asUser(OFFICE, c =>
     c.query('SELECT DISTINCT agreement_value_paise v FROM units'));
   assert.ok(rows.rows.length > 0, 'there are villas to check');
 
   for (const { v } of rows.rows) {
-    const sum = SCHEDULE.reduce((n, bp) => n + M.stageBase(v, bp), 0);
+    const sum = M.stageBases(v, SCHEDULE).reduce((a, b) => a + b, 0);
     assert.strictEqual(sum, Number(v),
       `agreement value ${v} schedules to ${sum}, a drift of ${sum - Number(v)} paise`);
   }
 });
 
-test('the drift that half-up rounding can produce is known and bounded', () => {
-  // Documenting real behaviour rather than asserting a convenient case. These
-  // values do NOT divide cleanly, and the schedule misses by a few paise.
-  const drift = v => SCHEDULE.reduce((n, bp) => n + M.stageBase(v, bp), 0) - v;
-  assert.strictEqual(drift(100000001), -1);
-  assert.strictEqual(drift(999999999), 1);
-  assert.strictEqual(drift(333333333), -2);
-  for (let v = 1; v < 4000; v++) {
-    assert.ok(Math.abs(drift(v)) <= 5, `drift at ${v} was ${drift(v)}`);
+test('awkward agreement values schedule exactly, because the last stage absorbs', () => {
+  // Each of these drifted before the residual was introduced: 100000001 was a
+  // paise short, 999999999 a paise over, 333333333 two short. The last stage
+  // is now the agreement value minus the other nine, so none of them can.
+  const AWKWARD = [
+    100000001, 999999999, 333333333, 123456789, 1, 7, 99, 3200000001,
+    10000000003, 55555555555, 2, 13, 199999999, 700000001,
+  ];
+  for (const v of AWKWARD) {
+    const bases = M.stageBases(v, SCHEDULE);
+    assert.strictEqual(bases.length, 10);
+    assert.strictEqual(bases.reduce((a, b) => a + b, 0), v,
+      `agreement value ${v} did not schedule exactly`);
+  }
+});
+
+test('stages one to nine are untouched; only the last one absorbs', () => {
+  const v = 100000001;
+  const bases = M.stageBases(v, SCHEDULE);
+
+  // The first nine are exactly what pricing a stage on its own gives.
+  for (let i = 0; i < 9; i++) {
+    assert.strictEqual(bases[i], M.stageBase(v, SCHEDULE[i]),
+      `stage ${i + 1} was re-priced when it should not have been`);
+  }
+  // And the last differs from its isolated figure by exactly the old drift.
+  const alone = M.stageBase(v, SCHEDULE[9]);
+  assert.strictEqual(bases[9], alone + 1,
+    'the residual is the paise the first nine left behind');
+});
+
+test('a schedule that already lands exactly is not disturbed', () => {
+  // The seeded value divides cleanly, so the residual must equal the figure
+  // the last stage had before. Nothing anyone has been billed changes.
+  const bases = M.stageBases(AGV, SCHEDULE);
+  for (let i = 0; i < SCHEDULE.length; i++) {
+    assert.strictEqual(bases[i], M.stageBase(AGV, SCHEDULE[i]),
+      `stage ${i + 1} moved on an agreement value that never drifted`);
+  }
+});
+
+test('a schedule of any length works, not just ten', () => {
+  for (const bps of [[10000], [5000, 5000], [3333, 3333, 3334]]) {
+    const v = 100000001;
+    assert.strictEqual(M.stageBases(v, bps).reduce((a, b) => a + b, 0), v);
   }
 });
 

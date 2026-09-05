@@ -15,9 +15,17 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
+const sharp = require('sharp');
 const config = require('./config');
 
-const MAX_BYTES = Number(config.optional('PLINT_MAX_UPLOAD_BYTES', String(8 * 1024 * 1024)));
+const MAX_BYTES = Number(config.optional('PLINT_MAX_UPLOAD_BYTES', String(12 * 1024 * 1024)));
+
+// Certificate thumbnails. A site photograph off a phone is 4 to 12 MB; four of
+// them embedded whole make a PDF no lender mail gateway will accept. 480px on
+// the long edge at quality 70 is a legible thumbnail in a 150pt box and lands
+// in tens of kilobytes.
+const THUMB_EDGE = Number(config.optional('PLINT_THUMB_EDGE', '480'));
+const THUMB_QUALITY = Number(config.optional('PLINT_THUMB_QUALITY', '70'));
 
 // Magic bytes. The declared content-type and the filename extension are both
 // client claims; neither is consulted.
@@ -74,8 +82,42 @@ async function store(buf) {
 const read = hash => fsp.readFile(pathFor(hash));
 const readSync = hash => fs.readFileSync(pathFor(hash));
 
+/* The derivative sits beside the original, keyed by the same hash and by the
+   settings that produced it. Changing the edge or the quality therefore makes
+   a new cache key rather than serving a stale thumbnail under the old one. */
+const thumbPathFor = hash =>
+  pathFor(hash) + '.thumb-' + THUMB_EDGE + 'q' + THUMB_QUALITY + '.jpg';
+
+/**
+ * A JPEG thumbnail of the stored photograph, generated once and cached on
+ * disk. Always JPEG, whatever the original was: the certificate wants small,
+ * not lossless.
+ */
+async function thumbnail(hash) {
+  const cached = thumbPathFor(hash);
+  try { return await fsp.readFile(cached); } catch { /* not made yet */ }
+
+  const src = await read(hash);
+  const out = await sharp(src)
+    .rotate()                                  // honour EXIF orientation
+    .resize({ width: THUMB_EDGE, height: THUMB_EDGE, fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: THUMB_QUALITY, mozjpeg: true })
+    .toBuffer();
+
+  // Same rename-into-place as the original, so a reader never sees a partial
+  // thumbnail at the cache key.
+  const tmp = cached + '.' + crypto.randomBytes(6).toString('hex') + '.part';
+  await fsp.mkdir(path.dirname(cached), { recursive: true });
+  await fsp.writeFile(tmp, out);
+  await fsp.rename(tmp, cached);
+  return out;
+}
+
 function exists(hash) {
   try { return fs.existsSync(pathFor(hash)); } catch { return false; }
 }
 
-module.exports = { store, read, readSync, exists, pathFor, sniff, sha256, MAX_BYTES };
+module.exports = {
+  store, read, readSync, exists, pathFor, sniff, sha256,
+  thumbnail, thumbPathFor, MAX_BYTES, THUMB_EDGE, THUMB_QUALITY,
+};

@@ -24,6 +24,10 @@ const MILES = [
   ['hand',  'Handover',                   700, 'Snag clearance and keys'],
 ];
 
+// Every villa in this project is on the same agreement value, so the priced
+// schedule is the same for all of them and is computed once.
+const priced = M.schedule(AGV, MILES.map(m => m[2]));
+
 const BANKS = ['HDFC Ltd', 'SBI', 'ICICI Bank', 'LIC Housing', 'Axis Bank'];
 const CPS = ['Homzn Realty', 'Bricks & Beyond', 'Sarjapur Prop Co', 'Direct'];
 const NAMES = ['R. Anand','M. Sharma','K. Iyer','P. Reddy','S. Nair','V. Rao',
@@ -133,11 +137,11 @@ async function main() {
 
     // demands already raised for everything up to the live stage
     for (let i = 0; i < at; i++) {
-      const [code, , bp] = MILES[i];
-      // The one calculation layer prices this, exactly as certification will.
+      const [code] = MILES[i];
+      // The one calculation layer prices this, exactly as certification will:
+      // the whole schedule at once, so the last stage carries the residual.
       // The seed does not get its own arithmetic.
-      const base = M.stageBase(AGV, bp);
-      const gst = M.gstOn(base);
+      const { basePaise: base, gstPaise: gst } = priced[i];
       const raised = new Date(Date.UTC(2026, 2 + i, 18));
       const due = new Date(raised.getTime() + 14 * 86400000);
       await c.query(`INSERT INTO demands VALUES ($1,$2,$3,$4,$5,$6,$7,0,$8,$9)`, [

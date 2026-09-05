@@ -231,7 +231,71 @@ test('the completion certificate carries real embedded photographs', async () =>
   const text = pdf.toString('latin1');
   assert.match(text, /\/Subtype\s*\/Image/,
     'an image XObject is embedded, not merely a caption about one');
-  assert.match(text, /\/Width\s+1\b/, 'with the dimensions of the photograph filed');
 
   fs.writeFileSync(__dirname + '/../out/certificate-B-14-blockwork.pdf', pdf);
+});
+
+test('four large photographs make a certificate a lender gateway will accept', async () => {
+  const sharp = require('sharp');
+  const crypto = require('node:crypto');
+
+  // Real site-photograph sizes. Random pixels so JPEG cannot compress them
+  // away: this has to be genuinely several megabytes, or the test proves
+  // nothing about resizing.
+  async function bigPhoto(seed) {
+    const w = 2400, h = 1800;
+    const raw = Buffer.allocUnsafe(w * h * 3);
+    crypto.randomFillSync(raw);
+    raw[0] = seed;                                  // a different hash each time
+    return sharp(raw, { raw: { width: w, height: h, channels: 3 } })
+      .jpeg({ quality: 92 }).toBuffer();
+  }
+
+  const stage = 'us-B-14-brick';
+  let originalBytes = 0;
+  for (let i = 0; i < 4; i++) {
+    const photo = await bigPhoto(i);
+    originalBytes += photo.length;
+    assert.ok(photo.length > 1_000_000,
+      `test photograph ${i} is only ${photo.length} bytes; it must be large to mean anything`);
+    assert.ok(photo.length <= EV.MAX_BYTES, 'and within the upload cap');
+
+    const r = await upload(engCookie,
+      { stage, caption: 'Site photograph ' + (i + 1), gps: '12.8391, 77.7724' },
+      { name: 'DSC_' + i + '.jpg', type: 'image/jpeg', data: photo });
+    assert.strictEqual(r.status, 302);
+    assert.match(decodeURIComponent(r.headers.get('location')), /Photograph filed/);
+  }
+
+  const r = await fetch(BASE + '/doc/certificate/' + stage + '.pdf', { headers: { cookie: engCookie } });
+  assert.strictEqual(r.status, 200);
+  const pdf = Buffer.from(await r.arrayBuffer());
+
+  assert.strictEqual(pdf.subarray(0, 4).toString(), '%PDF');
+  assert.match(pdf.toString('latin1'), /\/Subtype\s*\/Image/, 'the photographs are on it');
+  assert.ok(pdf.length < 1_048_576,
+    `the certificate is ${(pdf.length / 1048576).toFixed(2)} MB, from ` +
+    `${(originalBytes / 1048576).toFixed(1)} MB of originals; it must be under 1 MB`);
+
+  fs.writeFileSync(__dirname + '/../out/certificate-four-large.pdf', pdf);
+});
+
+test('the thumbnail is cached beside the original, keyed by hash', async () => {
+  const thumb = EV.thumbPathFor(b14Hash);
+  assert.strictEqual(fs.existsSync(thumb), false,
+    'nothing has needed this thumbnail yet, so it has not been made');
+
+  const first = await EV.thumbnail(b14Hash);
+  assert.ok(fs.existsSync(thumb), 'the derivative was written on first use');
+  assert.ok(first.length > 0);
+  assert.ok(thumb.startsWith(EV.pathFor(b14Hash)), 'beside the original, under its hash');
+  assert.match(thumb, /thumb-480q70\.jpg$/, 'and keyed by the settings that made it');
+
+  // Second call comes off the cache: same bytes, and the file is not rewritten.
+  const before = fs.statSync(thumb).mtimeMs;
+  const again = await EV.thumbnail(b14Hash);
+  assert.strictEqual(fs.statSync(thumb).mtimeMs, before, 'not regenerated');
+  assert.ok(again.equals(fs.readFileSync(thumb)));
+  assert.strictEqual(again.subarray(0, 3).toString('latin1'),
+    Buffer.from([0xFF, 0xD8, 0xFF]).toString('latin1'), 'a JPEG, whatever the original was');
 });

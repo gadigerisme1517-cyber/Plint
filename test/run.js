@@ -27,6 +27,7 @@ const SUITES = [
   'ledger.test.js',
   'evidence.test.js',
   'pack.test.js',
+  'ratelimit.test.js',   // last: it deliberately blocks a login key
 ];
 
 const SCRATCH = 'plint_test_' + crypto.randomBytes(4).toString('hex');

@@ -6,7 +6,8 @@ Work done on site, money moved at the bank.
 ## Run
 
 Requires PostgreSQL 16 or later and Node 22 or later. Developed against
-PostgreSQL 18 and Node 24.
+PostgreSQL 18 and Node 24. `sharp` is a native dependency and ships prebuilt
+binaries per platform; check it resolves on your deployment target.
 
 ```bash
 cp .env.example .env      # then fill it in; nothing has a credential default
@@ -45,13 +46,14 @@ untouched.
 
 | Suite | Assertions | What it holds down |
 |---|---|---|
-| `money` | 18 | rounding, the stage schedule, GST, interest, the ledger |
+| `money` | 21 | rounding, the residual, GST, interest, the ledger |
 | `isolation` | 24 | buyer isolation, at the database, as the real app role |
 | `smoke` | 14 | three logins end to end, both PDFs, the worklist |
 | `session` | 8 | sessions survive a restart; sign-out actually revokes |
 | `ledger` | 10 | demands immutable; the audit trail is append-only |
-| `evidence` | 10 | photographs stored and readable only by their own buyer |
+| `evidence` | 12 | photographs stored, thumbnailed, readable only by their buyer |
 | `pack` | 6 | delivery is recorded, and the copy about it is true |
+| `ratelimit` | 6 | repeated failed sign-ins block; a success clears the count |
 
 `isolation.test.js` runs against the real database as the real application
 role. It was written and passing before the buyer screen existed. If a change
@@ -70,6 +72,15 @@ schema and is used by migrations and the seed only.
 
 `PLINT_SECRET` signs session lookups. Rotating it signs everyone out.
 
+`PGSSLMODE` is `disable`, `require`, `verify-ca` or `verify-full`. It defaults
+to `require` unless `NODE_ENV=development`, which defaults to `disable`: an
+environment that has not said what it is gets the production answer.
+`verify-ca` and `verify-full` need `PGSSLROOTCERT` and refuse to start without
+one.
+
+`NODE_ENV=development` belongs on a developer machine and nowhere else. It is
+what relaxes database TLS.
+
 ## Logins
 
 | Email | Role | Password |
@@ -84,6 +95,12 @@ schema and is used by migrations and the seed only.
 `GET /health` returns 200 with `{"status":"ok","database":"up"}`, or 503 when
 the database does not answer. It runs before session lookup, so a database that
 is down reports as down rather than as an authentication failure.
+
+Sign-in is rate limited in the database: five failures per email address and
+fifty per network address in a fifteen-minute window, blocking for fifteen
+minutes. Only failures count, so a successful sign-in clears the counter and an
+ordinary user never meets it. `X-Forwarded-For` is believed only when
+`PLINT_TRUST_PROXY=1`.
 
 Logs are one JSON object per line on stdout. Every request line carries the
 actor id and a request id. Nothing logs a cookie, a token or a password. An
@@ -103,6 +120,7 @@ src/money.js           the only place a rupee is computed
 src/db.js              pooling, transaction-local identity, scrypt passwords
 src/session.js         database-backed sessions, HMAC of the cookie token
 src/evidence.js        content-addressed photographs, verified on write
+src/throttle.js        login rate limiting, counted in the database
 src/multipart.js       a small form-data reader, so uploads need no dependency
 src/audit.js           the append-only record of who signed what
 src/log.js             structured logs, actor id on every request
@@ -110,7 +128,7 @@ src/pdf.js             demand letter, completion certificate with thumbnails
 src/server.js          routes and the three screens
 public/plint.css       lines 14-609 of plint-v15.html, unchanged
 assets/                Inter TTF, embedded in the documents
-var/evidence/          uploaded photographs. Not in the repo.
+var/evidence/          uploaded photographs and their thumbnails. Not in the repo.
 test/run.js            npm test: scratch database, all suites, drop
 DECISIONS.md           every rule inferred, and every choice made since
 ```

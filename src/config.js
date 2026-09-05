@@ -41,6 +41,51 @@ function optional(name, fallback) {
   return v === undefined || v === '' ? fallback : v;
 }
 
+/* Is this a development machine? Only NODE_ENV says so, and only by saying so
+   explicitly. An environment that has not identified itself is treated as
+   production, because that is the answer that fails safe. */
+const isDevelopment = () => process.env.NODE_ENV === 'development';
+
+/**
+ * TLS for the database connection, in libpq's vocabulary.
+ *
+ *   disable      no TLS. Development only.
+ *   require      encrypted, certificate not verified. The default outside
+ *                development: it stops passive interception, which is the
+ *                threat when the database is across a network.
+ *   verify-ca    encrypted, certificate chain verified against PGSSLROOTCERT.
+ *   verify-full  as verify-ca, and the hostname must match. Use this in
+ *                production if you have a CA to verify against.
+ *
+ * Defaulting to `require` rather than `verify-full` is a deliberate,
+ * documented compromise: verify-full needs a root certificate that this
+ * deployment does not yet have, and defaulting to it would mean the process
+ * would not start. `require` is the strongest setting that works unattended.
+ */
+function sslFor(mode) {
+  switch (mode) {
+    case 'disable':
+      return false;
+    case 'require':
+      // Encrypt, do not verify. libpq's `require` means exactly this.
+      return { rejectUnauthorized: false };
+    case 'verify-ca':
+    case 'verify-full': {
+      const ca = optional('PGSSLROOTCERT', '');
+      if (!ca) die('PGSSLROOTCERT', `PGSSLMODE=${mode} needs a root certificate to verify against.`);
+      return {
+        rejectUnauthorized: true,
+        ca: fs.readFileSync(ca, 'utf8'),
+        ...(mode === 'verify-ca' ? { checkServerIdentity: () => undefined } : {}),
+      };
+    }
+    default:
+      die('PGSSLMODE', `"${mode}" is not one of disable, require, verify-ca, verify-full.`);
+  }
+}
+
+const sslMode = () => optional('PGSSLMODE', isDevelopment() ? 'disable' : 'require');
+
 /** Connection for the runtime role. Validated the moment src/db.js loads. */
 function appDb() {
   return {
@@ -49,6 +94,7 @@ function appDb() {
     database: required('PGDATABASE', 'The database name.'),
     user: required('PGUSER', 'The runtime role. It must not be a superuser.'),
     password: required('PGPASSWORD', 'The runtime role password.'),
+    ssl: sslFor(sslMode()),
   };
 }
 
@@ -60,6 +106,7 @@ function adminDb(overrides = {}) {
     database: required('PGDATABASE', 'The database name.'),
     user: required('PGADMINUSER', 'The role that owns the schema. Migrations run as this.'),
     password: required('PGADMINPASSWORD', 'The owning role password.'),
+    ssl: sslFor(sslMode()),
     ...overrides,
   };
 }
@@ -82,4 +129,7 @@ const secureCookies = () => optional('PLINT_INSECURE_COOKIES', '') !== '1';
 const evidenceDir = () =>
   path.resolve(optional('PLINT_EVIDENCE_DIR', path.join(__dirname, '..', 'var', 'evidence')));
 
-module.exports = { appDb, adminDb, sessionSecret, port, secureCookies, evidenceDir, required, optional };
+module.exports = {
+  appDb, adminDb, sessionSecret, port, secureCookies, evidenceDir,
+  sslMode, isDevelopment, required, optional,
+};

@@ -55,15 +55,16 @@ machine this repo now lives on, not in the sandbox it was built in.
 
 `npm test` is green from nothing: it creates a scratch database, bootstraps,
 migrates, seeds, proves the migrator is a no-op on a populated database, runs
-all seven suites, and drops the database again. **90 assertions, all passing.**
+all eight suites, and drops the database again. **101 assertions, all passing.**
 
-    money       18   the calculation layer, called directly
+    money       21   the calculation layer, called directly
     isolation   24   the boundary, unchanged from the sandbox
     smoke       14   three logins end to end, unchanged from the sandbox
     session      8   survives a restart of the server module
     ledger      10   demands immutable, audit trail append-only
-    evidence    10   photographs stored, hashed, and fetchable only by their buyer
+    evidence    12   photographs stored, hashed, thumbnailed, buyer-only
     pack         6   delivery recorded, and the copy that says so is true
+    ratelimit    6   failed sign-ins block; a success clears the count
 
 ### Built
 
@@ -93,12 +94,25 @@ all seven suites, and drops the database again. **90 assertions, all passing.**
   triggers that raise on UPDATE and DELETE whoever is asking. An actor can only
   write rows in their own name. Certification writes exactly one row carrying
   the figures as at the moment it was signed.
+- **The ten stages always sum to the agreement value.** Stages one to nine
+  price as they always did; the tenth is the agreement value minus the other
+  nine, so no amount of rounding can drift. Nothing already billed moved: the
+  seeded value divides cleanly and a test asserts the residual equals the
+  figure that stage already had.
 - **Evidence photographs are real files**, content-addressed by the sha256 the
   schema already carried, verified by reading back off the disk after writing.
-  JPEG and PNG by magic bytes, never by the declared type; 8 MB cap; the client
-  filename never reaches a path. Reads are authorised by row-level security, so
-  a buyer holding a neighbour's exact hash gets the same 404 as a hash that was
-  never issued. The completion certificate embeds the photographs.
+  JPEG and PNG by magic bytes, never by the declared type; 12 MB cap; the
+  client filename never reaches a path. Reads are authorised by row-level
+  security, so a buyer holding a neighbour's exact hash gets the same 404 as a
+  hash that was never issued.
+- **Certificate thumbnails are resized, not merely scaled for display.** sharp,
+  480px long edge, quality 70, cached beside the original under its hash. Four
+  2400x1800 photographs totalling ~5 MB make a 141 KB certificate.
+- **Sign-in is rate limited in the database**: five failures per email and
+  fifty per address in fifteen minutes. Only failures count. A block refuses
+  the correct password too.
+- **Database TLS is `PGSSLMODE`**, defaulting to `require` outside
+  development.
 - **Uploads are a plain HTML form** on the engineer worklist, received by a
   small multipart reader in `src/multipart.js`. No dependency was added.
 - **Pack delivery is recorded, not asserted.** One `pack_deliveries` row per
@@ -115,10 +129,6 @@ all seven suites, and drops the database again. **90 assertions, all passing.**
   a worker that marked rows delivered without delivering them would be the same
   lie in a more expensive form. Wiring a real channel means moving rows out of
   `queued` and nothing else.
-- **No image resizing.** A certificate thumbnail is the stored photograph
-  scaled into its box for display, so an 8 MB photograph is embedded at 8 MB.
-  Adding a resize means adding an image library, which was not worth it for one
-  panel. If certificates get heavy, this is the reason.
 - **There is no supervisor role.** Item 7 asked for uploads by "the engineer
   and supervisor roles"; the system has `buyer`, `engineer` and `office`, and
   Suresh Kumar is a name on `unit_stages.marked_by`, not a login. Uploads are
@@ -130,16 +140,24 @@ all seven suites, and drops the database again. **90 assertions, all passing.**
 - Buyer finish selections, warranty and snag flows, the site-engineer screens
   and the document-chase list remain unbuilt, as they were.
 
-### One thing the brief still has to settle
+### One money rule the brief still has to settle
 
-Per-stage half-up rounding sums to the agreement value exactly **only when the
-agreement value divides cleanly by the basis points**. Every villa in this
-project is on ₹3,20,00,000, where the ten stages land on the agreement value to
-the paise, and `money.test.js` asserts it. But `100000001` paise schedules one
-paise short and `333333333` two paise short. Nothing was changed, because
-altering how a stage is priced is a money rule and the brief has not arrived.
-A test walks every agreement value in the database and fails if one ever drifts,
-so the decision gets made deliberately rather than discovered in a ledger.
+The stage **bases** now always sum to the agreement value exactly. **GST does
+not**: it is rounded per stage, so on an agreement value that does not divide
+cleanly the summed GST can differ by a paise or two from five per cent of the
+whole. That was left deliberately. Making one invoice absorb the rounding of
+nine others is a claim about tax law, not an arithmetic tidy-up, and it is not
+this codebase's to make without the brief.
+
+### Before this is deployed
+
+`DECISIONS.md` carries the full list. The one that matters most: **there are no
+backups.** No dump schedule, no retention, no restore drill, no WAL archiving,
+and `var/evidence/` is not in the database so it needs its own. For a system
+whose entire value is an evidence trail saying who signed what and when, that
+is the largest single gap in the repo. After it: TLS in front of the process,
+a scheduler for the two sweep functions that nothing calls, CI, supervision and
+log shipping, and monitoring on `/health` and the queued pack backlog.
 
 ## Punch list, in order
 

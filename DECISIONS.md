@@ -317,3 +317,141 @@ the brief, which still does not exist. The money rules above were left alone.
 - Suites run in their own processes and in a deliberate order: the calculation
   layer first, because if that is wrong nothing else means anything, then the
   isolation boundary, then the screens, then everything that mutates.
+
+---
+
+# Third pass: residual allocation, real thumbnails, deployment hygiene
+
+## Residual on the last stage
+
+- **Stages one to nine price as before. The tenth is the agreement value minus
+  the other nine.** Ten independently rounded stages need not sum to what the
+  buyer agreed to pay; now they always do, for any agreement value and any
+  schedule length.
+- `M.stageBases()` and `M.schedule()` are the new entry points. `stageBase()`
+  survives for a stage considered on its own and is what the first nine still
+  use, but **no screen calls it any more**, because a stage cannot be priced
+  correctly outside the schedule it belongs to.
+- Consequently every caller had to change: the buyer screen prices the whole
+  schedule at once, the engineer worklist and the head-office worklist load
+  each project's ordered basis points and price a stage at its `seq`, and
+  certification passes the schedule and the index rather than one percentage.
+  `db/seed.js` does the same, so a seeded demand and a certified one cannot
+  disagree.
+- **Order is now load-bearing.** The residual lands on the last element, so a
+  caller passing stages out of schedule order would put it on the wrong stage.
+  Every query that feeds these functions orders by `t.seq`, and the functions
+  say so in their comments.
+- **Nothing anybody has been billed changes.** Rs 3,20,00,000 divides cleanly
+  by all ten percentages, so the residual equals the figure the last stage
+  already had. A test asserts exactly that, and would fail if this change had
+  moved a single existing figure.
+- The tests that documented the drift as a known bound are gone, replaced by
+  ones that assert it cannot happen: fourteen awkward agreement values,
+  schedules of one, two and three stages, and a test that the first nine stages
+  are untouched while the tenth absorbs precisely the paise they left behind.
+- **GST is still rounded per stage and is not residualised.** The instruction
+  was about the stage bases, and it is the base that constitutes the agreement
+  value. Summed GST can therefore still differ by a paise or two from
+  `gstOn(agreementValue)` on an awkward value. Left alone deliberately: GST is
+  a tax computed per invoice, and making one invoice absorb the rounding of
+  nine others is a claim about tax law that this codebase should not make
+  without the brief.
+
+## Thumbnails
+
+- **`sharp`, 480px on the long edge, quality 70**, cached beside the original
+  as `<hash>.thumb-480q70.jpg`. The cache key carries the settings, so changing
+  the edge or the quality produces a new derivative rather than serving a stale
+  one under the old key. Written by rename-into-place, like the originals, so a
+  reader never sees a half-made thumbnail.
+- Always JPEG, whatever the original was: a certificate panel wants small, not
+  lossless. `.rotate()` first, so a photograph taken sideways on a phone is not
+  embedded sideways.
+- Measured: four 2400x1800 photographs totalling about 5 MB produce a
+  **141 KB** certificate. The test asserts under 1 MB and asserts the inputs
+  are genuinely over 1 MB each, so it cannot pass by resizing nothing.
+- **The upload cap went from 8 MB to 12 MB.** It was 8 partly because a large
+  original went straight into the PDF. That is no longer true, and real site
+  photographs run to 12 MB.
+- The originals are still served whole by `/evidence/<sha256>`. Only the
+  certificate gets the derivative; a buyer looking at his own photograph gets
+  the photograph.
+- A page break in the thumbnail grid now only happens at the start of a row, so
+  a row is never split across two pages.
+
+## Housekeeping
+
+- `Downloads/plint/plint` renamed to **`plint-sandbox-original`**. It is the
+  untouched sandbox tree; the live one is `Documents/Blueprint/plint`.
+- **Database TLS is `PGSSLMODE`**: `disable`, `require`, `verify-ca` or
+  `verify-full`. It defaults to `require` unless `NODE_ENV=development`, which
+  defaults to `disable`. An environment that has not said what it is gets the
+  production answer, because that is the direction that fails safe.
+  `verify-ca` and `verify-full` demand `PGSSLROOTCERT` and refuse to start
+  without it. **`require` rather than `verify-full` as the default is a
+  deliberate compromise**: verify-full needs a root certificate this deployment
+  does not have, and defaulting to it would stop the process starting at all.
+  `require` defeats passive interception, which is the threat when the database
+  is across a network, and it is the strongest setting that works unattended.
+- **Login rate limiting lives in the database**, for the reason sessions do:
+  with two instances an in-process counter doubles the attacker's budget, and a
+  restart hands them a fresh one. Same shape as `sessions` - no grant on the
+  table, RLS with no policy as a second lock, three `SECURITY DEFINER`
+  functions as the whole vocabulary.
+- Two counters per attempt: **five failures per email** and **fifty per
+  address**, both in a fifteen-minute window, blocking for fifteen minutes.
+  The email counter stops one account being ground down; the address counter
+  stops one source working through many accounts. The address limit sits far
+  above the email limit deliberately, so one blocked account cannot take a
+  whole shared-NAT office offline.
+- **Only failures accumulate.** A successful sign-in clears both counters, so
+  somebody signing in ten times a day never meets this. It is also why the
+  suites, which sign in constantly and correctly, are unaffected.
+- The check runs **before the password is examined**, so a blocked key costs an
+  attacker a round trip and not an scrypt.
+- A block refuses the correct password too. A limiter that lets the right
+  answer through is only slowing down the wrong ones. The test asserts it.
+- `X-Forwarded-For` is honoured **only** when `PLINT_TRUST_PROXY=1`. Trusting
+  it unconditionally would let one source present itself as thousands and walk
+  around the address counter entirely.
+- `ratelimit.test.js` runs last, because it deliberately blocks a key, and
+  clears what it blocked so the suite is re-runnable.
+
+## Still untouched, and needed before this is deployed
+
+Written down because none of it is built, and a reader should not have to
+infer that from silence.
+
+- **Backups. There are none.** No dump schedule, no retention, no restore
+  drill, no point-in-time recovery, no WAL archiving. For a system whose whole
+  value is an evidence trail saying who signed what and when, this is the
+  largest single gap in the repo. It needs `pg_dump` on a schedule to
+  off-machine storage, and the restore rehearsed rather than assumed.
+  `var/evidence/` needs backing up too and is not in the database: a restored
+  database whose photographs are gone still cannot reproduce a certificate.
+- **TLS to the browser.** The process serves plain HTTP. Something has to
+  terminate TLS in front of it, and `PLINT_INSECURE_COOKIES` must be unset once
+  it does, or the `Secure` flag will stop cookies being sent at all.
+- **No migration rollback path.** Migrations are forward-only by design, but
+  there is no tested procedure for one that lands badly, other than restoring
+  from the backups that do not exist.
+- **Nothing sweeps.** `session_sweep()` and `login_attempts_sweep()` exist and
+  are called by nothing. They want a scheduled job.
+- **No process supervision, no restart policy, no log shipping.** Logs go to
+  stdout as JSON on the assumption something collects them. Nothing does yet.
+- **No CI.** `npm test` is one command and green; nothing runs it on a push.
+- **No secret management.** Secrets come from the environment, which is right,
+  but nothing rotates them, and rotating `PLINT_SECRET` signs everyone out with
+  no warning to anybody.
+- **No monitoring or alerting** on `/health`, on the queued pack backlog, or on
+  demands going past due.
+- **`sharp` is a native dependency.** It ships prebuilt binaries per platform;
+  a deployment target unlike this machine needs that checked at build time.
+- **No load consideration.** The pool is eight connections, uploads buffer
+  whole in memory, and a thumbnail is generated synchronously with the first
+  certificate request that needs it.
+- **The residual and the audit trail are not reconciled.** Nothing checks that
+  the ten demands actually raised for a villa sum to its agreement value. The
+  calculation layer guarantees it; a report proving it after the fact does not
+  exist.
