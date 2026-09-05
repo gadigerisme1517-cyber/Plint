@@ -145,3 +145,34 @@ the brief, which still does not exist. The money rules above were left alone.
   re-applied or silently ignored: migrations are history, and you add to
   history rather than editing it.
 - The seed stays separate and development-only.
+
+## 1 and 2. Sessions and the secret
+
+- **A sessions table, not signed cookies.** Signed cookies would have needed a
+  revocation list in the database anyway, so the table was the smaller of the
+  two designs, and it makes sign-out a fact rather than a request the browser
+  is trusted to honour.
+- **The cookie is not what is stored.** The cookie carries 32 random bytes.
+  The table stores `HMAC-SHA256(token, PLINT_SECRET)`. Reading every row
+  yields no usable cookie, and rotating the secret invalidates every
+  outstanding session without touching a row. This is what `PLINT_SECRET` is
+  now for, which answers item 2: it is used, so the line stays.
+- **The application role holds no grant on `sessions`.** Not a policy that
+  returns nothing - no grant at all. Every path goes through three
+  `SECURITY DEFINER` functions: open, look up, revoke. RLS is enabled on the
+  table as a second lock in case a grant is ever added by mistake. It is not
+  FORCEd, because the definer functions run as the owner and must work whether
+  or not that owner happens to be a superuser.
+- A session has to be resolved before an identity exists, so session queries
+  are the one thing that legitimately runs outside `asUser`. They reach only
+  the definer functions.
+- `Secure` is set unless `PLINT_INSECURE_COOKIES=1` is explicitly present. The
+  insecure setting has to be asked for; an environment that has not said what
+  it is gets the safe answer. `HttpOnly` and `SameSite=Lax` are unconditional.
+- Twelve-hour `Max-Age`, matching the row's `expires_at` so the browser and the
+  database agree on when the session ended. `PLINT_SESSION_HOURS` overrides it.
+- Sign-out revokes rather than deletes, so a revoked session stays
+  distinguishable from one that never existed. `session_sweep()` clears rows
+  a month past expiry.
+- The cookie header is now parsed by name rather than by a regular expression
+  that would have matched a cookie called `notplint`.

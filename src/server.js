@@ -7,8 +7,8 @@ const { asUser, login } = require('./db');
 const M = require('./money');
 const PDF = require('./pdf');
 
-const SECRET = process.env.PLINT_SECRET || 'dev-secret';
-const sessions = new Map();
+const S = require('./session');
+const config = require('./config');
 
 const esc = s => String(s == null ? '' : s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -289,15 +289,14 @@ function body(req) {
   return new Promise(res => { let b = ''; req.on('data', d => b += d); req.on('end', () => res(b)); });
 }
 const form = b => Object.fromEntries(new URLSearchParams(b));
-const sessionOf = req => {
-  const m = /plint=([^;]+)/.exec(req.headers.cookie || '');
-  return m ? sessions.get(m[1]) : null;
-};
+// Sessions live in the database. Nothing about authentication is held in
+// this process, so a restart signs nobody out.
+const sessionOf = req => S.lookup(S.tokenFrom(req));
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   const p = url.pathname;
-  const sess = sessionOf(req);
+  const sess = await sessionOf(req);
   const send = (code, type, b) => { res.writeHead(code, { 'content-type': type }); res.end(b); };
   const html = (code, b) => send(code, 'text/html; charset=utf-8', b);
 
@@ -317,14 +316,15 @@ const server = http.createServer(async (req, res) => {
       if (u.role === 'buyer') {
         u.unit = (await asUser(u, c => c.query('SELECT code FROM units'))).rows[0].code;
       }
-      const sid = crypto.randomBytes(18).toString('hex');
-      sessions.set(sid, u);
-      res.writeHead(302, { location: '/', 'set-cookie': `plint=${sid}; HttpOnly; Path=/; SameSite=Lax` });
+      const token = await S.open(u);
+      res.writeHead(302, { location: '/', 'set-cookie': S.setCookie(token) });
       return res.end();
     }
 
     if (p === '/logout') {
-      res.writeHead(302, { location: '/', 'set-cookie': 'plint=; Max-Age=0; Path=/' });
+      // Revoked in the database, not merely forgotten by the browser.
+      await S.revoke(S.tokenFrom(req));
+      res.writeHead(302, { location: '/', 'set-cookie': S.clearCookie() });
       return res.end();
     }
 
@@ -371,5 +371,8 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-if (require.main === module) server.listen(3000, () => console.log('plint on http://localhost:3000'));
+if (require.main === module) {
+  const port = config.port();
+  server.listen(port, () => console.log('plint on http://localhost:' + port));
+}
 module.exports = server;
