@@ -513,3 +513,136 @@ infer that from silence.
   reader has to discover. The reasoning for leaving it stands: GST is computed
   per invoice, and making one invoice absorb nine others' rounding is a claim
   about tax law this codebase should not make without the brief.
+
+---
+
+# Fifth pass: deployment hardening and an acceptance audit
+
+## Database TLS, enforced rather than requested
+
+- **The cluster now refuses plaintext.** `pg_hba.conf` carries
+  `hostnossl … reject` ahead of `hostssl … scram-sha-256`, so an unencrypted
+  TCP connection is refused outright rather than allowed to fall back. Before
+  this, the client asked for TLS and the server did not care, which meant a
+  misconfigured client would have sent scram and every row in the clear while
+  every test still passed.
+- A self-signed certificate was generated for the development cluster. The
+  unix socket keeps `trust`, because it is not reachable off the machine and
+  the seed uses it.
+- The development `.env` moved from `PGSSLMODE=disable` to `require`. The
+  config default is unchanged - development still defaults to `disable` - but
+  this machine's cluster now requires TLS, so the environment says so
+  explicitly rather than relying on a default that no longer fits.
+- `tls.test.js` proves the refusal rather than asserting the intent: it opens a
+  connection with `ssl: false` and requires the server to refuse it, and checks
+  the error names encryption rather than being any old failure. It also reads
+  `pg_stat_ssl` for the pool the application actually uses, so "we asked for
+  TLS" and "we got TLS" are two separate assertions.
+- A third test demands a *verified* certificate and requires that to fail
+  against the self-signed development one. If that ever succeeds, verification
+  has stopped happening.
+
+## Backup and restore
+
+- `scripts/backup.sh` and `scripts/restore.sh`, documented in
+  `docs/BACKUP.md`. Custom-format `pg_dump` plus a tarball of `var/evidence`,
+  with checksums and a manifest, into one timestamped directory.
+- **Both halves or neither.** A restored database whose photographs are gone
+  still cannot reproduce a completion certificate. The restore verifies that
+  every evidence row claiming a stored file has that file on disk.
+- `restore.sh` refuses to restore over `PGDATABASE` unless
+  `PLINT_RESTORE_OVER_LIVE=1`. The ordinary reason to run it is a drill, and a
+  drill that silently overwrites production is worse than no drill.
+- **The drill is a test, not a document.** `restore.test.js` dumps the working
+  database, restores it into a fresh one, compares row counts and the summed
+  demand total, checks RLS and FORCE survived the restore, and regenerates a
+  thumbnail from the restored bytes. If `pg_dump` cannot be found it fails
+  loudly rather than skipping: "we could not run the drill" is not "the drill
+  passed".
+
+### Two faults the drill found, which nothing else had
+
+- **269 seeded demands and zero audit rows.** The seed fabricated certified
+  stages with `certified_by` and `certified_at` set - the database asserting
+  that S. Ramachandran signed them - while the audit trail recorded nothing.
+  The one question that table exists to answer had no answer for any historical
+  demand. The seed now writes the same rows certification writes: 269
+  `certified` rows and 221 `demand_settled` rows.
+- **`pack_deliveries` empty on a fresh database.** Same shape of fault: seeded
+  history skipped the record that certification creates. Any check counting
+  those rows passed by having nothing to count. The seed now writes one per
+  certified stage, `delivered` where the demand was paid, because what released
+  the money was the pack arriving.
+
+Both are the same lesson: seeded history that skips a side effect leaves the
+database internally inconsistent, and makes every test over that table weaker
+than it looks.
+
+## Acceptance audit: can each test fail?
+
+`scripts/mutation-audit.js` breaks one specific behaviour at a time and runs
+the suites that claim to cover it. A mutation that makes a suite fail was
+caught by a test doing real work. A mutation that leaves everything green means
+the test passes whether the code is right or not.
+
+**Final: 31 mutations, 29 killed, 2 survived.** `npm run audit`.
+
+### Three real gaps, found and closed
+
+1. **`required()` had no test at all.** Replacing its body with a default -
+   turning "no credential defaults" into a lie - broke nothing. The claim had
+   been verified by hand once, during the first pass, and never encoded.
+   `config.test.js` now blanks each of the seven required variables in turn and
+   requires the process to exit 1 naming that variable, with a control that the
+   same call succeeds when nothing is missing.
+2. **The `verify-ca` / `verify-full` branch was never executed.** Flipping
+   `rejectUnauthorized` to `false` there survived, because every real-connection
+   test goes through `require`, which is a different literal. `config.test.js`
+   now inspects the option object each mode produces.
+3. **Partial days of interest were untested.** `Math.floor` could become
+   `Math.ceil` unnoticed, which would charge a full day's interest to somebody
+   paying an hour late. There are now assertions at a minute, twelve hours, one
+   second short of a day, and exactly a day - and that interest is never
+   negative however far before the due date.
+
+### Two survivors, both equivalent rather than untested
+
+The identity handling in `asUser` is protected twice over, and disabling
+either protection alone changes nothing observable:
+
+- Skipping `set_config` for an unidentified request is harmless because the
+  setting is transaction-local and reverts on COMMIT anyway.
+- Making it session-scoped is harmless because every request sets it again.
+
+Only both faults together leak. That combination **is** caught, by
+`isolation.test.js` run against a single connection. So the two survivors are
+equivalent mutations, not gaps, and they are left in the audit with that
+recorded against them rather than deleted - a survivor with a reason is
+information, a deleted survivor is not.
+
+`PLINT_POOL_MAX` was added for this: `npm test` runs `isolation.test.js` with a
+pool of one, so any identity outliving its transaction must appear in the next
+request rather than hiding behind a different backend.
+
+### Two mutations that were wrong, and what that cost
+
+- The first identity-leak mutation set the GUC a second time at session scope,
+  which the next transaction overwrote. It survived for want of being a real
+  fault, not for want of a test. A survivor is a hypothesis about the tests;
+  it has to be read before it is believed.
+- `overdueDays <= 0` to `< 0` is genuinely equivalent: zero overdue days yields
+  zero interest either way, so no input distinguishes them. Replaced with the
+  `floor`/`ceil` mutation, which is observable, and which found gap 3 above.
+
+### What the audit does not cover
+
+Mutation coverage is not proof. It says these 31 specific faults are caught. It
+says nothing about faults nobody thought to write down, and the DB-level
+mutations only cover the four migrations they touch. It is a floor, not a
+ceiling.
+
+## Housekeeping
+
+- `PLINT_POOL_MAX`, default 8, so a test can pin the pool to one connection.
+- `npm run audit` and `npm run backup`.
+- `test/run.js` takes per-suite environment overrides.

@@ -10,7 +10,10 @@ const config = require('./config');
 
 // Every connection value comes from the environment. A missing one stops the
 // process here, at boot, rather than letting it start and fail per request.
-const pool = new Pool({ ...config.appDb(), max: 8 });
+// Pool size is configurable so a test can pin it to a single connection: with
+// one backend, any identity that outlives its transaction must show up in the
+// next request rather than depending on which connection the pool hands out.
+const pool = new Pool({ ...config.appDb(), max: Number(config.optional('PLINT_POOL_MAX', '8')) });
 
 /**
  * Every read and write goes through here. The session identity is set with

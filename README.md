@@ -46,7 +46,8 @@ untouched.
 
 | Suite | Assertions | What it holds down |
 |---|---|---|
-| `money` | 21 | rounding, the residual, GST, interest, the ledger |
+| `money` | 22 | rounding, the residual, GST, interest, the ledger |
+| `config` | 7 | no credential defaults; the TLS option shapes |
 | `isolation` | 24 | buyer isolation, at the database, as the real app role |
 | `smoke` | 14 | three logins end to end, both PDFs, the worklist |
 | `session` | 8 | sessions survive a restart; sign-out actually revokes |
@@ -54,7 +55,9 @@ untouched.
 | `evidence` | 12 | photographs stored, thumbnailed, readable only by their buyer |
 | `pack` | 6 | delivery is recorded, and the copy about it is true |
 | `reconcile` | 8 | stored demands, screens and the calculation layer agree |
-| `ratelimit` | 6 | repeated failed sign-ins block; a success clears the count |
+| `tls` | 7 | the server refuses unencrypted connections |
+| `restore` | 6 | a backup restores, and the restore is usable |
+| `ratelimit` | 7 | failed sign-ins block; a success clears it; a block survives restart |
 
 `reconcile.test.js` is the one that catches a stage priced outside its
 schedule. Villa A-07 is seeded on ₹2,98,76,543.21, which does not divide
@@ -65,6 +68,14 @@ figure where they agree and a mistake would be invisible.
 `isolation.test.js` runs against the real database as the real application
 role. It was written and passing before the buyer screen existed. If a change
 breaks one of its assertions, the change is wrong.
+
+Every test has been checked by mutation: break the behaviour, confirm a test
+fails. `npm run audit` runs it. Results are in `DECISIONS.md`.
+
+## Backups
+
+See `docs/BACKUP.md`. `npm run backup` takes one; `scripts/restore.sh` restores
+it and verifies the restore is usable. The drill runs as part of `npm test`.
 
 ## Configuration
 
@@ -87,6 +98,14 @@ one.
 
 `NODE_ENV=development` belongs on a developer machine and nowhere else. It is
 what relaxes database TLS.
+
+The development cluster is configured with `hostnossl ... reject`, so an
+unencrypted connection to it is refused by the server, not merely discouraged
+by the client. `test/tls.test.js` proves it.
+
+`PLINT_POOL_MAX` (default 8) sizes the connection pool. `npm test` pins the
+isolation suite to one connection so an identity outliving its transaction
+cannot hide behind a different backend.
 
 ## Logins
 
@@ -128,6 +147,11 @@ src/db.js              pooling, transaction-local identity, scrypt passwords
 src/session.js         database-backed sessions, HMAC of the cookie token
 src/evidence.js        content-addressed photographs, verified on write
 src/throttle.js        login rate limiting, counted in the database
+scripts/backup.sh      database and photographs, with checksums
+scripts/restore.sh     restore, then prove the restore is usable
+scripts/mutation-audit.js  break each behaviour, confirm a test notices
+docs/BACKUP.md         the backup and restore procedure
+CLOSEOUT.md            what is ready, what is not, what was inferred
 src/multipart.js       a small form-data reader, so uploads need no dependency
 src/audit.js           the append-only record of who signed what
 src/log.js             structured logs, actor id on every request

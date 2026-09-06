@@ -55,9 +55,11 @@ machine this repo now lives on, not in the sandbox it was built in.
 
 `npm test` is green from nothing: it creates a scratch database, bootstraps,
 migrates, seeds, proves the migrator is a no-op on a populated database, runs
-all nine suites, and drops the database again. **109 assertions, all passing.**
+all twelve suites, and drops the database again. **131 assertions, all passing.**
+Every one of them has been checked by mutation: see DECISIONS.md and CLOSEOUT.md.
 
-    money       21   the calculation layer, called directly
+    money       22   the calculation layer, called directly
+    config       7   no credential defaults; the TLS option shapes
     isolation   24   the boundary, unchanged from the sandbox
     smoke       14   three logins end to end, unchanged from the sandbox
     session      8   survives a restart of the server module
@@ -65,7 +67,9 @@ all nine suites, and drops the database again. **109 assertions, all passing.**
     evidence    12   photographs stored, hashed, thumbnailed, buyer-only
     pack         6   delivery recorded, and the copy that says so is true
     reconcile    8   stored demands, screens and the layer agree, to the paise
-    ratelimit    6   failed sign-ins block; a success clears the count
+    tls          7   the server refuses an unencrypted connection
+    restore      6   a backup restores, and the restore is usable
+    ratelimit    7   sign-ins block, a success clears it, a block survives restart
 
 ### Built
 
@@ -159,13 +163,17 @@ this codebase's to make without the brief.
 
 ### Before this is deployed
 
-`DECISIONS.md` carries the full list. The one that matters most: **there are no
-backups.** No dump schedule, no retention, no restore drill, no WAL archiving,
-and `var/evidence/` is not in the database so it needs its own. For a system
-whose entire value is an evidence trail saying who signed what and when, that
-is the largest single gap in the repo. After it: TLS in front of the process,
-a scheduler for the two sweep functions that nothing calls, CI, supervision and
-log shipping, and monitoring on `/health` and the queued pack backlog.
+**Read `CLOSEOUT.md`.** It states what is production ready, what is not, what
+was inferred from the prototype rather than specified, and what a new engineer
+must know before touching the money layer.
+
+Backup and restore now exist: `scripts/backup.sh`, `scripts/restore.sh`,
+`docs/BACKUP.md`, and a restore drill that runs on every `npm test`. What is
+still missing is everything around them - a schedule, off-machine storage,
+retention, encryption at rest, and WAL archiving for a recovery point better
+than the last dump. After that: TLS in front of the process, a scheduler for
+the two sweep functions nothing calls, CI, supervision, log shipping, and
+monitoring on `/health` and the queued pack backlog.
 
 ## Punch list, in order
 

@@ -101,6 +101,42 @@ test('a successful sign-in clears the counter, so only failures accumulate', asy
   assert.strictEqual(still.status, 302, 'and a good password still works');
 });
 
+test('a block survives a restart, because it is not held in this process', async () => {
+  const email = 'sharma@example.in';
+  const path = require('path');
+  const SERVER = path.join(__dirname, '..', 'src', 'server.js');
+
+  // Block the account.
+  let blocked = false;
+  for (let i = 0; i < T.EMAIL_LIMIT + 3 && !blocked; i++) {
+    const r = await attempt(email, 'wrong-' + i);
+    blocked = r.status === 429;
+  }
+  assert.ok(blocked, 'the account is blocked to begin with');
+
+  // Throw the server module away and load a fresh one, on a new port. An
+  // in-process counter would be gone with it and the block would lift.
+  await new Promise(r => { server.closeAllConnections?.(); server.close(r); });
+  delete require.cache[require.resolve(SERVER)];
+  const fresh = require(SERVER);
+  const PORT2 = PORT + 1;
+  await new Promise(r => fresh.listen(PORT2, r));
+
+  try {
+    const r = await fetch('http://127.0.0.1:' + PORT2 + '/login', {
+      method: 'POST', redirect: 'manual',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ email, pw: 'plint' }),
+    });
+    assert.strictEqual(r.status, 429,
+      'the restarted instance still refuses: the counter is in the database');
+  } finally {
+    await new Promise(r => { fresh.closeAllConnections?.(); fresh.close(r); });
+    await new Promise(r => server.listen(PORT, r));
+    await pool.query('SELECT plint.login_cleared($1)', ['email:' + email]).catch(() => {});
+  }
+});
+
 test('the application role cannot read or edit the attempt counters', async () => {
   await assert.rejects(
     () => pool.query('SELECT * FROM plint.login_attempts'),

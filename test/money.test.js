@@ -207,6 +207,27 @@ test('interest starts the day after the due date', () => {
   assert.strictEqual(M.INTEREST_BP_PER_YEAR, 1200);
 });
 
+test('a part day past due is not yet a day of interest', () => {
+  // Added after a mutation audit: floor() could become ceil() and no test
+  // noticed, which would have charged a full day's interest to anyone paying
+  // an hour late. Whole days only, and never a negative amount.
+  const due = new Date('2026-09-20T00:00:00Z');
+  const d = { total_paise: 336000000, due_at: due };
+  const at = ms => M.interestOn(d, new Date(due.getTime() + ms));
+
+  assert.strictEqual(at(60 * 1000), 0, 'a minute late is not a day');
+  assert.strictEqual(at(12 * 3600 * 1000), 0, 'half a day late is not a day');
+  assert.strictEqual(at(23 * 3600 * 1000 + 3599 * 1000), 0, 'a second short of a day is not a day');
+  assert.strictEqual(at(24 * 3600 * 1000), 110466, 'a full day is a day');
+  assert.strictEqual(at(47 * 3600 * 1000), 110466, 'and stays one day until the second');
+  assert.strictEqual(at(48 * 3600 * 1000), 220932, 'then two');
+
+  // Never negative, however far before the due date.
+  for (const ms of [-1000, -3600 * 1000, -30 * 86400000, -400 * 86400000]) {
+    assert.strictEqual(at(ms), 0, `interest at ${ms}ms from due must be zero, never negative`);
+  }
+});
+
 test('interest is simple, so a year of it is twelve per cent of the total', () => {
   const due = new Date('2026-01-01T00:00:00Z');
   const d = { total_paise: 336000000, due_at: due };

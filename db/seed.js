@@ -166,12 +166,66 @@ async function main() {
       const { basePaise: base, gstPaise: gst } = priced[i];
       const raised = new Date(Date.UTC(2026, 2 + i, 18));
       const due = new Date(raised.getTime() + 14 * 86400000);
+      const demandId = 'dm-' + v.code + '-' + code;
+      const docNo = 'PL/' + v.code.replace('-', '') + '/' + String(i + 1).padStart(2, '0');
+      const paidAt = i <= at - 2 ? new Date(raised.getTime() + 9 * 86400000) : null;
+
       await c.query(`INSERT INTO demands VALUES ($1,$2,$3,$4,$5,$6,$7,0,$8,$9)`, [
-        'dm-' + v.code + '-' + code, 'us-' + v.code + '-' + code,
-        'PL/' + v.code.replace('-', '') + '/' + String(i + 1).padStart(2, '0'),
-        raised, due, base, gst, base + gst,
-        i <= at - 2 ? new Date(raised.getTime() + 9 * 86400000) : null,
+        demandId, 'us-' + v.code + '-' + code, docNo,
+        raised, due, base, gst, base + gst, paidAt,
       ]);
+
+      /* The audit rows for that fabricated history.
+         These stages carry certified_by and certified_at, so the database is
+         asserting that S. Ramachandran signed them. Without a matching audit
+         row it would be asserting that while having no record of who signed or
+         what it said - which is the one question this table exists to answer.
+         A restore drill found this missing; the seed now writes the same rows
+         certification writes. */
+      await c.query(
+        `INSERT INTO audit_log (at, actor_id, actor_role, action, target_kind, target_id, figures)
+         VALUES ($1,$2,'engineer','certified','unit_stage',$3,$4)`,
+        [new Date(Date.UTC(2026, 2 + i, 18, 9, 0)), 'u-eng-ram',
+         'us-' + v.code + '-' + code,
+         JSON.stringify({
+           unit: v.code, stage: code, stage_name: MILES[i][1],
+           pct_bp: MILES[i][2], agreement_value_paise: agvFor(v.code),
+           demand_id: demandId, doc_no: docNo,
+           base_paise: base, gst_paise: gst, extras_paise: 0,
+           total_paise: base + gst,
+           raised_at: raised, due_at: due,
+           photographs: 2, certificate_hash: sha(v.code + code + 'cert'),
+           seeded: true,
+         })]);
+
+      if (paidAt) {
+        await c.query(
+          `INSERT INTO audit_log (at, actor_id, actor_role, action, target_kind, target_id, figures)
+           VALUES ($1,'u-office','office','demand_settled','demand',$2,$3)`,
+          [paidAt, demandId,
+           JSON.stringify({
+             doc_no: docNo, base_paise: base, gst_paise: gst, extras_paise: 0,
+             total_paise: base + gst, raised_at: raised, due_at: due,
+             reference: 'Seeded history', seeded: true,
+           })]);
+      }
+
+      /* And the pack record for that certification. Certification creates one;
+         seeded history that skipped it left the table empty on a fresh
+         database, which meant any check counting these rows passed by having
+         nothing to count. A paid demand implies the pack reached the lender,
+         because that is what released the money. */
+      await c.query(
+        `INSERT INTO pack_deliveries
+           (id, unit_stage_id, lender, state, attempts, last_attempt_at, queued_at, delivered_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        ['pk-' + v.code + '-' + code, 'us-' + v.code + '-' + code,
+         v.bank,
+         !v.bank ? 'not_applicable' : paidAt ? 'delivered' : 'queued',
+         v.bank ? 1 : 0,
+         v.bank ? raised : null,
+         raised,
+         v.bank && paidAt ? new Date(raised.getTime() + 86400000) : null]);
     }
 
     // who is holding the live stage up

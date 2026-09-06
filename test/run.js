@@ -21,13 +21,18 @@ const config = require('../src/config');
 
 const SUITES = [
   'money.test.js',       // pure calculation first: if this is wrong, nothing else matters
-  'isolation.test.js',   // then the boundary, as it has always run
+  // One connection, so an identity that outlives its transaction must leak
+  // into the next request instead of hiding behind a different backend.
+  { file: 'isolation.test.js', env: { PLINT_POOL_MAX: '1' } },
   'smoke.test.js',       // then the three screens end to end
   'session.test.js',
   'ledger.test.js',
   'evidence.test.js',
   'pack.test.js',
   'reconcile.test.js',   // seeded rows against the layer, before anything mutates more
+  'config.test.js',
+  'tls.test.js',
+  'restore.test.js',     // dump, restore, and prove the restore is usable
   'ratelimit.test.js',   // last: it deliberately blocks a login key
 ];
 
@@ -68,9 +73,10 @@ async function dropScratch() {
   console.log('scratch database dropped');
 }
 
-function step(label, args) {
+function step(label, args, extra = {}) {
   process.stdout.write('\n── ' + label + '\n');
-  const r = spawnSync(process.execPath, args, { stdio: 'inherit', env, cwd: path.join(__dirname, '..') });
+  const r = spawnSync(process.execPath, args,
+    { stdio: 'inherit', env: { ...env, ...extra }, cwd: path.join(__dirname, '..') });
   return r.status === 0;
 }
 
@@ -86,8 +92,10 @@ function step(label, args) {
     // Migrations must be a no-op the second time, on a populated database.
     if (!step('migrate again (must be a no-op)', ['db/migrate.js'])) throw new Error('re-migrate failed');
 
-    for (const s of SUITES) {
-      if (!step(s, [path.join('test', s)])) failed.push(s);
+    for (const entry of SUITES) {
+      const s = typeof entry === 'string' ? entry : entry.file;
+      const extra = typeof entry === 'string' ? {} : entry.env;
+      if (!step(s, [path.join('test', s)], extra)) failed.push(s);
     }
   } catch (e) {
     console.error('\n' + e.message);
