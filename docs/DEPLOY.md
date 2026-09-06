@@ -1,70 +1,114 @@
 # Deploying Plint on a free tier
 
-Target: **Render**, free web service plus free Postgres. No card.
+- **Database:** Supabase, free plan.
+- **Node process:** Render, free web service.
 
-Read the "What breaks" section before you demo from this. Some of it will bite
-during a demo if you do not know it is coming.
-
----
-
-## Why Render and not Fly
-
-**Fly.io requires a payment card** before it will deploy anything, even inside
-the free allowances. That rules it out on the stated constraint. Its Postgres
-would otherwise have suited this app better, because you get a real superuser.
-
-**Vercel cannot run this at all**, for a reason that is not the process model:
-evidence photographs are content-addressed files on disk, read back to build
-certificate thumbnails, and Vercel's filesystem is read-only outside `/tmp`
-with nothing surviving between invocations.
-
-Render's free Postgres gives a database **owner**, not a superuser. That used
-to be fatal — see `DECISIONS.md` — and migration 010 is what makes it work.
+No card for either. Read "What breaks" before you demo from this.
 
 ---
 
-## Before you start: check the database will do
+## Why this split
 
-The one thing that decides whether any Postgres can run Plint safely is whether
-it will let you create a **second role**. Plint needs one role that owns the
-schema and a different one the server connects as, because an owner bypasses
-row-level security. With a single role there is no isolation at all.
+**The Node process needs a host that keeps a process alive.** Plint is a raw
+`http.createServer` holding a connection pool and setting a transaction-scoped
+identity on every request. That rules out Vercel and Netlify, and it is not the
+only reason they are out: evidence photographs are content-addressed files read
+back off disk to build certificate thumbnails, and neither platform has a
+filesystem that survives a request.
 
-Once the database exists, take its connection string and run:
+**Fly.io and Railway both require a payment card** before they will deploy
+anything, even inside their free allowances. That leaves Render's free web
+service as the one host that runs a long-lived container with HTTPS and no
+card.
 
-```bash
-DATABASE_URL="postgres://..." node scripts/preflight.js
+**Supabase over Render's own Postgres** for two reasons. Render's free database
+is deleted 30 days after creation, which makes it useless for anything you want
+to show more than once. Supabase's free project persists — it pauses after a
+week of inactivity and resumes on demand rather than being destroyed. Supabase
+also gives a `postgres` role with more latitude than Render's database owner,
+which matters here more than usual.
+
+**Why it matters more than usual:** Plint needs *two* roles. One owns the
+schema and runs migrations; the other is what the server connects as, and it
+must **not** own the tables, because an owner bypasses row-level security. With
+only one role available the server would have to connect as the owner and every
+buyer would see every villa. Migration 010 removed `FORCE ROW LEVEL SECURITY`
+so this can run without a superuser, so the two-role separation is now the
+whole isolation boundary. `scripts/preflight.js` exists to confirm a given
+database allows it, and `db/bootstrap.js` refuses to start the server if it
+turns out not to hold.
+
+---
+
+## Step 1. Create the Supabase project
+
+1. **supabase.com** → sign in → **New project**.
+2. Name it anything. Region: pick one near you.
+3. It will ask you to set a **database password**. Choose one and keep it — it
+   is shown once and it is part of the connection string below.
+4. Wait for provisioning, a minute or two.
+
+## Step 2. Fetch these values
+
+All of them are on one page: **Project Settings** (the gear, bottom left) →
+**Database**.
+
+| What to copy | Exactly where | What it is |
+|---|---|---|
+| **Session pooler** connection string | Database → *Connection string* → **Session pooler** tab → URI | The database URL the app uses |
+| Your database password | The one you chose in step 1 | Goes into the string, replacing `[YOUR-PASSWORD]` |
+
+The string looks like:
+
+```
+postgresql://postgres.abcdefghijklmnop:[YOUR-PASSWORD]@aws-0-ap-south-1.pooler.supabase.com:5432/postgres
 ```
 
-It answers in about ten seconds and cleans up after itself. If it prints
-`VERDICT: this database CANNOT run Plint safely`, stop — do not deploy, and
-send me the output.
+Replace `[YOUR-PASSWORD]` with the password from step 1. That final string is
+what Render and the preflight both want.
 
----
+### Take the Session pooler, not the others
 
-## What to click
+There are three tabs and only one is right:
 
-### 1. Push the repository to GitHub
+- **Direct connection** — IPv6 only on new projects. Render's free egress is
+  IPv4, so this will simply fail to connect.
+- **Transaction pooler** (port 6543) — drops session state between statements.
+  Plint's identity is transaction-scoped so it would *probably* survive, but
+  "probably" is not what you want holding buyer isolation.
+- **Session pooler** (port 5432) — IPv4, keeps a real session. **Use this one.**
 
-Still outstanding. Render deploys from a repo, so this has to happen first.
+## Step 3. Let me check it before you deploy
 
-### 2. Create the services
+This is the step that decides whether any of it is safe. Put the string in a
+file rather than pasting it into chat — it is a live database password, and the
+file is git-ignored:
 
-1. Go to **dashboard.render.com** → **New** → **Blueprint**.
-2. Connect the GitHub repository.
-3. Render reads `render.yaml` and offers one web service (`plint`) and one
-   Postgres (`plint-db`). Both are on the free plan.
-4. It will prompt for the values marked `sync:false` — there are none to type,
-   because `PGPASSWORD` and `PLINT_SECRET` are both `generateValue: true` and
-   Render creates them itself. **Nothing secret is typed or stored in the
-   repository.**
-5. Click **Apply**.
+```bash
+cd ~/Documents/Blueprint/plint; Set-Content -Path .env.supabase -Value 'DATABASE_URL=postgresql://postgres.PROJECT:PASSWORD@aws-0-REGION.pooler.supabase.com:5432/postgres' -Encoding utf8
+```
 
-The first deploy takes a few minutes: it builds the Docker image, then the
-entrypoint bootstraps the role, runs ten migrations, seeds 48 villas, verifies
-the database connection is encrypted, and starts serving.
+Then tell me, and I will run:
 
-### 3. Watch the log for these four lines
+```bash
+node -e "process.loadEnvFile('.env.supabase')" && node scripts/preflight.js
+```
+
+It takes about ten seconds, creates a probe role and a probe table, verifies
+that a non-owner role with no identity sees **0 of 2** rows, and drops
+everything it made. If it reports `CANNOT run Plint safely`, we stop there.
+
+## Step 4. Deploy the web service on Render
+
+1. **dashboard.render.com** → **New** → **Blueprint**.
+2. Connect the GitHub repository `gadigerisme1517-cyber/Plint`.
+3. Render reads `render.yaml`: one web service, free plan, no database.
+4. It prompts for **`DATABASE_URL`** — paste the Session pooler string from
+   step 2. This is the only value you type. `PGPASSWORD` and `PLINT_SECRET`
+   are `generateValue: true`, so Render mints them itself.
+5. **Apply**.
+
+### Watch the first deploy log for these
 
 ```
 bootstrap: isolation verified - plint_app is not an owner, not a superuser, not BYPASSRLS
@@ -74,13 +118,14 @@ seeded 48 units
   encrypted, TLSv1.3
 ```
 
-If the isolation line is missing, or the TLS block says NOT ENCRYPTED, the
-service will have refused to start. That is deliberate.
+If the isolation line or the TLS line is missing, the service refused to start.
+That is deliberate — it will not serve buyers' financial positions over a
+connection it cannot vouch for, or with a role that could read past RLS.
 
-### 4. Sign in
+## Step 5. Sign in
 
-Your URL will be `https://plint.onrender.com` or similar — Render shows it at
-the top of the service page.
+Your URL is on the Render service page, something like
+`https://plint.onrender.com`.
 
 | Email | Role | Password |
 |---|---|---|
@@ -93,67 +138,49 @@ the top of the service page.
 
 ## What breaks on the free tier
 
-### Evidence photographs do not survive
+### Evidence photographs do not survive a restart
 
-**The free plan has no persistent disk.** Persistent disks are a paid feature.
-`PLINT_EVIDENCE_DIR` points inside the container, so every uploaded photograph
-is lost on every deploy, every restart, and every cold start after the service
-sleeps.
+Render's free plan has **no persistent disk** — disks are a paid feature. Every
+uploaded photograph is lost on every deploy, restart, and cold start.
 
-What that looks like in the demo:
+It fails gracefully, and was designed to:
 
-- Upload a photograph on the engineer screen and it works, is served, and
-  appears as a thumbnail on the completion certificate. Within that session it
-  is entirely real.
-- Come back tomorrow and the evidence **rows** are still there with their
-  captions, GPS and hashes, but the files are gone. The certificate prints
-  `photograph unavailable` in the thumbnail box rather than failing, and
-  `/evidence/<hash>` returns 404.
-- The seeded 48 villas never had image files in the first place, only evidence
-  rows, so nothing that ships in the seed is affected.
+- During a session, upload works completely: stored, served, and embedded as a
+  thumbnail in the completion certificate.
+- After a restart the evidence **rows** are still there with captions, GPS and
+  hashes. `/evidence/<hash>` returns 404 and the certificate prints
+  `photograph unavailable` in the thumbnail box rather than failing to render.
+- The seeded 48 villas never had image files, only rows, so nothing that ships
+  in the seed is affected.
 
-So: **upload photographs during the demo, not before it.**
+**Upload photographs during the demo, not before it.**
 
-The fix when it matters is a paid instance with a disk mounted at `/data`, and
-`PLINT_EVIDENCE_DIR=/data/evidence` — which is what the Dockerfile already
-defaults to. Or object storage, which is a code change `src/evidence.js` is
-shaped for but does not have.
+### The web service sleeps
 
-### The service sleeps
+Free services spin down after ~15 minutes idle, and the next request waits
+roughly 50 seconds. **Open the URL a minute before you present.** A cold start
+also clears the evidence files.
 
-A free web service spins down after about 15 minutes with no traffic, and the
-next request waits roughly 50 seconds while it starts again. **Open the URL a
-minute before you demo.** The health check keeps it up only while Render is
-polling it, which it does not do on the free plan once idle.
+Sessions live in the database, so a cold start does **not** sign anyone out.
 
-A cold start also loses the evidence files, as above.
+### The Supabase project pauses
 
-### The database expires
+Free projects pause after about a week with no activity. They resume from the
+dashboard — the data is not deleted, unlike Render's free database. If a demo
+is more than a week out, open the Supabase dashboard first.
 
-Render's free Postgres is time-limited — currently 30 days from creation, after
-which it is deleted. Diarise it. Redeploying re-seeds a fresh one, because the
-entrypoint seeds when it finds an empty database.
+### One instance
 
-### Sessions survive, which is the point
-
-Sessions are in the database, not in memory, so a cold start does **not** sign
-anyone out. That was the first item on the original punch list and it is what
-makes the sleeping service tolerable.
-
-### One instance only
-
-Free services do not scale out, which suits this app: it expects a single
-writer for the evidence directory.
+Free services do not scale out, which suits an app that expects a single writer
+for the evidence directory.
 
 ---
 
-## If you move off the free tier later
+## If you move off the free tier
 
-The change to make is not in the app. It is:
-
-1. A paid instance with a disk at `/data`, and `PLINT_EVIDENCE_DIR=/data/evidence`.
-2. A Postgres that is not time-limited.
-3. Consider putting `FORCE ROW LEVEL SECURITY` back, which migration 010
-   removed to run without a superuser. It is defence in depth against the
-   application ever connecting as the owner; `db/bootstrap.js` asserts that
-   case at every boot instead.
+1. A paid Render instance with a disk at `/data`, and
+   `PLINT_EVIDENCE_DIR=/data/evidence` — the Dockerfile already defaults to it.
+2. Consider restoring `FORCE ROW LEVEL SECURITY`, which migration 010 removed
+   to run without a superuser. It is defence in depth against the application
+   ever connecting as the owner; `db/bootstrap.js` asserts that case at every
+   boot instead.

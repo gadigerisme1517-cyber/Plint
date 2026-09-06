@@ -1236,3 +1236,89 @@ clicking Apply need the account holder, and the repository still has to reach
 GitHub first. `PGPASSWORD` and `PLINT_SECRET` are declared `generateValue: true`
 in `render.yaml`, so Render mints them itself and **no secret is typed into or
 stored in this repository**.
+
+---
+
+# Tenth pass: Supabase for the database, Render for the process
+
+Split by instruction for the database, and by elimination for the process.
+
+## The Node process stays on Render
+
+Nothing changed about what the app needs: a host that keeps a process alive,
+because `src/server.js` is a long-lived `http.createServer` holding a pool and
+setting a transaction-scoped identity per request, and a filesystem that
+survives a request, because evidence photographs are content-addressed files
+read back to build certificate thumbnails.
+
+That rules out Vercel and Netlify on both counts. **Fly.io and Railway both
+require a payment card** before they will deploy anything, even inside their
+free allowances. Render's free web service is the remaining host that runs a
+long-lived container with HTTPS and no card, and its blueprint was already
+written and reviewed. Keeping it means the only thing that changed this pass is
+where the database lives.
+
+## Supabase over Render's own Postgres
+
+Two reasons, and the first is the one that matters for a demo.
+
+**Render's free database is deleted 30 days after creation.** Not paused —
+deleted. Anything demonstrated from it has an expiry date. Supabase's free
+project pauses after about a week of inactivity and resumes on demand, with the
+data intact.
+
+**Supabase's `postgres` role has more latitude than Render's database owner.**
+That matters here more than it usually would, because of what migration 010
+did: dropping `FORCE ROW LEVEL SECURITY` moved the entire isolation boundary
+onto the fact that the server connects as a role which does not own the tables.
+Creating that second role is now the single capability the whole security model
+depends on. A database that will not allow it cannot run this application
+safely at all - the server would have to connect as the owner, and an owner
+bypasses RLS.
+
+## What I have NOT verified, and will not assume
+
+**Whether Supabase allows the second role.** I have no connection string: the
+project does not exist yet, and no credential for it is on this machine. So
+`scripts/preflight.js` has not been run and I am not going to claim Supabase
+works until it has been.
+
+This is the whole reason that script was written last pass. It creates a probe
+role and a probe table, checks that a non-owner role with no identity sees 0 of
+2 rows, and drops both. If it reports a blocker the deployment stops there.
+
+The credential is to be dropped into a git-ignored `.env.supabase` rather than
+pasted into the conversation - it is a live database password. `.gitignore` now
+covers `.env.*` with `.env.example` excepted, so no variant of it can be
+committed by accident.
+
+## The connection string has to be the Session pooler
+
+Supabase offers three and only one is right:
+
+- **Direct connection** is IPv6-only on new projects; Render's free egress is
+  IPv4, so it will not connect at all.
+- **Transaction pooler** (6543) drops session state between statements.
+  Plint's identity is transaction-scoped so it would *probably* survive, since
+  `asUser` wraps everything in one explicit transaction. "Probably" is not a
+  basis for buyer isolation.
+- **Session pooler** (5432) is IPv4 and keeps a real session. This one.
+
+Recorded because getting it wrong produces two different confusing failures -
+a connection that never establishes, or one that works until it does not.
+
+## `render.yaml` changes
+
+The `databases:` block is gone. `DATABASE_URL` becomes `sync: false`, so Render
+prompts for it once and stores it in its own dashboard. It is the **owning**
+role; `db/bootstrap.js` creates the runtime role from it, and `PGPASSWORD` and
+`PLINT_SECRET` are still `generateValue: true` so Render mints them.
+
+**One value is typed by hand, into Render's dashboard, and no secret is in this
+repository or in this conversation.**
+
+## Still not done
+
+Nothing is deployed. Creating the Supabase project, copying its Session pooler
+string, and applying the Render blueprint all need the account holder. The
+preflight is the gate before any of the Render work is worth doing.

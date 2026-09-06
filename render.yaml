@@ -1,13 +1,13 @@
-# Render blueprint. Free tier.
+# Render blueprint. Free tier. Compute only.
 #
-# One web service and one Postgres. No disk: persistent disks are a paid
-# feature on Render, so PLINT_EVIDENCE_DIR points at the container's own
-# filesystem and uploaded photographs do not survive a restart. That is a real
-# limitation, not an oversight - see DECISIONS.md and docs/DEPLOY.md.
+# The database is Supabase, not Render, so there is no `databases:` block here
+# and DATABASE_URL is supplied as a secret in Render's dashboard. See
+# docs/DEPLOY.md for which string to paste and where to find it.
 #
-# Secrets are declared with sync:false, which means Render prompts for them
-# once in its dashboard and stores them there. None of them is in this file
-# and none of them belongs in this repository.
+# Render's free plan has no persistent disk, so PLINT_EVIDENCE_DIR points at
+# the container's own filesystem and uploaded photographs do not survive a
+# restart. That is a real limitation, not an oversight - docs/DEPLOY.md says
+# what it looks like during a demo.
 
 services:
   - type: web
@@ -19,15 +19,19 @@ services:
     healthCheckPath: /health
     autoDeploy: false
     envVars:
-      # The database, wired by Render from the instance below. This is the
-      # OWNING role; the runtime role is created from it by db/bootstrap.js.
+      # Supabase, pasted once into Render's dashboard. sync:false means Render
+      # prompts for it and stores it there; it is never in this repository.
+      #
+      # Use the SESSION POOLER string, not the direct connection: Supabase's
+      # direct endpoint is IPv6-only on new projects and Render's free egress
+      # is IPv4. This is the OWNING role - db/bootstrap.js creates the runtime
+      # role from it.
       - key: DATABASE_URL
-        fromDatabase:
-          name: plint-db
-          property: connectionString
+        sync: false
 
-      # The runtime role. Not the owner, so row-level security binds it, which
-      # since migration 010 is the entire isolation boundary.
+      # The runtime role. Created by bootstrap, owns nothing, and is therefore
+      # bound by row-level security. Since migration 010 dropped FORCE, that is
+      # the entire isolation boundary, and the server asserts it at every boot.
       - key: PGUSER
         value: plint_app
       - key: PGPASSWORD
@@ -46,18 +50,12 @@ services:
       - key: PLINT_TRUST_PROXY
         value: "1"
 
-      # Demo data: the three logins the README lists. Seeds once, on an empty
+      # Demo data: the logins the README lists. Seeds once, on an empty
       # database, and skips thereafter.
       - key: PLINT_SEED_DEMO
         value: "1"
 
-      # No disk on the free plan. This is inside the container and is lost on
-      # every deploy, restart and cold start.
+      # No disk on the free plan. Inside the container, lost on every deploy,
+      # restart and cold start.
       - key: PLINT_EVIDENCE_DIR
         value: /tmp/plint-evidence
-
-databases:
-  - name: plint-db
-    plan: free
-    databaseName: plint
-    user: plint_owner
