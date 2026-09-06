@@ -103,6 +103,33 @@ does not verify it. Production wants `verify-full` and a real CA, which needs
 `PGSSLROOTCERT`. The code supports it; nothing has exercised it against a real
 certificate.
 
+**`db/schema.sql` line 204 carries a password, and it must be stripped before
+this repository is ever made public.**
+
+```sql
+CREATE ROLE plint_app LOGIN PASSWORD 'plint_app_dev';
+```
+
+It is dead: `plint_app_dev` is the sandbox's hardcoded credential, superseded by
+`db/bootstrap.js`, which sets the role's password from `PGPASSWORD`. It is not
+the password of anything on any machine. The file is kept only as the
+historical record of what the sandbox shipped, and nothing runs it.
+
+None of that makes it safe to publish. It is a real password string in a file
+called `schema.sql`, it will be found by every secret scanner pointed at the
+repository, and anyone reading it has to work out that it is dead before they
+can stop worrying — which is exactly the work a published credential imposes on
+people.
+
+**Removing it from `HEAD` is not enough.** It is also in the baseline commit,
+`4231d66`, which is the tree exactly as the sandbox shipped it. Going public
+means either rewriting history (`git filter-repo`, and every clone
+invalidated) or accepting that it stays reachable in the log. Decide which
+before publishing, not after.
+
+The repository is private today, which is why this is listed rather than
+already done.
+
 ### Serious
 
 **Nothing sweeps.** `session_sweep()` and `login_attempts_sweep()` exist and
