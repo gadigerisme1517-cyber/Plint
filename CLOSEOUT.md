@@ -7,7 +7,11 @@ engineer certified it, and that a demand for money followed from that
 certificate. Its value is the evidence trail, not the screens.
 
 `npm test` builds a scratch database, migrates it, seeds it, runs every suite,
-and drops it. It is green.
+and drops it. **137 assertions across twelve suites, green from nothing.**
+
+Every one of them has been checked by mutation — break the behaviour, confirm a
+test fails. `npm run audit`: 36 mutations, 34 killed, 2 demonstrated
+equivalent. §5 says what that is worth and what it is not.
 
 ---
 
@@ -237,29 +241,50 @@ test what you think.
 ## 5. How much the tests are worth
 
 Every test was audited by mutation: break the behaviour, confirm a test fails.
-Results, method and the two equivalent mutations are recorded in
-`DECISIONS.md` under "Acceptance audit". Three real gaps were found and closed;
-they are named there rather than quietly fixed.
+**36 mutations, 34 killed.** Method and results are in `DECISIONS.md`.
 
-The suites, and what each holds down:
+**Four real gaps were found this way, and are named rather than quietly
+fixed:** `required()` had no test at all, so "no credential defaults" rested on
+nothing; the `verify-ca`/`verify-full` branch was never executed; partial days
+of interest were untested, so `floor` could have become `ceil` and charged a
+full day to someone paying an hour late; and the audit row's attribution was
+indistinguishable because every test had the connected user as the signer.
 
-| Suite | Holds down |
-|---|---|
-| `money` | rounding, the residual, GST, interest, the ledger |
-| `config` | no credential defaults; the TLS option shapes |
-| `isolation` | buyer isolation at the database, as the real app role |
-| `smoke` | three logins end to end, both PDFs, the worklist |
-| `session` | survives a restart; sign-out actually revokes |
-| `ledger` | demands immutable; audit trail append-only |
-| `evidence` | photographs stored, thumbnailed, buyer-only |
-| `pack` | delivery recorded, and the copy about it is true |
-| `reconcile` | stored demands, screens and the layer agree, to the paise |
-| `tls` | the server refuses unencrypted connections |
-| `restore` | a backup restores and the restore is usable |
-| `ratelimit` | failed sign-ins block; a success clears the count |
+The two survivors are **equivalent mutations, not gaps**. The identity handling
+in `asUser` is protected twice over and disabling either half alone changes
+nothing observable; the combination that does leak is caught. They are left in
+the audit with that reason recorded against them, because a survivor with an
+explanation is information and a deleted one is not.
+
+| Suite | Assertions | Holds down |
+|---|---|---|
+| `money` | 22 | rounding, the residual, GST, interest, the ledger |
+| `isolation` | 24 | buyer isolation at the database, as the real app role |
+| `smoke` | 14 | three logins end to end, both PDFs, the worklist |
+| `session` | 8 | survives a restart; sign-out actually revokes |
+| `ledger` | 16 | demands immutable; the audit row written by the database |
+| `evidence` | 12 | photographs stored, thumbnailed, buyer-only |
+| `pack` | 6 | delivery recorded, and the copy about it is true |
+| `reconcile` | 8 | stored demands, screens and the layer agree, to the paise |
+| `config` | 7 | no credential defaults; the TLS option shapes |
+| `tls` | 7 | the server refuses unencrypted connections |
+| `restore` | 6 | a backup restores and the restore is usable |
+| `ratelimit` | 7 | failed sign-ins block; a success clears the count |
 
 `isolation.test.js` was written and passing before the buyer screen existed. If
-a change breaks one of its assertions, the change is wrong, not the test.
+a change breaks one of its assertions, the change is wrong, not the test. It
+runs with `PLINT_POOL_MAX=1`, so an identity outliving its transaction must
+show up in the next request rather than hiding behind another backend.
+
+**What this is not.** Mutation coverage says these 36 specific faults are
+caught. It says nothing about faults nobody thought to write down, and the
+database-level mutations only reach the five migrations they touch. It is a
+floor, not a ceiling.
+
+**Do not run the audit and `npm test` at once.** The audit edits source in
+place, so a concurrent run reads deliberately broken code and reports failures
+that are not real — which happened once and cost a confusing debugging round.
+Both sides now refuse to race, via `var/.mutation-audit.lock`.
 
 ---
 

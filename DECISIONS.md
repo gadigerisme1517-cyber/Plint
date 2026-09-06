@@ -752,3 +752,11 @@ Both sides now refuse to race. The audit takes `var/.mutation-audit.lock` and
 drops it on exit or interrupt; `npm test` refuses to start while it is held and
 says why. A tool that breaks source on purpose has to announce itself, or every
 failure it causes looks like a real one.
+
+### Correction
+
+The commit message for the audit-trigger pass says 145 assertions. The correct
+figure is **137**: money 22, isolation 24, smoke 14, session 8, ledger 16,
+evidence 12, pack 6, reconcile 8, config 7, tls 7, restore 6, ratelimit 7. The
+suites did not change; the addition did. `CLOSEOUT.md` carries the right number
+and `npm test` prints the per-suite counts it was summed from.
