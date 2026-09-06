@@ -29,6 +29,7 @@ const SUITES = [
   'ledger.test.js',
   'evidence.test.js',
   'pack.test.js',
+  'loan.test.js',
   'reconcile.test.js',   // seeded rows against the layer, before anything mutates more
   'config.test.js',
   'tls.test.js',

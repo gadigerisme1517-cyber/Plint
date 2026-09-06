@@ -55,7 +55,7 @@ machine this repo now lives on, not in the sandbox it was built in.
 
 `npm test` is green from nothing: it creates a scratch database, bootstraps,
 migrates, seeds, proves the migrator is a no-op on a populated database, runs
-all twelve suites, and drops the database again. **131 assertions, all passing.**
+all thirteen suites, and drops the database again. **148 assertions, all passing.**
 Every one of them has been checked by mutation: see DECISIONS.md and CLOSEOUT.md.
 
     money       22   the calculation layer, called directly
@@ -69,6 +69,7 @@ Every one of them has been checked by mutation: see DECISIONS.md and CLOSEOUT.md
     reconcile    8   stored demands, screens and the layer agree, to the paise
     tls          7   the server refuses an unencrypted connection
     restore      6   a backup restores, and the restore is usable
+    loan        11   the papers list is read-only; a sanction is recorded once
     ratelimit    7   sign-ins block, a success clears it, a block survives restart
 
 ### Built

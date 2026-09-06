@@ -32,7 +32,7 @@ const get = (p, cookie) => fetch(BASE + p, { headers: cookie ? { cookie } : {}, 
   console.log('\nbuyer, villa B-14');
   const b = await (await get('/', buyer)).text();
   ok(/Villa B-14/.test(b), 'the buyer lands on his own villa without choosing one');
-  ok(/Blockwork/.test(b) && /Payment schedule/.test(b), 'the ten stage schedule renders');
+  ok(/Blockwork/.test(b) && /Stage by stage/.test(b), 'the ten stage schedule renders');
   ok(/₹1,84,80,000/.test(b), 'paid so far is ₹1,84,80,000');
   const other = await get('/villa/A-11', buyer);
   ok(other.status === 404, 'another villa answers 404, the same as one that does not exist');
@@ -42,7 +42,7 @@ const get = (p, cookie) => fetch(BASE + p, { headers: cookie ? { cookie } : {}, 
   const e1 = await (await get('/engineer', eng)).text();
   const waiting = (e1.match(/class="wrow"/g) || []).length;
   ok(waiting > 0, waiting + ' stages waiting on a certificate');
-  const b14Pending = /B-14 &middot; Blockwork/.test(e1);
+  const b14Pending = /value="us-B-14-brick"[\s\S]{0,400}?Certify/.test(e1);
 
   if (b14Pending) {
     const r = await fetch(BASE + '/engineer/certify', {
@@ -75,7 +75,7 @@ const get = (p, cookie) => fetch(BASE + p, { headers: cookie ? { cookie } : {}, 
   ok(rows === 48, 'the worklist shows all 48 villas (' + rows + ')');
   ok(/Waiting on the certifying engineer/.test(o) && /Waiting on the lender/.test(o),
      'grouped by who is holding each one up');
-  ok(/class="mega hot"/.test(o), 'stuck money is the only red KPI');
+  ok(/class="kpin hot"/.test(o), 'stuck money is the only red KPI');
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
   server.close();

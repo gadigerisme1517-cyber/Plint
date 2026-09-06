@@ -105,12 +105,17 @@ test('every villa schedules to its own agreement value, to the paise', async () 
 
 // ------------------------------------------------- screens against the layer
 
-/** The stage amounts a buyer screen renders, in schedule order. */
+/* The stage amounts a buyer screen renders, in schedule order.
+
+   Scoped to the stage rows on purpose. v21 renders the villa summary with the
+   same .amt class, so an unscoped match picks up the agreement value and the
+   ledger lines too and silently compares the wrong numbers. Anchor on the
+   .stage block and take the first .amt inside each. */
 const amountsOn = html =>
-  [...html.matchAll(/class="amt[^"]*">([^<]+)</g)].map(m => m[1]);
+  [...html.matchAll(/class="stage [^"]*"[\s\S]*?class="amt[^"]*">([^<]+)</g)].map(m => m[1]);
 
 const paidSoFarOn = html =>
-  (/Paid so far<\/span><b>([^<]+)</.exec(html) || [])[1];
+  (/Paid so far<\/p><\/span><span class="amt[^"]*">([^<]+)</.exec(html) || [])[1];
 
 async function buyerScreenOf(email) {
   const cookie = await signIn(email);

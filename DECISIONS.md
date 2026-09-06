@@ -760,3 +760,207 @@ figure is **137**: money 22, isolation 24, smoke 14, session 8, ledger 16,
 evidence 12, pack 6, reconcile 8, config 7, tls 7, restore 6, ratelimit 7. The
 suites did not change; the addition did. `CLOSEOUT.md` carries the right number
 and `npm test` prints the per-suite counts it was summed from.
+
+---
+
+# Seventh pass: plint-v21 becomes the design reference
+
+`plint-v21.html` supersedes `plint-v15.html`. Different brand (#635BFF, not
+#1B4DD8), different face (Instrument Sans, not Inter), light ground (#F6F9FC)
+instead of dark chrome, and two new shadow tokens. The loan model also changed,
+and the repo was stale against it.
+
+## 1. The stylesheet is lines 14 to 628, not 14 to 609
+
+The instruction said 14 to 609, "exactly as the v15 extraction was done". Those
+two clauses disagree for this file and the second one is the one that means
+something.
+
+In v15 `<style>` opened at 13 and closed at **610**, so 14 to 609 was the whole
+block: 596 lines, matching `public/plint.css` byte for byte. In v21 the block
+closes at **629**, so the whole block is 14 to 628, and it is 615 lines.
+
+Stopping at 609 would have silently dropped nineteen lines: the entire
+`@media print` block, the reduced-motion block, `.jtag`, `.caflag`, `.duebar`,
+`.agdoc`, `.toast`, `.said`, the focus and checked states, and
+`.marks i.on{background:var(--brand)}` - which is the rule that colours the
+buyer's progress dots. The stylesheet would have looked almost right and been
+wrong in the places that carry the new brand colour.
+
+Taken as 14 to 628. Verified identical to the source range.
+
+## 2. The red rule, re-verified against v21
+
+**On the office screen the three-place rule holds exactly**, and that is where
+it was written for: `.kpin.hot` is the stuck-money KPI, `.agebar.hot` is the
+ageing bars, `.wrow .days b.h::after` is the dot on a late row. All three are
+implemented and nothing else on that screen is red.
+
+**v21 itself uses red in more places than three**, and they are all on the
+buyer's screen, not head office: `.duebar` and `.duebar .dtx strong` for the
+next-payment bar, `.marks i.due` for the stage dot that is due, and `.mega.hot`
+for the amount due, which v21 renders at line 1305. `.chip.late` and `.offbar`
+are red too.
+
+The instruction was to match v21's markup and to re-verify the rule. Those pull
+in opposite directions on the buyer screen, and the design reference won: the
+buyer's amount due and due-bar are red, as v21 draws them. This is the same
+judgement `DECISIONS.md` recorded under v15, where the prototype rendered the
+raised demand as `mega hot` and it was kept. **If the rule is meant to bind the
+buyer screen as well, it is one conditional in `buyerScreen` and one in the
+`.duebar` line.** Flagged rather than silently conformed to either reading.
+
+One tightening: the stage amount is now red only when the stage is actually
+`demanded`. It used to redden for `marked` and `certified` too, which meant a
+stage nobody had billed yet was shown in the colour of money owed.
+
+## 3. v21's own top bar is invisible, and the fix is in markup
+
+`.bm` is `color:#FFF` and v21's `logo(size,light)` is called with `light=true`,
+which paints the mark `#FFF` as well. Both sit on a `#F6F9FC` body, so in v21
+the brand mark and the word "Plint" are white on near-white.
+
+The stylesheet is a verbatim extraction and is not mine to edit, so the colour
+is supplied in the markup instead: the mark is drawn with `var(--brand)` and
+`.bm` carries an inline `color:var(--ink)`. The CSS file stays byte-identical
+to the source range. Worth knowing that v21's logo helper also still paints
+`#1B4DD8`, the **v15** brand blue, in its non-light branch - the helper was not
+updated when the palette was.
+
+## 4. Instrument Sans has no rupee sign, so the documents keep Inter
+
+Checked properly, because `DECISIONS.md` already records the trap: the Google
+Fonts served face is a latin subset that omits U+20B9, so testing the subset
+would have proved nothing about the family.
+
+The **full upstream release** was fetched from `google/fonts`
+(`ofl/instrumentsans/InstrumentSans[wdth,wght].ttf`, 190 KB against the 47 KB
+served subset) and read with fontkit:
+
+    Instrument Sans, full upstream   501 glyphs   U+20B9 = NO
+                                                  control U+0024 $ = YES
+    Inter Regular (in assets/)                    U+20B9 = YES, glyph 1317
+
+The control matters: the same font answers yes for `$`, so the no for U+20B9 is
+the font and not the test.
+
+**So the screens and the documents now use different faces, deliberately.**
+Screens are Instrument Sans, per v21. `src/pdf.js` and `assets/` are unchanged
+and stay on Inter, because a demand letter that cannot print `₹` is not a
+demand letter. `assets/` was not touched.
+
+If they must match, the options are a fallback face for the glyph alone, or
+Instrument Sans with the rupee patched in - both of which change what a legal
+document looks like, and neither of which is worth doing without being asked.
+
+## 5. The loan model
+
+v21 is narrower than what the repo had. The builder does not chase documents.
+
+- **The buyer side is a list.** `/documents` renders the fourteen papers his
+  bank will ask for - six for a salaried applicant, eight for a
+  self-employed one - with the CA sign-off flag on the P&L, and nothing else.
+  No upload, no ticking, no submit. `loan.test.js` asserts there is no file
+  input, no checkbox and **no `<form>` element at all** on that page, because
+  the absence is the feature.
+- Applicant composition is not in this schema, so the two applicants that make
+  the total fourteen come from the design and are stated as such in the code.
+- **The office side records the sanction.** `/office/sanctions` is v21's
+  "Sanction not recorded" tab: villa, buyer, lender, how long it has been
+  waiting, and three fields - sanctioned amount, own contribution, letter
+  reference. Nothing is disbursed against a stage until it is recorded.
+
+## 6. Own contribution is stored per unit, not assumed
+
+**v21 is internally inconsistent about this and neither of its answers was
+taken.** Its receipt hardcodes twenty per cent (`const own=amt*0.2`, line
+1954); its own sanction sheet says "agreement value less sanction" (line 2360).
+
+It is now `units.own_contribution_paise`, entered off the letter and kept. A
+buyer may put in more than the difference, and a lender may sanction against a
+valuation rather than the agreement value, so neither a percentage nor a
+subtraction is safe. The test records a figure that is deliberately neither -
+₹95 L against a ₹2.10 Cr sanction on a ₹3.20 Cr agreement - and asserts it
+survives as itself.
+
+At runtime nothing is computed: both figures are typed in. The seed derives a
+plausible one as agreement less sanction, once, and says so.
+
+## 7. Recording a sanction adds no RLS policy
+
+`units` carries a SELECT policy and no UPDATE policy, so the application role
+cannot write to it at all. Rather than add one - the isolation model is not
+mine to widen for a new screen, and the instruction was explicit - this goes
+through `record_sanction()`, `SECURITY DEFINER`, which is how every other
+privileged write in this schema already works: `login_lookup`, `session_open`,
+`demand_settle`, `login_attempt`.
+
+The actor is the transaction identity, never a parameter, for the same reason
+`demand_settle` takes it that way. It refuses a non-office caller, an absent
+amount, an absent contribution and a blank letter reference.
+
+A `CHECK` makes a sanction all-or-nothing: an amount with no letter behind it
+and nobody's name against it is the kind of record that looks like evidence and
+is not. The test proves the owning role cannot write half of one either.
+
+It writes an audit row, `action = 'sanction_recorded'`. That adds a third kind
+of row **alongside** the certification and settlement triggers without touching
+either, and the reconciliation checks in `restore.test.js` filter by action, so
+they are unaffected.
+
+## 8. What was NOT touched, as instructed
+
+`src/money.js`, the RLS policies, the audit triggers and the stage schedule in
+`db/schema.sql` are all unchanged. Checked rather than assumed: **nothing in
+v21 changes a money rule.**
+
+| | v21 | repo |
+|---|---|---|
+| Stage schedule | `pc:` 10, 15, 10, 10, 10, 10, 10, 10, 8, 7 | 1000, 1500, 1000 x6, 800, 700 bp |
+| Agreement value | `AGV=32000000` rupees | 3200000000 paise |
+| GST | `gst=dAmt*.05` | 500 bp |
+| Payment terms | "due in fourteen days" (line 1096) | `DUE_DAYS = 14` |
+
+Identical throughout. v21 states no interest rate that differs from twelve per
+cent a year. `assets/` is untouched.
+
+## 9. The seed draws `sanctioned` from its own generator
+
+The office needs a non-empty "Sanction not recorded" list, so some villas have
+a recorded sanction and some do not. Taking that draw from the existing `r()`
+consumed one more number per villa and shifted every bank, channel partner and
+pack state that followed - 269 demands became 260, and the whole seeded project
+quietly rewrote itself to add one field.
+
+It is drawn from a separate `lcg(97)` instead. The existing project is
+byte-identical to before: 269 demands, 221 settled. 14 villas end up without a
+recorded sanction, which is the same number v21's own `CHASE` list carries.
+
+## 10. Two suites were updated for the new markup, and why
+
+Both existing suites pass. Three assertions in `smoke.test.js` and two
+extractors in `reconcile.test.js` were keyed to v15 presentation and had to
+move:
+
+- `Payment schedule` became `Stage by stage`, which is what v21 calls it.
+- The certifiable-B-14 check keyed on row copy (`B-14 &middot; Blockwork`). It
+  now keys on `value="us-B-14-brick"` near a Certify button - **the stage id
+  does not move between design revisions and the copy does**. This one was not
+  a cosmetic fix: when it silently stopped matching, the test took its
+  "certified on an earlier run" branch, certified nothing, and the demand-PDF
+  assertion failed two steps later with no hint of the cause.
+- The stuck-money KPI is `.kpin.hot` in v21's desktop shell, `.mega.hot` in
+  v15's phone frame.
+- `reconcile.test.js` scraped every `.amt` on the buyer screen. v21 renders the
+  villa summary with the same class, so an unscoped match picked up the
+  agreement value and the ledger lines and compared the wrong numbers against
+  the schedule. It is now anchored inside `.stage` blocks.
+
+## 11. Scope taken on the office screen
+
+v21's head office is a full desktop application: a dozen tabs, search, sort,
+notifications, an owner view, RERA filing. The repo has one worklist and now
+one sanction tab, and this pass restyled those into v21's `.desk` / `.side` /
+`.wl` shell rather than building the other ten tabs. The instruction was to
+make the existing screens match v21's markup and class names, not to implement
+v21.

@@ -18,12 +18,26 @@ const esc = s => String(s == null ? '' : s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 // ------------------------------------------------------------------- chrome
+
+/* v21's mark. Its own logo() takes a `light` flag and paints the mark #FFF,
+   and .bm is #FFF too - both of which are invisible on v21's #F6F9FC body.
+   The stylesheet is a verbatim extraction and is not mine to edit, so the
+   colour is supplied here instead. See DECISIONS.md. */
+const LOGO = `<svg width="22" height="22" viewBox="0 0 32 32" fill="none" aria-label="Plint">
+<path d="M14.2 3h4.6a8.6 8.6 0 0 1 0 17.2h-4.6V29H8.4v-8.4l5.8-5.8V3Z" fill="var(--brand)"/>
+<path d="M14.2 8.6V15h4.6a3.2 3.2 0 0 0 0-6.4h-4.6Z" fill="#FFF"/>
+<rect x="5.4" y="8.6" width="6.4" height="6.4" rx="1.6" fill="var(--brand)"/></svg>`;
+
 function page(title, sess, body, wide) {
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Plint</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<meta name="theme-color" content="#0A2540">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/plint.css"></head><body><div class="wrap">
-<div class="bar"><span class="bm">Plint</span>
+<div class="bar"><span class="blogo">${LOGO}</span>
+<span class="bm" style="color:var(--ink)">Plint</span>
 <span class="sub">NVT Eterna &middot; Phase 1 &middot; 48 villas</span>
 ${sess ? `<span class="role" aria-pressed="true">${esc(sess.name)}</span>
 <a class="role" href="/logout" style="text-decoration:none">Sign out</a>` : ''}</div>
@@ -32,29 +46,61 @@ ${sess ? `<span class="role" aria-pressed="true">${esc(sess.name)}</span>
 <div class="scroll anim">${body}</div></div></div></div></body></html>`;
 }
 
+/** The office runs in v21's desktop shell, not the phone frame. */
+function desk(sess, tab, title, sub, main) {
+  const nav = [
+    ['', [['/office', 'Stuck money', null]]],
+    ['Buyer loans', [['/office/sanctions', 'Sanction not recorded', null]]],
+  ];
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Plint</title>
+<meta name="theme-color" content="#0A2540">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/plint.css"></head><body><div class="wrap">
+<div class="bar"><span class="blogo">${LOGO}</span>
+<span class="bm" style="color:var(--ink)">Plint</span>
+<span class="sub">NVT Eterna &middot; Phase 1 &middot; 48 villas</span>
+<span class="role" aria-pressed="true">${esc(sess.name)}</span>
+<a class="role" href="/logout" style="text-decoration:none">Sign out</a></div>
+<div class="desk">
+<div class="side">
+<div class="logo">${LOGO}<span>Plint</span></div>
+${nav.map(([g, items]) => `${g ? `<p class="k grp">${esc(g)}</p>` : ''}
+${items.map(([href, label]) => `<a class="sbtn st" href="${href}" aria-selected="${tab === href}"
+ style="text-decoration:none;display:block">${esc(label)}</a>`).join('')}`).join('')}
+<div class="foot"><p class="s">Eterna Phase 1 &middot; 48 villas<br>Reads from your ERP. Writes nothing back.</p></div>
+</div>
+<div class="main">
+<div class="topbar"><div class="crumb"><span>NVT Eterna</span><b>${esc(title)}</b></div></div>
+${main}
+</div></div></div></body></html>`;
+}
+
 // -------------------------------------------------------------------- login
 function loginPage(err) {
   return page('Sign in', null, `
 <div class="gap l"></div>
-<div class="lede"><p class="k">Sign in</p>
-<h1 class="big">Work done on site,<br>money moved at the bank.</h1>
-<p class="b cap">Three roles. One chain of evidence.</p></div>
-<div class="gap"></div>
-${err ? `<div class="blk"><p class="b hot">${esc(err)}</p></div><div class="gap s"></div>` : ''}
+<div class="blk"><div class="authcard" style="box-shadow:none;padding:0">
+<p class="k">Sign in</p>
+<h2 class="authh">NVT Quality Lifestyle</h2>
+${err ? `<p class="b hot" style="margin-top:10px">${esc(err)}</p>` : ''}
 <form method="post" action="/login">
-<div class="blk"><input class="line" name="email" placeholder="Email"
-  style="width:100%;border:1px solid var(--hair);border-radius:8px;padding:13px 14px;font:400 14px Inter"></div>
-<div class="gap s"></div>
-<div class="blk"><input class="line" name="pw" type="password" placeholder="Password"
-  style="width:100%;border:1px solid var(--hair);border-radius:8px;padding:13px 14px;font:400 14px Inter"></div>
-<div class="gap s"></div>
-<div class="blk"><button class="act st" style="width:100%;height:46px;background:var(--brand);color:#fff;border:0;border-radius:8px;font:500 14px Inter;cursor:pointer">Sign in</button></div>
+<label class="fl" for="email">Work email</label>
+<input class="fi" id="email" name="email" type="email" placeholder="priya@nvtlifestyle.in" autocomplete="username">
+<label class="fl" for="pw">Password</label>
+<input class="fi" id="pw" name="pw" type="password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" autocomplete="current-password">
+<button class="wbtn solid st authbtn" type="submit">Sign in</button>
 </form>
+<p class="s authnote">Your role decides what opens. Site engineers get the worklist,
+buyers get their villa, the office gets the dashboard.</p>
+</div></div>
 <div class="gap"></div><div class="rule"></div><div class="gap s"></div>
 <div class="blk"><p class="k">Seeded logins &middot; password plint</p></div>
-<div class="line"><span class="b">arjun@example.in</span><b>Buyer, villa B-14</b></div>
-<div class="line"><span class="b">ramachandran@nvt.in</span><b>Certifying engineer</b></div>
-<div class="line"><span class="b">priya@nvt.in</span><b>Head office</b></div>
+<div class="item"><span class="mid"><p class="h2">arjun@example.in</p><p class="s">Buyer, villa B-14</p></span></div>
+<div class="item"><span class="mid"><p class="h2">ramachandran@nvt.in</p><p class="s">Certifying engineer</p></span></div>
+<div class="item"><span class="mid"><p class="h2">priya@nvt.in</p><p class="s">Head office</p></span></div>
 <div class="gap l"></div>`);
 }
 
@@ -92,52 +138,135 @@ async function buyerScreen(sess, code) {
   // t.seq above, which is what makes the residual land on the right one.
   const priced = M.schedule(u.agreement_value_paise, stages.map(s => s.pct_bp));
 
+  // v21 states a stage three ways: done, now, wait. The old markup only had
+  // "wait", so a finished stage and the live one looked alike.
   const stageRows = stages.map((s, i) => {
     const amt = priced[i].totalPaise;
     const done = s.status === 'paid';
     const live = s.status === 'demanded' || s.status === 'marked' || s.status === 'certified';
     const pics = ev.filter(e => e.stage_code === s.stage_code);
-    return `<div class="stage${done || live ? '' : ' wait'}">
+    return `<div class="stage ${done ? 'done' : live ? 'now' : 'wait'}">
 <span class="idx s n">${String(i + 1).padStart(2, '0')}</span>
-<div class="body"><div class="row"><h4 class="h2">${esc(s.name)}</h4>
-<span class="amt${live ? ' hot' : ''}">${M.money(amt)}</span></div>
+<span class="body"><span class="row"><h4 class="h2">${esc(s.name)}</h4>
+<span class="amt${s.status === 'demanded' ? ' hot' : ''}">${M.money(amt)}</span></span>
 <p class="s meta">${esc(s.description)} &middot; ${
   done ? 'Paid' : s.status === 'demanded' ? 'Demanded, due ' + M.longDate(dm.find(d => d.stage_code === s.stage_code).due_at)
   : s.status === 'certified' ? 'Certified, demand being raised'
   : s.status === 'marked' ? 'Marked on site, awaiting the engineer\u2019s certificate'
   : 'Not started'}</p>
-${pics.length ? `<div class="strip">${pics.map(p => `<button class="st" title="${esc(p.gps)}">
-<span class="cap">${esc(p.caption)} &middot; ${M.longDate(p.taken_at)}</span></button>`).join('')}</div>` : ''}
-</div></div>`;
+${pics.length ? `<span class="strip">${pics.map(p => `<button class="st" title="${esc(p.gps)}">
+<span class="cap">${esc(p.caption)} &middot; ${M.longDate(p.taken_at)}</span></button>`).join('')}</span>` : ''}
+</span></div>`;
   }).join('');
+
+  const sanctioned = !!u.sanction_recorded_at;
 
   return page('Villa ' + u.code, sess, `
 <div class="top"><div class="g"><p class="s">Villa ${esc(u.code)}</p></div></div>
+<div class="gap s"></div>
 <div class="lede"><p class="k">Due now</p>
 <span class="mega ${open ? 'hot' : ''}">${open ? M.money(payable) : M.money(0)}</span>
 <p class="b cap">${open
   ? esc(openStage.name) + ', ' + (openStage.pct_bp / 100) + ' per cent, plus GST. Due '
     + M.longDate(open.due_at) + '. After that date interest runs at twelve per cent a year.'
   : 'Nothing is due. The next demand is raised only when a stage is verified on site.'}</p>
+${open ? `<div class="duebar"><span class="ddot"></span><span class="dtx">
+<strong>Next payment ${M.money(payable)}</strong> due ${M.longDate(open.due_at)}, on ${esc(openStage.name.toLowerCase())}</span></div>` : ''}
 <div class="marks">${marks}</div></div>
 <div class="gap"></div>
-${open ? `<div class="blk"><a class="act line st" style="text-decoration:none;color:var(--ink)"
-  href="/doc/demand/${esc(open.unit_stage_id)}.pdf">Demand letter ${esc(open.doc_no)} &middot; PDF</a>
-<a class="act line st" style="text-decoration:none;color:var(--ink)"
-  href="/doc/certificate/${esc(open.unit_stage_id)}.pdf">Engineer&rsquo;s completion certificate &middot; PDF</a></div>
+${open ? `<div class="blk">
+<a class="item st" style="text-decoration:none" href="/doc/demand/${esc(open.unit_stage_id)}.pdf">
+<span class="mid"><p class="h2">Demand letter ${esc(open.doc_no)}</p><p class="s">PDF</p></span></a>
+<a class="item st" style="text-decoration:none" href="/doc/certificate/${esc(open.unit_stage_id)}.pdf">
+<span class="mid"><p class="h2">Engineer&rsquo;s completion certificate</p><p class="s">PDF</p></span></a></div>
 <div class="gap"></div>` : ''}
 <div class="rule"></div><div class="gap s"></div>
-<div class="blk"><p class="k">Your villa</p></div>
-<div class="line"><span class="b">Unit</span><b>${esc(u.unit_type)}</b></div>
-<div class="line"><span class="b">Agreement value</span><b>${M.money(u.agreement_value_paise)}</b></div>
-<div class="line"><span class="b">Paid so far</span><b>${M.money(led.paidPaise)}</b></div>
-<div class="line"><span class="b">Demanded, unpaid</span><b>${M.money(led.demandedPaise)}</b></div>
-<div class="line"><span class="b">Not yet due</span><b>${M.money(led.remainingPaise)}</b></div>
-<div class="line"><span class="b">Lender</span><b>${esc(u.bank || 'Self funded')}</b></div>
-<div class="line"><span class="b">Site engineer</span><b>${esc(u.site_engineer)}</b></div>
+<div class="blk"><p class="k">Your loan</p></div>
+<div class="item"><span class="mid"><p class="h2">${sanctioned ? 'Sanction recorded' : 'Sanction not recorded'}</p>
+<p class="s">${sanctioned
+  ? esc(u.bank) + ' &middot; ' + M.money(u.sanction_paise) + ' sanctioned, '
+    + M.money(u.own_contribution_paise) + ' your own contribution'
+  : u.bank
+    ? 'Bring your sanction letter to the sales office. Until it is recorded, no stage can release money.'
+    : 'Self funded. Nothing to record.'}</p></span></div>
+<a class="item st" style="text-decoration:none" href="/documents">
+<span class="mid"><p class="h2">What the bank will ask for</p>
+<p class="s">The papers to keep ready. A list only.</p></span></a>
 <div class="gap"></div><div class="rule"></div><div class="gap s"></div>
-<div class="blk"><p class="k">Payment schedule</p></div>
+<div class="blk"><p class="k">Your villa</p></div>
+<div class="item"><span class="mid"><p class="h2">Unit</p></span><span class="amt n">${esc(u.unit_type)}</span></div>
+<div class="item"><span class="mid"><p class="h2">Agreement value</p></span><span class="amt n">${M.money(u.agreement_value_paise)}</span></div>
+<div class="item"><span class="mid"><p class="h2">Paid so far</p></span><span class="amt n">${M.money(led.paidPaise)}</span></div>
+<div class="item"><span class="mid"><p class="h2">Demanded, unpaid</p></span><span class="amt n">${M.money(led.demandedPaise)}</span></div>
+<div class="item"><span class="mid"><p class="h2">Not yet due</p></span><span class="amt n">${M.money(led.remainingPaise)}</span></div>
+<div class="item"><span class="mid"><p class="h2">Lender</p></span><span class="amt n">${esc(u.bank || 'Self funded')}</span></div>
+<div class="item"><span class="mid"><p class="h2">Site engineer</p></span><span class="amt n">${esc(u.site_engineer)}</span></div>
+<div class="gap"></div><div class="rule"></div><div class="gap s"></div>
+<div class="blk"><p class="k">Stage by stage</p></div><div class="gap s"></div>
 ${stageRows}
+<div class="gap l"></div>`);
+}
+
+/* ---------------------------------------------------------------- documents
+   v21's loan model: the builder does not chase papers. This lists what the
+   bank will ask for so the buyer can keep them ready, and that is all it does.
+   No upload, no ticking, nothing sent. The list is the product. */
+const DOC_SETS = {
+  salaried: [
+    ['PAN card', false], ['Aadhaar', false], ['Address proof', false],
+    ['Last 3 salary slips', false], ['Form 16', false], ['6 months bank statement', false],
+  ],
+  self: [
+    ['PAN card', false], ['Aadhaar', false], ['Address proof', false],
+    ['Last 3 years ITR', false], ['P&L and balance sheet', true],
+    ['GST returns, 12 months', false], ['Business registration proof', false],
+    ['12 months bank statement', false],
+  ],
+};
+
+async function documentsScreen(sess) {
+  const u = await asUser(sess, c =>
+    c.query('SELECT code, bank, sanction_recorded_at FROM units')).then(r => r.rows[0]);
+  if (!u) return null;
+
+  /* Two applicants, one salaried and one self-employed, which is what makes
+     v21's total fourteen. Applicant composition is not modelled in this
+     schema, so the shape comes from the design and is stated as such. */
+  const applicants = [
+    { name: 'Main applicant', kind: 'salaried', rel: 'Salaried' },
+    { name: 'Co-applicant', kind: 'self', rel: 'Self-employed' },
+  ];
+  const total = applicants.reduce((n, a) => n + DOC_SETS[a.kind].length, 0);
+
+  return page('Papers', sess, `
+<div class="top"><a class="ib st" href="/" style="text-decoration:none">&larr;</a>
+<div class="g"><p class="s">Your loan &middot; ${esc(u.bank || 'lender not chosen')}</p></div></div>
+<div class="gap s"></div>
+<div class="lede"><p class="k">What the bank will ask for</p>
+<span class="big" style="font-size:30px;line-height:34px">${total} papers</span>
+<p class="b cap">A list, so you can keep them ready. You give these to
+${esc(u.bank || 'your bank')} directly. Do not send them here.</p></div>
+<div class="gap l"></div>
+${applicants.map(a => `
+<div class="blk"><div class="apphdr">
+<span class="h2">${esc(a.name)}</span>
+<span class="s">${esc(a.rel)}</span></div></div>
+<div class="gap s"></div>
+<div class="doclist2">
+${DOC_SETS[a.kind].map(([label, ca]) => `<div class="drow2">
+<span class="dchk" style="border-style:dashed"></span>
+<span class="dmid"><span class="b ink">${esc(label)}</span>${
+  ca ? '<span class="caflag">needs CA sign-off</span>' : ''}</span>
+</div>`).join('')}
+</div>
+<div class="gap"></div>`).join('')}
+<div class="blk"><div class="said">
+<p class="b ink">${u.sanction_recorded_at
+  ? 'Your sanction is recorded. Every stage finished on site now releases your money, and you can watch each release.'
+  : 'When your loan is approved, come back to the sales office with the sanction letter. From that point every stage finished on site releases your money automatically.'}</p>
+</div></div>
+<p class="b note">Plint holds no loan papers and sends nothing to any bank. Your bank runs
+its own checks and you sign at the branch yourself.</p>
 <div class="gap l"></div>`);
 }
 
@@ -182,40 +311,50 @@ async function engineerScreen(sess, flash) {
   const list = rows.map(x => {
     const total = stageTotal(byProject, x);
     const thin = x.shots < 2;
-    return `<div class="wrow" style="display:flex;gap:20px;align-items:center;padding:18px 26px;border-bottom:1px solid var(--hair-2)">
-<div style="flex:1;min-width:0"><h4 class="h2">${esc(x.code)} &middot; ${esc(x.stage_name)}</h4>
-<p class="s">${esc(x.buyer_name)} &middot; marked by ${esc(x.marked_by)} on ${M.longDate(x.marked_at)}
- &middot; ${x.shots} photograph${x.shots === 1 ? '' : 's'}</p></div>
-<span class="amt n" style="color:var(--ink-2)">${M.money(total)}</span>
+    return `<div class="wrow">
+<span class="id">${esc(x.code)}</span>
+<span class="mid"><p class="rt">${esc(x.stage_name)}</p>
+<p class="s">${esc(x.buyer_name)} &middot; marked by ${esc(x.marked_by)} on ${M.longDate(x.marked_at)}</p></span>
+<span class="stc"><i class="chip ${thin ? 'warn' : 'wait'}">${
+  thin ? x.shots + ' photograph' + (x.shots === 1 ? '' : 's') : 'evidence ready'}</i></span>
+<span class="amt n">${M.money(total)}</span>
 ${thin
-  ? `<span class="s hot" style="flex:0 0 130px;text-align:right">Too few photographs</span>`
-  : `<form method="post" action="/engineer/certify" style="flex:0 0 130px;text-align:right">
+  ? `<span class="s actc">Too few photographs</span>`
+  : `<form method="post" action="/engineer/certify" class="actc">
 <input type="hidden" name="id" value="${esc(x.id)}">
-<button class="wbtn st" style="background:var(--brand);color:#fff;border:0;border-radius:7px;padding:10px 14px;font:500 12.5px Inter;cursor:pointer">Certify</button></form>`}
+<button class="wbtn solid st" type="submit">Certify</button></form>`}
 </div>
-<form method="post" action="/evidence/upload" enctype="multipart/form-data"
-  style="display:flex;gap:10px;align-items:center;padding:10px 26px 16px;border-bottom:1px solid var(--hair-2)">
+<form method="post" action="/evidence/upload" enctype="multipart/form-data" class="uprow"
+  style="display:flex;gap:10px;align-items:center;padding:10px 26px 16px;border-bottom:1px solid var(--hair)">
 <input type="hidden" name="stage" value="${esc(x.id)}">
-<input class="s" type="file" name="photo" accept="image/jpeg,image/png" required
-  style="flex:0 0 210px;font:400 12px Inter;color:var(--ink-2)">
-<input class="s" name="caption" placeholder="Caption" required maxlength="120"
-  style="flex:1;min-width:0;border:1px solid var(--hair);border-radius:7px;padding:8px 10px;font:400 12.5px Inter">
-<input class="s n" name="gps" placeholder="12.8391, 77.7724" required maxlength="40"
-  style="flex:0 0 150px;border:1px solid var(--hair);border-radius:7px;padding:8px 10px;font:400 12.5px Inter">
-<button class="wbtn st" style="flex:0 0 130px;background:#fff;color:var(--ink);border:1px solid var(--hair);border-radius:7px;padding:9px 14px;font:500 12.5px Inter;cursor:pointer">Add photograph</button>
+<span class="mid" style="display:flex;gap:10px;align-items:center">
+<input class="fi" type="file" name="photo" accept="image/jpeg,image/png" required
+  style="margin:0;flex:0 0 200px;padding:7px 8px">
+<input class="fi" name="caption" placeholder="Caption" required maxlength="120"
+  style="margin:0;flex:1;min-width:0;padding:7px 10px">
+<input class="fi n" name="gps" placeholder="12.8391, 77.7724" required maxlength="40"
+  style="margin:0;flex:0 0 150px;padding:7px 10px"></span>
+<button class="wbtn st" type="submit" style="flex:0 0 140px">Add photograph</button>
 </form>`;
   }).join('');
 
-  return page('Certify', sess, `
-<div class="top"><div class="g"><p class="s">${esc(sess.name)} &middot; certifying engineer</p></div></div>
-<div class="lede"><p class="k">Stages awaiting your certificate</p>
-<span class="mega">${rows.length}</span>
-<p class="b cap">A stage cannot go to the lender without a certificate signed by a qualified engineer.
-A supervisor marking it done on site is not the same thing.</p></div>
-<div class="gap"></div>
-${flash ? `<div class="blk"><p class="b ink">${flash}</p></div><div class="gap s"></div>` : ''}
-${list || '<div class="blk"><p class="b">Nothing is waiting on you.</p></div>'}
-<div class="gap l"></div>`, true);
+  return desk(sess, '/engineer', 'Sign-off and evidence', '', `
+<div class="mhead"><div class="hstrip">
+<div class="g"><h1 class="pgt">Sign-off and evidence</h1>
+<p class="s" style="margin-top:2px">Stages marked done on site, not yet certified</p></div>
+<div class="kpi"><span class="kpin">${rows.length}</span><span class="k">files</span></div>
+</div></div>
+<div class="mbody anim">
+${flash ? `<div class="tools"><span class="rescount s">${flash}</span><div class="g"></div></div>` : ''}
+<div class="tools"><span class="rescount s">A stage cannot go to the lender without a certificate
+signed by a qualified engineer. A supervisor marking it done on site is not the same thing.</span>
+<div class="g"></div></div>
+<div class="wl">
+${rows.length ? `<div class="whead"><span class="id">Villa</span><span class="mid">Stage and buyer</span>
+<span class="stc">Evidence</span><span class="amt">Amount</span><span class="actc">Action</span></div>` : ''}
+${list || '<div class="emptyrow"><p class="b ink">Nothing is waiting on you.</p></div>'}
+</div>
+</div>`);
 }
 
 /** Certification. The only place a demand is created. */
@@ -313,27 +452,105 @@ async function officeScreen(sess) {
                   office: 'Waiting on head office', buyer: 'Waiting on the buyer' };
 
   const oldest = Math.max(...rows.rows.map(r => r.age));
+
+  /* Red, per v21 and per the standing rule: the stuck-money KPI, the oldest
+     ageing bars, and the dot on a late row. `.chip late` and `.days b.h` carry
+     the last of those; everything younger is warn or plain. */
   const body = order.filter(k => groups[k]).map(k => {
     const g = groups[k].sort((a, b) => b.age - a.age);
     const sum = g.reduce((n, x) => n + x.value, 0);
-    return `<div class="gap"></div><div class="blk"><p class="k">${label[k]}</p>
-<h3 class="h1">${g.length} villa${g.length === 1 ? '' : 's'} &middot; ${M.crore(sum)}</h3></div>
-<div class="gap s"></div>
-${g.map(x => `<div class="wrow" style="display:flex;gap:18px;align-items:center;padding:15px 26px;border-bottom:1px solid var(--hair-2)">
-<span style="flex:0 0 8px;height:8px;border-radius:50%;background:${x.age >= 21 ? 'var(--hot)' : x.age >= 10 ? 'var(--warn)' : 'var(--hair)'}"></span>
-<div style="flex:1;min-width:0"><h4 class="h2">${esc(x.code)} &middot; ${esc(x.stage_name)}</h4>
-<p class="s">${esc(x.reason)}</p></div>
-<span class="s n" style="flex:0 0 90px;text-align:right">${x.age} days</span>
-<span class="amt n" style="flex:0 0 110px;text-align:right">${M.crore(x.value)}</span></div>`).join('')}`;
+    return `<div class="tools"><span class="rescount s">${esc(label[k])} &middot;
+${g.length} villa${g.length === 1 ? '' : 's'} &middot; ${M.crore(sum)}</span><div class="g"></div></div>
+<div class="wl">
+<div class="whead"><span class="id">Villa</span><span class="mid">Stage and reason</span>
+<span class="stc">Status</span><span class="days">Age</span><span class="amt">Amount</span></div>
+${g.map(x => `<div class="wrow">
+<span class="id">${esc(x.code)}</span>
+<span class="mid"><p class="rt">${esc(x.stage_name)}</p><p class="s">${esc(x.reason)}</p></span>
+<span class="stc"><i class="chip ${x.age >= 21 ? 'late' : x.age >= 10 ? 'warn' : 'wait'}">${
+  x.age >= 21 ? 'Overdue' : x.age >= 10 ? 'Ageing' : 'Open'}</i></span>
+<span class="days"><b class="${x.age >= 21 ? 'h' : ''}">${x.age}</b>d</span>
+<span class="amt n">${M.crore(x.value)}</span></div>`).join('')}
+</div><div class="gap"></div>`;
   }).join('');
 
-  return page('Worklist', sess, `
-<div class="top"><div class="g"><p class="s">${esc(sess.name)} &middot; head office</p></div></div>
-<div class="lede"><p class="k">Stuck money</p>
-<span class="mega hot">${M.crore(stuck)}</span>
-<p class="b cap">Across ${rows.rows.length} villas. The oldest has been sitting for ${oldest} days.
-Grouped by who is holding it up, not by stage.</p></div>
-${body}<div class="gap l"></div>`, true);
+  // The ageing profile, oldest bucket in red. v21 reds the last buckets only.
+  const buckets = [[0, 9], [10, 20], [21, 34], [35, 9999]];
+  const counts = buckets.map(([lo, hi]) => rows.rows.filter(r => r.age >= lo && r.age <= hi).length);
+  const most = Math.max(1, ...counts);
+  const bars = `<div class="agebars">${counts.map((n, i) =>
+    `<span class="agebar ${i >= 2 ? 'hot' : ''}" style="height:${n ? Math.max(8, (n / most) * 88) : 2}px"
+      title="${['0 to 9 days', '10 to 20 days', '21 to 34 days', '35 days and over'][i]}: ${n}"></span>`).join('')}</div>`;
+
+  return desk(sess, '/office', 'Stuck money', '', `
+<div class="mhead"><div class="hstrip">
+<div class="g"><h1 class="pgt">Stuck money</h1>
+<p class="s" style="margin-top:2px">Across ${rows.rows.length} villas. The oldest has been sitting
+for ${oldest} days. Grouped by who is holding it up, not by stage.</p>
+${bars}</div>
+<div class="kpi"><span class="kpin hot">${M.crore(stuck)}</span><span class="k">stuck</span></div>
+<div class="kpi"><span class="kpin">${rows.rows.length}</span><span class="k">files</span></div>
+</div></div>
+<div class="mbody anim">${body}</div>`);
+}
+
+/* --------------------------------------------- head office: record a sanction
+   v21's "Sanction not recorded" tab. The builder collects no papers and talks
+   to no bank. The buyer arranges the loan himself and brings the letter in;
+   this is where it is written down, and nothing is disbursed until it is. */
+async function sanctionScreen(sess, flash) {
+  /* Days waiting comes from the blocker, which is the same "how long has this
+     been sitting" figure the rest of the office already trusts. There is no
+     booking date in this schema, so the column is labelled for what it is. */
+  const rows = await asUser(sess, c => c.query(
+    `SELECT u.id, u.code, u.buyer_name, u.bank, u.agreement_value_paise,
+            (SELECT max(CURRENT_DATE - b.since)
+               FROM blockers b JOIN unit_stages s2 ON s2.id = b.unit_stage_id
+              WHERE s2.unit_id = u.id) age
+       FROM units u
+      WHERE u.bank IS NOT NULL AND u.sanction_recorded_at IS NULL
+      ORDER BY u.code`)).then(r => r.rows);
+
+  const list = rows.map(x => `<div class="wrow">
+<span class="id">${esc(x.code)}</span>
+<span class="mid"><p class="rt">${esc(x.buyer_name)}</p>
+<p class="s">${esc(x.bank)} &middot; agreement ${M.money(x.agreement_value_paise)}</p></span>
+<span class="stc"><i class="chip ${x.age > 10 ? 'late' : 'wait'}">no sanction</i></span>
+<span class="days"><b class="${x.age > 10 ? 'h' : ''}">${x.age == null ? '—' : x.age}</b>d</span>
+<span class="amt n">${M.money(x.agreement_value_paise)}</span>
+</div>
+<form method="post" action="/office/sanction" class="uprow"
+  style="display:flex;gap:10px;align-items:center;padding:10px 26px 16px;border-bottom:1px solid var(--hair)">
+<input type="hidden" name="unit" value="${esc(x.id)}">
+<input class="fi n" name="sanction" inputmode="numeric" required
+  placeholder="Sanctioned amount, in rupees" style="margin:0;flex:1;min-width:0;padding:7px 10px">
+<input class="fi n" name="own" inputmode="numeric" required
+  placeholder="Own contribution, in rupees" style="margin:0;flex:1;min-width:0;padding:7px 10px">
+<input class="fi" name="letter" required maxlength="60"
+  placeholder="Sanction letter reference" style="margin:0;flex:1;min-width:0;padding:7px 10px">
+<button class="wbtn solid st" type="submit" style="flex:0 0 150px">Record sanction</button>
+</form>`).join('');
+
+  return desk(sess, '/office/sanctions', 'Sanction not recorded', '', `
+<div class="mhead"><div class="hstrip">
+<div class="g"><h1 class="pgt">Sanction not recorded</h1>
+<p class="s" style="margin-top:2px">Buyers with no sanction letter on file yet. Nothing can be
+disbursed against a stage until this is marked.</p></div>
+<div class="kpi"><span class="kpin">${rows.length}</span><span class="k">files</span></div>
+</div></div>
+<div class="mbody anim">
+${flash ? `<div class="tools"><span class="rescount s">${esc(flash)}</span><div class="g"></div></div>` : ''}
+<div class="tools"><span class="rescount s">${rows.length} buyer${rows.length === 1 ? '' : 's'}
+without a recorded sanction</span><div class="g"></div></div>
+<div class="wl">
+${rows.length ? `<div class="whead"><span class="id">Villa</span><span class="mid">Buyer and lender</span>
+<span class="stc">Status</span><span class="days">Waiting</span><span class="amt">Agreement</span></div>` : ''}
+${list || '<div class="emptyrow"><p class="b ink">Every buyer with a lender has a sanction on file.</p></div>'}
+</div>
+<p class="b note">Plint does not collect loan papers and does not talk to any bank. The buyer
+arranges his loan himself. When he brings the sanction letter to the office, it is recorded here,
+and only then can a verified stage release money against it. Amounts are entered in rupees.</p>
+</div>`);
 }
 
 // ------------------------------------------------------------------ documents
@@ -478,6 +695,42 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (p === '/office' && sess.role === 'office') return html(200, await officeScreen(sess));
+
+    if (p === '/office/sanctions' && sess.role === 'office')
+      return html(200, await sanctionScreen(sess, url.searchParams.get('m')));
+
+    if (p === '/office/sanction' && req.method === 'POST' && sess.role === 'office') {
+      const f = form(await body(req));
+      const back = m => { res.writeHead(302, { location: '/office/sanctions?m=' + encodeURIComponent(m) }); res.end(); };
+
+      // Entered in rupees at the desk, stored in paise like everything else.
+      const paise = v => {
+        const n = Number(String(v || '').replace(/[,\s₹]/g, ''));
+        return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : null;
+      };
+      const sanction = paise(f.sanction), own = paise(f.own);
+      const letter = (f.letter || '').trim().slice(0, 60);
+      if (sanction === null || own === null || !letter || !f.unit) {
+        return back('A sanctioned amount, an own contribution and a letter reference are all required.');
+      }
+      try {
+        const ok = await asUser(sess, c => c.query(
+          'SELECT record_sanction($1,$2,$3,$4) ok', [f.unit, sanction, own, letter]))
+          .then(r => r.rows[0].ok);
+        return back(ok
+          ? 'Sanction recorded. Stage disbursements are now live for this buyer.'
+          : 'That villa already has a sanction on file, or is not a villa.');
+      } catch (e) {
+        LOG.warn('sanction.refused', { id: reqId, unit: f.unit, err: e.message });
+        return back('That sanction could not be recorded.');
+      }
+    }
+
+    if (p === '/documents' && sess.role === 'buyer') {
+      const out = await documentsScreen(sess);
+      return out ? html(200, out) : html(404, page('Not found', sess,
+        '<div class="gap l"></div><div class="blk"><h1 class="h1">Not found.</h1></div>'));
+    }
 
     // Evidence photographs. Authorised by row-level security and nothing else:
     // the row is fetched as the asking session, and the disk is touched only if

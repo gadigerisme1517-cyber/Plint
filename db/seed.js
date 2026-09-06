@@ -113,6 +113,13 @@ async function main() {
     }
   }
 
+  /* Which buyers have brought the sanction letter in. Drawn from its own
+     generator on purpose: taking it from `r` would consume one more number per
+     villa and shift every bank, channel partner and pack state that follows,
+     silently rewriting the whole seeded project to add one field. */
+  const rsanc = lcg(97);
+  for (const v of villas) v.sanctioned = rsanc() > .3;
+
   const rs = lcg(37);
   for (const v of villas) {
     const isB14 = v.code === 'B-14';
@@ -123,8 +130,29 @@ async function main() {
       [id, PROJECT, v.code, buyerId, isB14 ? 'Arjun Nair' : v.code === 'A-07' ? 'M. Sharma' : v.buyer,
        isB14 ? '4 BHK, 3,640 sq ft, lake facing' : '3 BHK, 2,100 sq ft',
        agvFor(v.code), v.bank,
-       v.bank ? (v.code === 'A-07' ? SANCTION_A07 : SANCTION) : null,
+       null,                          // sanction is recorded below, or not at all
        v.cp, 'Suresh Kumar', 'Deepa R.']);
+
+    /* The sanction, for the villas where one has been recorded.
+       v21's office carries a "Sanction not recorded" list, so the seed has to
+       produce both kinds: a villa with a lender and a recorded sanction, and a
+       villa with a lender whose buyer has not brought the letter in yet.
+       A villa with no lender is self funded and has nothing to record. */
+    if (v.bank && v.sanctioned) {
+      const sanction = v.code === 'A-07' ? SANCTION_A07 : SANCTION;
+      /* Own contribution is STORED, not a percentage. Seeded as the agreement
+         value less the sanction, which is what v21's sanction sheet says it
+         is, but from here on it is whatever the office typed off the letter. */
+      const own = agvFor(v.code) - sanction;
+      await c.query(
+        `UPDATE units SET sanction_paise=$2, own_contribution_paise=$3,
+                          sanction_letter_ref=$4, sanction_recorded_at=$5,
+                          sanction_recorded_by='u-office'
+          WHERE id=$1`,
+        [id, sanction, own,
+         'SL/' + (v.bank.split(' ')[0].toUpperCase()) + '/2026/' + v.code.replace('-', ''),
+         new Date(Date.UTC(2026, 0, 18, 6, 0))]);
+    }
 
     // Priced once per villa, from that villa's own agreement value.
     const priced = pricedFor(v.code);

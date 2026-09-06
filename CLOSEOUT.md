@@ -7,7 +7,7 @@ engineer certified it, and that a demand for money followed from that
 certificate. Its value is the evidence trail, not the screens.
 
 `npm test` builds a scratch database, migrates it, seeds it, runs every suite,
-and drops it. **137 assertions across twelve suites, green from nothing.**
+and drops it. **148 assertions across thirteen suites, green from nothing.**
 
 Every one of them has been checked by mutation — break the behaviour, confirm a
 test fails. `npm run audit`: 36 mutations, 34 killed, 2 demonstrated
@@ -292,6 +292,7 @@ explanation is information and a deleted one is not.
 | `ledger` | 16 | demands immutable; the audit row written by the database |
 | `evidence` | 12 | photographs stored, thumbnailed, buyer-only |
 | `pack` | 6 | delivery recorded, and the copy about it is true |
+| `loan` | 11 | the papers list is read-only; a sanction is recorded once |
 | `reconcile` | 8 | stored demands, screens and the layer agree, to the paise |
 | `config` | 7 | no credential defaults; the TLS option shapes |
 | `tls` | 7 | the server refuses unencrypted connections |
@@ -336,9 +337,13 @@ Both sides now refuse to race, via `var/.mutation-audit.lock`.
   times and look correct.
 - **The seed connects as a superuser** because seeding must write past the RLS
   every other path obeys. The server has no path to those credentials.
-- **`public/plint.css` is lines 14–609 of `plint-v15.html`, unchanged.** The
-  design is locked. Match its class names and markup. Red appears only on the
-  stuck-money KPI, ageing dots past 21 days, and the buyer's amount due.
+- **`public/plint.css` is lines 14–628 of `plint-v21.html`, unchanged.** v21
+  supersedes v15: brand #635BFF, Instrument Sans, light ground. The design is
+  locked. Match its class names and markup. Note the range: v21's style block
+  closes at 629, not 610 as v15's did, so the v15 line numbers truncate it.
+- **The screens and the PDFs use different faces on purpose.** Instrument Sans
+  has no rupee sign, verified against the full upstream face, so the documents
+  stay on Inter.
 - **The engineer worklist collapses to phone width below 900px.** That is the
   prototype's own media query, not a bug.
 - **`npm test` needs PostgreSQL running.** On the machine this was built on it

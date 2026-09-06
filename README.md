@@ -54,6 +54,7 @@ untouched.
 | `ledger` | 16 | demands immutable; the audit row is written by the database |
 | `evidence` | 12 | photographs stored, thumbnailed, readable only by their buyer |
 | `pack` | 6 | delivery is recorded, and the copy about it is true |
+| `loan` | 11 | the papers list is read-only; a sanction is recorded once |
 | `reconcile` | 8 | stored demands, screens and the calculation layer agree |
 | `tls` | 7 | the server refuses unencrypted connections |
 | `restore` | 6 | a backup restores, and the restore is usable |
@@ -106,6 +107,10 @@ what relaxes database TLS.
 The development cluster is configured with `hostnossl ... reject`, so an
 unencrypted connection to it is refused by the server, not merely discouraged
 by the client. `test/tls.test.js` proves it.
+
+The screens use Instrument Sans, per plint-v21. The PDFs stay on Inter because
+Instrument Sans carries no U+20B9 and a demand letter has to print `₹`. That
+divergence is deliberate; see `DECISIONS.md`.
 
 `PLINT_POOL_MAX` (default 8) sizes the connection pool. `npm test` pins the
 isolation suite to one connection so an identity outliving its transaction
@@ -161,7 +166,7 @@ src/audit.js           reads the audit trail. Triggers write it, not this.
 src/log.js             structured logs, actor id on every request
 src/pdf.js             demand letter, completion certificate with thumbnails
 src/server.js          routes and the three screens
-public/plint.css       lines 14-609 of plint-v15.html, unchanged
+public/plint.css       lines 14-628 of plint-v21.html, unchanged
 assets/                Inter TTF, embedded in the documents
 var/evidence/          uploaded photographs and their thumbnails. Not in the repo.
 test/run.js            npm test: scratch database, all suites, drop
