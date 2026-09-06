@@ -188,6 +188,31 @@ test('the restored database carries the whole evidence trail', async () => {
       'SELECT coalesce(sum(total_paise),0)::bigint s FROM plint.demands').then(r => r.rows[0].s);
     assert.strictEqual(String(await sum(back)), String(await sum(live)),
       'the restored demands total the same to the paise');
+
+    /* The audit trail reconciles with what it describes. This is the check
+       that found the fault in the first place: a database can restore
+       perfectly and still be one where nobody signed anything. Now that the
+       rows are written by a trigger rather than by whoever remembered, these
+       must agree exactly, and on the restored copy as well as the live one. */
+    for (const [label, t] of [['live', live], ['restored', back]]) {
+      const r = (await t.query(`
+        SELECT (SELECT count(*) FROM plint.unit_stages WHERE certified_at IS NOT NULL) certified,
+               (SELECT count(*) FROM plint.audit_log WHERE action='certified')        audited,
+               (SELECT count(*) FROM plint.demands WHERE paid_at IS NOT NULL)         settled,
+               (SELECT count(*) FROM plint.audit_log WHERE action='demand_settled')   settle_audited
+      `)).rows[0];
+      assert.strictEqual(r.audited, r.certified,
+        `${label}: ${r.certified} certified stages but ${r.audited} audit rows`);
+      assert.strictEqual(r.settle_audited, r.settled,
+        `${label}: ${r.settled} settled demands but ${r.settle_audited} audit rows`);
+      assert.ok(Number(r.certified) > 200, `${label}: and there is real history to reconcile`);
+    }
+
+    // Every certification is attributable to somebody who exists.
+    const orphan = await back.query(`
+      SELECT count(*)::int n FROM plint.audit_log a
+       WHERE NOT EXISTS (SELECT 1 FROM plint.users u WHERE u.id = a.actor_id)`);
+    assert.strictEqual(orphan.rows[0].n, 0, 'no audit row names an actor who does not exist');
   } finally { await live.end(); await back.end(); }
 });
 

@@ -1,27 +1,21 @@
 'use strict';
 /* ============================================================================
-   The audit trail.
+   The audit trail: reading it.
 
-   One row per act, written inside the same transaction as the act itself, so
-   an act cannot land without its record and a record cannot survive an act
-   that rolled back.
+   Nothing in this module writes. The rows are written by triggers in
+   db/migrations/008, from the certified_* columns of the stage itself and from
+   the demand's own figures, deferred to COMMIT.
 
-   The figures are copied in as at that moment. A later correction in
-   src/money.js changes what the next demand will say; it does not change what
-   this one said when it was signed.
+   That is deliberate and it is the whole point. An application-level writer is
+   a convention: correct while every writer remembers. This one was not
+   remembered - the seed fabricated 269 certified stages and wrote no audit row
+   for any of them, and a restore drill found it rather than a test. A
+   certification that leaves no record is now impossible regardless of who does
+   the writing.
+
+   If you find yourself wanting to INSERT into audit_log from here, the
+   question to answer first is why the database cannot derive the row itself.
    ========================================================================= */
-
-/**
- * @param c   the client inside the open transaction, not the pool
- * @param sess the acting session; the database checks actor_id against the
- *             transaction identity, so a row cannot be attributed elsewhere
- */
-function write(c, sess, { action, targetKind, targetId, figures = {} }) {
-  return c.query(
-    `INSERT INTO audit_log (actor_id, actor_role, action, target_kind, target_id, figures)
-     VALUES ($1,$2,$3,$4,$5,$6)`,
-    [sess.id, sess.role, action, targetKind, targetId, JSON.stringify(figures)]);
-}
 
 /** Everything recorded about one thing, newest first. Staff only, by policy. */
 function of(c, targetKind, targetId) {
@@ -30,4 +24,4 @@ function of(c, targetKind, targetId) {
     [targetKind, targetId]).then(r => r.rows);
 }
 
-module.exports = { write, of };
+module.exports = { of };

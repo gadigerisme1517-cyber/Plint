@@ -646,3 +646,109 @@ ceiling.
 - `PLINT_POOL_MAX`, default 8, so a test can pin the pool to one connection.
 - `npm run audit` and `npm run backup`.
 - `test/run.js` takes per-suite environment overrides.
+
+---
+
+# Sixth pass: the audit row becomes structural
+
+The previous pass fixed the wrong thing. A restore drill found 269 certified
+stages with no audit rows, and the fix was to make the seed write them — which
+left two writers of the same record and preserved the arrangement that caused
+the fault. The record was a convention, correct only while every writer
+remembered, and a writer had already forgotten.
+
+It is now the database's job.
+
+## Which transition actually fires it
+
+**There is no `status = 'certified'` to hook.** The enum carries the value and
+no code path sets it: `certify()` moves a stage from `marked` straight to
+`demanded` in one statement, and the seed inserts `demanded` and `paid` rows
+directly. All 269 certified stages in the seeded database are `demanded` or
+`paid`; none is `certified`.
+
+A trigger on the status value would have fired zero times and looked correct.
+What actually marks a certification is `certified_by`, `certified_at` and
+`certificate_hash` going from null to not-null, so that is the condition.
+
+## Why the trigger is deferred
+
+`certify()` updates the stage first and inserts the demand second. An immediate
+`AFTER` trigger would run before the demand existed and record a certification
+with no figures. A `CONSTRAINT TRIGGER ... DEFERRABLE INITIALLY DEFERRED` fires
+at COMMIT, by which time everything the row refers to is in place, **whatever
+order the writer chose**. That is the property that makes it work for writers
+nobody has written yet.
+
+It also means the seed had to become one transaction. In autocommit each
+statement is its own transaction, so a deferred trigger would have fired
+immediately after each `unit_stages` insert, before the demand. The seed now
+wraps in `BEGIN`/`COMMIT`, which it should have done anyway.
+
+## Exactly one writer
+
+- The route handler's `AUDIT.write` call is gone, and with it the import.
+- The seed's hand-written audit rows are gone.
+- `src/audit.js` no longer exports `write`. It reads and nothing else, and says
+  in its header why.
+- `demand_settle()` no longer writes its own row either: a settlement trigger
+  on `demands` does it, for the same reason. The seed was bypassing
+  `demand_settle()` entirely to fabricate 221 historical payments, so that
+  function being a choke point was worth nothing.
+
+Both triggers are `SECURITY DEFINER`, so the record is written whatever the
+writer's privileges. The `au_write` policy stays as defence for direct inserts,
+which is what `an actor cannot write an audit row in another name` still tests.
+
+## Attribution
+
+- A certification is attributed to **the row's own `certified_by`**, not to
+  whoever is connected. Head office backfilling a certificate the engineer
+  signed on site produces a row naming the engineer. That distinction was
+  invisible to every test until one was written for it: in all the others the
+  connected user and the signer were the same person, and a mutation
+  substituting the connected identity survived. Now covered.
+- A settlement has no `settled_by` column to read, so it is attributed to the
+  transaction identity, and **the absence of one is an error**. Money moving
+  must name who moved it; a row attributed to nobody is worse than a refusal.
+  This is why the seed sets an identity: it is head office writing the
+  project's history, and it says so.
+
+## Two further constraints that came with it
+
+- A `CHECK` that the three certification columns are all null or all not-null.
+  A `certified_at` with no `certified_by` is a signature nobody signed.
+- A certification cannot be altered or withdrawn once signed. Without it the
+  audit row could be made to describe something the row no longer says.
+
+## What now proves it
+
+- `ledger.test.js` certifies by raw SQL as the application role, and again as
+  the owning role the way a psql prompt would, and requires exactly one audit
+  row each time. Neither goes near the route handler.
+- The seed reconciles its own work at the end and throws if the counts
+  disagree: 269 demands to 269 `certified` rows, 221 settled to 221
+  `demand_settled` rows.
+- `restore.test.js` and `scripts/restore.sh` both assert the reconciliation, on
+  the restored copy as well as the live one, plus that no audit row names an
+  actor who does not exist.
+- Six new mutations on the trigger itself, including the fault that actually
+  shipped — a writer that certifies and leaves no record. All killed. One
+  survivor (attribution) was a real gap and is closed.
+
+One of those mutations, removing `INSERT` from the trigger's event list, was
+caught by the **seed's own reconciliation** rather than by a suite. That is the
+intended behaviour: a seed that cannot produce a consistent database should
+refuse to finish rather than hand one over.
+
+## A process failure worth recording
+
+The first full run after this change reported `config.test.js` failing. It was
+not a code fault: a mutation audit had been left running in the background, and
+it edits source files in place, so the test run read a deliberately broken
+`src/config.js`. Diagnosing it cost a round trip.
+
+Both sides now refuse to race. The audit takes `var/.mutation-audit.lock` and
+drops it on exit or interrupt; `npm test` refuses to start while it is held and
+says why. A tool that breaks source on purpose has to announce itself, or every
+failure it causes looks like a real one.

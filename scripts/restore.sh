@@ -78,6 +78,19 @@ check "demands"             "SELECT count(*) FROM plint.demands" ">0"
 check "audit rows"          "SELECT count(*) FROM plint.audit_log" ">0"
 check "row security on"     "SELECT count(*) FROM pg_tables WHERE schemaname='plint' AND rowsecurity" ">0"
 
+# The audit trail must account for every certification and every settlement.
+# A database can restore perfectly and still be one where nobody signed
+# anything; that is what this catches, and it is how the fault was found.
+check "every certification audited" \
+  "SELECT (SELECT count(*) FROM plint.unit_stages WHERE certified_at IS NOT NULL)
+        - (SELECT count(*) FROM plint.audit_log WHERE action='certified')" "0"
+check "every settlement audited" \
+  "SELECT (SELECT count(*) FROM plint.demands WHERE paid_at IS NOT NULL)
+        - (SELECT count(*) FROM plint.audit_log WHERE action='demand_settled')" "0"
+check "no audit row names a stranger" \
+  "SELECT count(*) FROM plint.audit_log a
+    WHERE NOT EXISTS (SELECT 1 FROM plint.users u WHERE u.id = a.actor_id)" "0"
+
 # The check that matters most: every evidence row that claims a stored file
 # must have that file on disk. A database restored without its photographs
 # cannot reproduce a completion certificate, and would pass every check above.

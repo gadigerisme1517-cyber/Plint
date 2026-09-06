@@ -157,6 +157,119 @@ test('certifying a stage writes exactly one audit row', async () => {
   assert.ok(row.figures.certificate_hash, 'and the certificate hash it signed');
 });
 
+/** A stage that is marked on site and has not been certified by anything yet. */
+const uncertified = () => asUser(ENG, c => c.query(
+  `SELECT s.id FROM unit_stages s
+    WHERE s.certified_at IS NULL AND s.status = 'marked'
+      AND NOT EXISTS (SELECT 1 FROM audit_log a
+                       WHERE a.target_kind='unit_stage' AND a.target_id = s.id)
+    ORDER BY s.id LIMIT 1`)).then(r => r.rows[0]);
+
+test('a certification by raw SQL writes the audit row too, not just the route', async () => {
+  // The route handler no longer writes it. If this passes, the record does not
+  // depend on going through the application at all.
+  const s = await uncertified();
+  assert.ok(s, 'a stage to certify');
+
+  await asUser(ENG, c => c.query(
+    `UPDATE unit_stages
+        SET status='demanded', certified_by=$2, certified_at=now(), certificate_hash=$3
+      WHERE id=$1`, [s.id, ENG.id, 'a'.repeat(64)]));
+
+  const rows = await asUser(ENG, c => AUDIT.of(c, 'unit_stage', s.id));
+  assert.strictEqual(rows.length, 1, 'exactly one row, written by the database');
+  assert.strictEqual(rows[0].action, 'certified');
+  assert.strictEqual(rows[0].actor_id, ENG.id, 'attributed from the row certified_by');
+  assert.strictEqual(rows[0].actor_role, 'engineer');
+  assert.strictEqual(rows[0].figures.certificate_hash, 'a'.repeat(64));
+  assert.ok(rows[0].figures.unit, 'and carries the villa it belongs to');
+});
+
+test('a certification by the owning role, as a psql prompt would, writes it as well', async () => {
+  const s = await uncertified();
+  assert.ok(s, 'another stage to certify');
+
+  const admin = new Client(config.adminDb());
+  await admin.connect();
+  try {
+    await admin.query(
+      `UPDATE plint.unit_stages
+          SET status='demanded', certified_by='u-eng-ram', certified_at=now(),
+              certificate_hash=$2
+        WHERE id=$1`, [s.id, 'b'.repeat(64)]);
+  } finally { await admin.end(); }
+
+  const rows = await asUser(ENG, c => AUDIT.of(c, 'unit_stage', s.id));
+  assert.strictEqual(rows.length, 1,
+    'a superuser at a prompt cannot certify without leaving the record either');
+  assert.strictEqual(rows[0].actor_id, 'u-eng-ram');
+});
+
+test('the audit row names the engineer who signed, not the clerk who typed it', async () => {
+  /* Head office backfilling a certificate the engineer signed on site. In
+     every other test the connected user and the signer are the same person,
+     so attribution cannot be told apart; this is the case where they differ.
+     The record must name S. Ramachandran, who signed, not Priya Menon, who
+     entered it. */
+  const s = await uncertified();
+  assert.ok(s, 'a stage to certify');
+
+  await asUser(OFFICE, c => c.query(
+    `UPDATE unit_stages
+        SET status='demanded', certified_by='u-eng-ram', certified_at=now(),
+            certificate_hash=$2
+      WHERE id=$1`, [s.id, 'c'.repeat(64)]));
+
+  const rows = await asUser(OFFICE, c => AUDIT.of(c, 'unit_stage', s.id));
+  assert.strictEqual(rows.length, 1);
+  assert.strictEqual(rows[0].actor_id, 'u-eng-ram',
+    'attributed from the row certified_by, not from who was connected');
+  assert.notStrictEqual(rows[0].actor_id, OFFICE.id);
+  assert.strictEqual(rows[0].actor_role, 'engineer',
+    'and the role is the signer role, looked up from the signer');
+});
+
+test('a certification cannot be altered or withdrawn once signed', async () => {
+  const s = (await asUser(ENG, c => c.query(
+    `SELECT id FROM unit_stages WHERE certified_at IS NOT NULL ORDER BY id LIMIT 1`))).rows[0];
+
+  await assert.rejects(
+    () => asUser(ENG, c => c.query(
+      `UPDATE unit_stages SET certified_by='u-office' WHERE id=$1`, [s.id])),
+    /cannot be altered or withdrawn/);
+
+  await assert.rejects(
+    () => asUser(ENG, c => c.query(
+      `UPDATE unit_stages SET certified_at=NULL, certified_by=NULL, certificate_hash=NULL
+        WHERE id=$1`, [s.id])),
+    /cannot be altered or withdrawn/);
+});
+
+test('half a certification is refused', async () => {
+  const s = await uncertified();
+  assert.ok(s);
+  await assert.rejects(
+    () => asUser(ENG, c => c.query(
+      `UPDATE unit_stages SET certified_at=now() WHERE id=$1`, [s.id])),
+    /certification_complete/,
+    'a signature date with nobody signing it is not a certification');
+});
+
+test('a demand cannot be settled by someone the database cannot name', async () => {
+  // The owning role at a prompt has no plint identity, so the settlement
+  // trigger has nobody to attribute the row to and refuses the write.
+  const d = (await asUser(OFFICE, c =>
+    c.query('SELECT id FROM demands WHERE paid_at IS NULL ORDER BY id LIMIT 1'))).rows[0];
+
+  const admin = new Client(config.adminDb());
+  await admin.connect();
+  try {
+    await assert.rejects(
+      () => admin.query('UPDATE plint.demands SET paid_at = now() WHERE id=$1', [d.id]),
+      /without an identified actor/);
+  } finally { await admin.end(); }
+});
+
 test('the application role cannot amend or remove an audit row', async () => {
   const row = (await asUser(ENG, c =>
     c.query('SELECT id FROM audit_log ORDER BY id LIMIT 1'))).rows[0];

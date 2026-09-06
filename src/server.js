@@ -9,7 +9,6 @@ const PDF = require('./pdf');
 
 const S = require('./session');
 const config = require('./config');
-const AUDIT = require('./audit');
 const EV = require('./evidence');
 const MP = require('./multipart');
 const LOG = require('./log');
@@ -257,23 +256,12 @@ async function certify(sess, stageId) {
       [demandId, stageId, docNo,
        price.raisedAt, price.dueAt, price.basePaise, price.gstPaise, price.extrasPaise, price.totalPaise]);
 
-    // One row for the act, inside the same transaction. Certification is the
-    // only place a demand is created, so the demand's figures are recorded
-    // here, as at the moment the engineer signed for them.
-    await AUDIT.write(c, sess, {
-      action: 'certified',
-      targetKind: 'unit_stage',
-      targetId: stageId,
-      figures: {
-        unit: s.code, stage: s.stage_code, stage_name: s.name,
-        pct_bp: s.pct_bp, agreement_value_paise: Number(s.agreement_value_paise),
-        demand_id: demandId, doc_no: docNo,
-        base_paise: price.basePaise, gst_paise: price.gstPaise,
-        extras_paise: price.extrasPaise, total_paise: price.totalPaise,
-        raised_at: price.raisedAt, due_at: price.dueAt,
-        photographs: shots, certificate_hash: hash,
-      },
-    });
+    /* No audit write here. A trigger on unit_stages writes it, from the
+       row's own certified_by, certified_at and certificate_hash plus the
+       demand figures, deferred to COMMIT so this handler's ordering does not
+       matter. There is exactly one writer and it is the database, so a
+       certification cannot leave no record however it was performed. */
+
     const bank = (await c.query('SELECT bank FROM units WHERE id=$1', [s.unit_id])).rows[0].bank;
 
     // The evidence pack, recorded rather than asserted. Nothing sends it yet,

@@ -61,6 +61,17 @@ async function main() {
   await c.connect();
   await c.query('SET search_path = plint, public');
 
+  /* One transaction for the whole seed. The audit triggers are deferred to
+     COMMIT so that a stage certified before its demand is written still
+     records the demand's figures; in autocommit each statement would be its
+     own transaction and the trigger would fire before the demand existed.
+
+     And an identity, because settling a demand has to name who settled it.
+     The seed is head office writing the project's history. */
+  await c.query('BEGIN');
+  await c.query(`SELECT set_config('plint.user_id','u-office',true),
+                        set_config('plint.role','office',true)`);
+
   await c.query(`INSERT INTO projects VALUES ($1,'NVT Eterna','Phase 1')`, [PROJECT]);
   for (let i = 0; i < MILES.length; i++) {
     const [code, name, bp, d] = MILES[i];
@@ -175,40 +186,11 @@ async function main() {
         raised, due, base, gst, base + gst, paidAt,
       ]);
 
-      /* The audit rows for that fabricated history.
-         These stages carry certified_by and certified_at, so the database is
-         asserting that S. Ramachandran signed them. Without a matching audit
-         row it would be asserting that while having no record of who signed or
-         what it said - which is the one question this table exists to answer.
-         A restore drill found this missing; the seed now writes the same rows
-         certification writes. */
-      await c.query(
-        `INSERT INTO audit_log (at, actor_id, actor_role, action, target_kind, target_id, figures)
-         VALUES ($1,$2,'engineer','certified','unit_stage',$3,$4)`,
-        [new Date(Date.UTC(2026, 2 + i, 18, 9, 0)), 'u-eng-ram',
-         'us-' + v.code + '-' + code,
-         JSON.stringify({
-           unit: v.code, stage: code, stage_name: MILES[i][1],
-           pct_bp: MILES[i][2], agreement_value_paise: agvFor(v.code),
-           demand_id: demandId, doc_no: docNo,
-           base_paise: base, gst_paise: gst, extras_paise: 0,
-           total_paise: base + gst,
-           raised_at: raised, due_at: due,
-           photographs: 2, certificate_hash: sha(v.code + code + 'cert'),
-           seeded: true,
-         })]);
-
-      if (paidAt) {
-        await c.query(
-          `INSERT INTO audit_log (at, actor_id, actor_role, action, target_kind, target_id, figures)
-           VALUES ($1,'u-office','office','demand_settled','demand',$2,$3)`,
-          [paidAt, demandId,
-           JSON.stringify({
-             doc_no: docNo, base_paise: base, gst_paise: gst, extras_paise: 0,
-             total_paise: base + gst, raised_at: raised, due_at: due,
-             reference: 'Seeded history', seeded: true,
-           })]);
-      }
+      /* No audit rows are written here. Triggers on unit_stages and demands
+         write them, from the rows' own columns, at COMMIT. The seed used to
+         write them by hand, which made it a second writer of the same record
+         and was exactly the arrangement that let 269 certified stages ship
+         with no audit trail at all. */
 
       /* And the pack record for that certification. Certification creates one;
          seeded history that skipped it left the table empty on a fresh
@@ -242,7 +224,23 @@ async function main() {
   }
 
   const n = await c.query('SELECT count(*) FROM units');
+  await c.query('COMMIT');
+
+  // Read back after COMMIT, so the count includes what the deferred triggers
+  // wrote. If these two ever disagree, the trigger is not firing for someone.
+  const a = await c.query(
+    `SELECT count(*) FILTER (WHERE action='certified')::int certified,
+            count(*) FILTER (WHERE action='demand_settled')::int settled
+       FROM audit_log`);
+  const d = await c.query(
+    `SELECT count(*)::int demands,
+            count(*) FILTER (WHERE paid_at IS NOT NULL)::int paid FROM demands`);
   console.log('seeded', n.rows[0].count, 'units');
+  console.log('  demands', d.rows[0].demands, '-> audit certified', a.rows[0].certified);
+  console.log('  settled', d.rows[0].paid, '-> audit settled  ', a.rows[0].settled);
+  if (a.rows[0].certified !== d.rows[0].demands || a.rows[0].settled !== d.rows[0].paid) {
+    throw new Error('the audit trail does not reconcile with what was seeded');
+  }
   await c.end();
 }
 main().catch(e => { console.error(e); process.exit(1); });

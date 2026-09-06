@@ -33,10 +33,14 @@ for every role including a superuser. The single permitted transition is
 `demand_settle()`, which takes its actor from the transaction identity rather
 than a parameter. Corrections are credit rows.
 
-**Append-only audit trail.** Insert-and-select grants only, plus triggers that
-raise on UPDATE and DELETE whoever asks. An actor can only write rows in their
-own name. Certification writes exactly one row carrying the figures as at the
-moment it was signed.
+**Append-only audit trail, written by the database.** Insert-and-select grants
+only, plus triggers that raise on UPDATE and DELETE whoever asks. The rows are
+written by deferred triggers on `unit_stages` and `demands`, not by any
+application code, so a certification that leaves no record is impossible
+regardless of the writer - route handler, seed, migration, or a psql prompt.
+A certification is attributed to the row's own `certified_by`, so head office
+backfilling a certificate names the engineer who signed it. A settlement with
+no identified actor is refused outright.
 
 **Sessions.** In the database, so a restart signs nobody out and a second
 instance authenticates cookies the first issued. The cookie carries a random
@@ -214,11 +218,16 @@ identical answers and a bug would be invisible on every screen. **If you
 class of rounding bug.** `reconcile.test.js` asserts A-07 is awkward and fails
 if it stops being.
 
-**7. Changing a rule changes only new demands.** Demands store what they were
+**7. You cannot certify without leaving a record, and should not try.** The
+audit row is written by a deferred trigger from the stage's own columns. Do not
+add an application-level insert alongside it: that was the original fault, and
+two writers of one record is how it went unnoticed for 269 rows.
+
+**8. Changing a rule changes only new demands.** Demands store what they were
 priced at. A rule change does not restate an issued demand, and must not: a
 demand is immutable and a correction is a credit row.
 
-**8. Run the mutation audit after touching the layer.**
+**9. Run the mutation audit after touching the layer.**
 `node scripts/mutation-audit.js money` breaks each money rule in turn and
 checks a test notices. If a mutation survives, the test you just wrote does not
 test what you think.
@@ -260,9 +269,19 @@ a change breaks one of its assertions, the change is wrong, not the test.
   `DROP SCHEMA`. The live schema is `db/migrations/`.
 - **Roles are not migrations.** A role is cluster-level and its password comes
   from the environment, so `db/bootstrap.js` creates it, not a migration.
-- **The seed writes audit rows and pack deliveries** for the history it
-  fabricates. It did not, until a restore drill found a database full of
-  certified stages that no audit row said anybody had signed.
+- **The seed writes no audit rows.** Triggers do, from the rows' own columns,
+  at COMMIT. An earlier pass had the seed write them by hand, which made two
+  writers of the same record and preserved the arrangement that let 269
+  certified stages ship with no audit trail. The seed does still write pack
+  deliveries.
+- **The seed runs in one transaction and sets a plint identity.** The audit
+  triggers are deferred to COMMIT, so autocommit would fire them before the
+  demand existed; and settling a demand has to name who settled it.
+- **`status = 'certified'` is never used.** A stage goes from `marked` to
+  `demanded` in one statement. What marks a certification is `certified_by`,
+  `certified_at` and `certificate_hash` going non-null, and that is what the
+  audit trigger watches. Anything keyed on the status value will fire zero
+  times and look correct.
 - **The seed connects as a superuser** because seeding must write past the RLS
   every other path obeys. The server has no path to those credentials.
 - **`public/plint.css` is lines 14–609 of `plint-v15.html`, unchanged.** The

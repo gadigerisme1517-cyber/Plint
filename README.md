@@ -51,7 +51,7 @@ untouched.
 | `isolation` | 24 | buyer isolation, at the database, as the real app role |
 | `smoke` | 14 | three logins end to end, both PDFs, the worklist |
 | `session` | 8 | sessions survive a restart; sign-out actually revokes |
-| `ledger` | 10 | demands immutable; the audit trail is append-only |
+| `ledger` | 16 | demands immutable; the audit row is written by the database |
 | `evidence` | 12 | photographs stored, thumbnailed, readable only by their buyer |
 | `pack` | 6 | delivery is recorded, and the copy about it is true |
 | `reconcile` | 8 | stored demands, screens and the calculation layer agree |
@@ -71,6 +71,10 @@ breaks one of its assertions, the change is wrong.
 
 Every test has been checked by mutation: break the behaviour, confirm a test
 fails. `npm run audit` runs it. Results are in `DECISIONS.md`.
+
+The audit edits source files in place while it runs, so it takes a lock and
+`npm test` refuses to start while that lock is held. Do not run the two at
+once; the results are meaningless and look like real failures.
 
 ## Backups
 
@@ -153,7 +157,7 @@ scripts/mutation-audit.js  break each behaviour, confirm a test notices
 docs/BACKUP.md         the backup and restore procedure
 CLOSEOUT.md            what is ready, what is not, what was inferred
 src/multipart.js       a small form-data reader, so uploads need no dependency
-src/audit.js           the append-only record of who signed what
+src/audit.js           reads the audit trail. Triggers write it, not this.
 src/log.js             structured logs, actor id on every request
 src/pdf.js             demand letter, completion certificate with thumbnails
 src/server.js          routes and the three screens

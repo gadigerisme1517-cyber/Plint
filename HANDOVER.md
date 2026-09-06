@@ -63,7 +63,7 @@ Every one of them has been checked by mutation: see DECISIONS.md and CLOSEOUT.md
     isolation   24   the boundary, unchanged from the sandbox
     smoke       14   three logins end to end, unchanged from the sandbox
     session      8   survives a restart of the server module
-    ledger      10   demands immutable, audit trail append-only
+    ledger      16   demands immutable, the audit row written by the database
     evidence    12   photographs stored, hashed, thumbnailed, buyer-only
     pack         6   delivery recorded, and the copy that says so is true
     reconcile    8   stored demands, screens and the layer agree, to the paise
@@ -95,7 +95,9 @@ Every one of them has been checked by mutation: see DECISIONS.md and CLOSEOUT.md
   document number or the dates for every role including a superuser. The one
   permitted transition is `demand_settle()`, which takes its actor from the
   transaction identity rather than a parameter. Corrections are `credits` rows.
-- **`audit_log` is append-only** the same way: insert-and-select grants, plus
+- **The audit row is written by the database**, by deferred triggers on
+  `unit_stages` and `demands`, so a certification that leaves no record is
+  impossible whoever does the writing. `audit_log` is append-only the same way: insert-and-select grants, plus
   triggers that raise on UPDATE and DELETE whoever is asking. An actor can only
   write rows in their own name. Certification writes exactly one row carrying
   the figures as at the moment it was signed.

@@ -15,6 +15,11 @@
 
    It edits source files in place and puts them back. It leaves the development
    database reseeded. Do not run it against anything you care about.
+
+   IT MUST NOT RUN ALONGSIDE `npm test`. While a mutation is applied the source
+   on disk is deliberately wrong, so a concurrent test run reads broken code and
+   reports a failure that has nothing to do with the change under test. It takes
+   a lock, and test/run.js refuses to start while that lock is held.
    ========================================================================= */
 const { spawnSync } = require('child_process');
 const fs = require('fs');
@@ -22,6 +27,25 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
 const R = f => path.join(ROOT, f);
+
+/* The lock. While it exists, source files on disk may be deliberately broken.
+   test/run.js checks for it and refuses to start. */
+const LOCK = path.join(ROOT, 'var', '.mutation-audit.lock');
+function takeLock() {
+  fs.mkdirSync(path.dirname(LOCK), { recursive: true });
+  try {
+    fs.writeFileSync(LOCK, String(process.pid), { flag: 'wx' });
+  } catch {
+    console.error('\nA mutation audit is already running (' + LOCK + ').');
+    console.error('If that is stale, delete it.\n');
+    process.exit(1);
+  }
+  const drop = () => { try { fs.rmSync(LOCK, { force: true }); } catch {} };
+  process.on('exit', drop);
+  for (const sig of ['SIGINT', 'SIGTERM']) {
+    process.on(sig, () => { drop(); process.exit(130); });
+  }
+}
 
 /* find/replace must match exactly once. `rebuild` means the mutation is in SQL
    that has already been applied, so the database has to be torn down and
@@ -135,10 +159,45 @@ const MUTATIONS = [
     suites: ['session.test.js'] },
 
   // ------------------------------------------------------ demands and audit
-  { tag: 'audit', what: 'certification stops writing its audit row',
-    file: 'src/server.js',
-    find: "    await AUDIT.write(c, sess, {\n      action: 'certified',",
-    to:   "    if (0) await AUDIT.write(c, sess, {\n      action: 'certified',",
+  /* The audit row is written by a trigger, not by the route handler, so the
+     mutations that matter are on the trigger. The first is the fault that
+     actually shipped: a writer that certifies without leaving a record. It
+     used to be possible because the route handler was the only writer and the
+     seed was not it. */
+  { tag: 'audit', what: 'certification stops writing its audit row at all',
+    file: 'db/migrations/008_certification_writes_its_own_audit_row.sql', rebuild: true,
+    find: '    IF NEW.certified_at IS NULL THEN RETURN NULL; END IF;',
+    to:   '    IF true THEN RETURN NULL; END IF;',
+    suites: ['ledger.test.js', 'restore.test.js'] },
+
+  { tag: 'audit', what: 'the trigger fires only for the route handler ordering, not on INSERT',
+    file: 'db/migrations/008_certification_writes_its_own_audit_row.sql', rebuild: true,
+    find: '  AFTER INSERT OR UPDATE ON unit_stages\n  DEFERRABLE INITIALLY DEFERRED',
+    to:   '  AFTER UPDATE ON unit_stages\n  DEFERRABLE INITIALLY DEFERRED',
+    suites: ['restore.test.js'] },
+
+  { tag: 'audit', what: 'the audit row is attributed to whoever is connected, not to the signer',
+    file: 'db/migrations/008_certification_writes_its_own_audit_row.sql', rebuild: true,
+    find: '      NEW.certified_by,\n      coalesce(v_role, \'engineer\'),',
+    to:   "      coalesce(nullif(plint.current_user_id(), ''), NEW.certified_by),\n      coalesce(v_role, 'engineer'),",
+    suites: ['ledger.test.js'] },
+
+  { tag: 'audit', what: 'a certification can be altered after it is signed',
+    file: 'db/migrations/008_certification_writes_its_own_audit_row.sql', rebuild: true,
+    find: "      RAISE EXCEPTION\n        'a certification cannot be altered or withdrawn once signed (stage %)', OLD.id;",
+    to:   '      NULL;',
+    suites: ['ledger.test.js'] },
+
+  { tag: 'audit', what: 'a settlement may be made by nobody in particular',
+    file: 'db/migrations/008_certification_writes_its_own_audit_row.sql', rebuild: true,
+    find: "      RAISE EXCEPTION\n        'a demand cannot be settled without an identified actor (demand %)', NEW.id;",
+    to:   "      v_actor := 'u-office';",
+    suites: ['ledger.test.js'] },
+
+  { tag: 'audit', what: 'half a certification is allowed',
+    file: 'db/migrations/008_certification_writes_its_own_audit_row.sql', rebuild: true,
+    find: 'ALTER TABLE unit_stages ADD CONSTRAINT unit_stages_certification_complete CHECK (',
+    to:   'ALTER TABLE unit_stages ADD CONSTRAINT unit_stages_certification_complete CHECK (true OR',
     suites: ['ledger.test.js'] },
 
   { tag: 'audit', what: 'the audit log becomes editable',

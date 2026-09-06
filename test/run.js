@@ -81,6 +81,18 @@ function step(label, args, extra = {}) {
 }
 
 (async () => {
+  /* The mutation audit deliberately breaks source files on disk while it runs.
+     A test run started alongside it reads that broken code and reports
+     failures that have nothing to do with the change under test - which is
+     exactly what happened once, and cost a confusing debugging round. */
+  const lock = path.join(__dirname, '..', 'var', '.mutation-audit.lock');
+  if (fs.existsSync(lock)) {
+    console.error('\nA mutation audit is running (' + lock + ').');
+    console.error('It edits source in place, so test results would be meaningless.');
+    console.error('Wait for it to finish, or delete the lock if it is stale.\n');
+    process.exit(1);
+  }
+
   let failed = [];
   await createScratch();
   try {
