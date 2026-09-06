@@ -27,6 +27,7 @@ const SUITES = [
   'ledger.test.js',
   'evidence.test.js',
   'pack.test.js',
+  'reconcile.test.js',   // seeded rows against the layer, before anything mutates more
   'ratelimit.test.js',   // last: it deliberately blocks a login key
 ];
 

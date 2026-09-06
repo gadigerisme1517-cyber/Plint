@@ -53,7 +53,14 @@ untouched.
 | `ledger` | 10 | demands immutable; the audit trail is append-only |
 | `evidence` | 12 | photographs stored, thumbnailed, readable only by their buyer |
 | `pack` | 6 | delivery is recorded, and the copy about it is true |
+| `reconcile` | 8 | stored demands, screens and the calculation layer agree |
 | `ratelimit` | 6 | repeated failed sign-ins block; a success clears the count |
+
+`reconcile.test.js` is the one that catches a stage priced outside its
+schedule. Villa A-07 is seeded on ₹2,98,76,543.21, which does not divide
+cleanly by the stage percentages, so residual allocation and per-stage
+rounding give different answers on its last stage. Every other villa is on a
+figure where they agree and a mistake would be invisible.
 
 `isolation.test.js` runs against the real database as the real application
 role. It was written and passing before the buyer screen existed. If a change

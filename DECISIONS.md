@@ -455,3 +455,61 @@ infer that from silence.
   the ten demands actually raised for a villa sum to its agreement value. The
   calculation layer guarantees it; a report proving it after the fact does not
   exist.
+
+## Fourth pass: proving the residual refactor was complete
+
+- **`sharp` pinned to exactly `0.35.4`**, not `^0.35.4`. It is a native
+  dependency shipping prebuilt binaries per platform, so a silent minor bump is
+  a silent change of native code underneath a document-generating path. A test
+  asserts both the pin and that `require.resolve('sharp')` sits inside this
+  repo's own `node_modules`, because it once did not: an `npm install` run from
+  the wrong directory put it in the parent, where it still resolved by
+  directory walking and would have vanished the moment the repo moved.
+
+- **Audited every call site that prices a stage.** Outside `src/money.js`
+  nothing calls `stageBase` or `gstOn` any more. Everything goes through
+  `M.schedule`, `M.ledger`, or `M.priceStage` with a schedule and an index.
+
+- **The silent fallback in `priceStage` is gone.** It used to accept a schedule
+  and an index *or* a bare percentage, choosing whichever was present. That
+  meant a schedule which failed to load would quietly fall back to pricing the
+  stage alone, which is wrong only on the last stage and only by a paise -
+  precisely the kind of wrong figure that looks right. Half a first form is now
+  an error: an index with no schedule throws, an out-of-range index throws, and
+  a schedule containing a hole throws.
+
+- **A guard that skipped what it was written to catch.** The schedule
+  validation was first written with `forEach`, which skips array holes. A hole
+  is exactly what a missing `seq` produces, since `schedules()` builds its
+  arrays by assigning at an index. The test caught it; the loop is now an index
+  loop. Worth recording because the guard looked correct and was not.
+
+- **Villa A-07 is now seeded on ₹2,98,76,543.21**, down from the flat
+  ₹3.2 Cr every villa shared, with a matching smaller sanction. It is a smaller
+  3 BHK, so a lower figure is realistic, but the reason is the awkwardness:
+  ₹3.2 Cr divides cleanly by all ten percentages, so residual allocation and
+  per-stage rounding produce identical numbers on every villa and a missed call
+  site would have been invisible on every screen. A-07 drifts by one paise
+  under per-stage rounding, so the seeded data itself now exercises the
+  residual. `isolation.test.js` still passes unchanged: it asserts villa
+  counts, not amounts.
+
+- **`reconcile.test.js` checks the seed against the layer, not just the layer
+  against itself.** Every stored demand in the database - all of them, not a
+  sample - is compared to what `M.schedule` prices for that villa and stage
+  index today. Then B-14's and A-07's buyer screens are fetched over HTTP and
+  every rendered stage amount and the paid-so-far figure are compared to the
+  same source. Then the demand letters are rendered. If the seed and the
+  screens ever diverge, that is where it surfaces.
+
+- Confirmed by that test: **the demand PDF cannot disagree with the ledger**,
+  because it prints stored figures and the stored figures equal what the layer
+  prices. The assertion is on the stored row rather than on text scraped out of
+  a compressed PDF stream, which would prove less and break more often.
+
+- **Recorded rather than fixed:** per-stage GST still differs from GST on the
+  whole by two paise on A-07. The test asserts that difference explicitly, so
+  it is a documented property with a number attached rather than something a
+  reader has to discover. The reasoning for leaving it stands: GST is computed
+  per invoice, and making one invoice absorb nine others' rounding is a claim
+  about tax law this codebase should not make without the brief.

@@ -40,7 +40,27 @@ function stageBase(agreementValuePaise, pctBp) {
  * the wrong one.
  */
 function stageBases(agreementValuePaise, orderedPctBps) {
+  // A malformed schedule must stop here rather than quietly price a stage on
+  // its own. A hole in this array - a missing seq, a project whose templates
+  // did not load - would otherwise become a wrong figure on a demand letter,
+  // and a wrong figure that looks right is the worst outcome available.
+  if (!Array.isArray(orderedPctBps) || orderedPctBps.length === 0) {
+    throw new TypeError('stageBases needs the whole schedule, in order');
+  }
+  // An index loop, not forEach: forEach skips holes, and a hole is precisely
+  // what a missing seq produces when a schedule is built by assigning into an
+  // array by index. Skipping it would let the hole through to be priced.
+  for (let i = 0; i < orderedPctBps.length; i++) {
+    const bp = orderedPctBps[i];
+    if (!Number.isInteger(bp) || bp <= 0) {
+      throw new TypeError(`stage ${i} of the schedule is not a positive basis point: ${bp}`);
+    }
+  }
   const agv = Number(agreementValuePaise);
+  if (!Number.isInteger(agv) || agv <= 0) {
+    throw new TypeError(`agreement value is not a positive integer of paise: ${agreementValuePaise}`);
+  }
+
   const out = [];
   let allocated = 0;
   for (let i = 0; i < orderedPctBps.length; i++) {
@@ -87,12 +107,30 @@ function addDays(date, n) {
 function priceStage({ agreementValuePaise, pctBp, scheduleBps, index,
                       extrasPaise = 0, raisedAt = new Date() }) {
   // Given the whole schedule, the stage is priced within it, so the last one
-  // carries the residual. Given a single percentage, it is priced alone. The
-  // first form is what certification uses; the second is for a stage
-  // considered on its own.
-  const base = Array.isArray(scheduleBps) && Number.isInteger(index)
-    ? stageBases(agreementValuePaise, scheduleBps)[index]
-    : stageBase(agreementValuePaise, pctBp);
+  // carries the residual. That is the form certification uses. Given a single
+  // percentage and no schedule, it is priced alone, which is correct only for
+  // a stage genuinely considered on its own.
+  //
+  // What must never happen is falling from the first form into the second
+  // because a schedule failed to load: that silently under- or over-prices the
+  // last stage of a villa. So a half-given first form is an error, not a
+  // fallback.
+  let base;
+  if (scheduleBps !== undefined || index !== undefined) {
+    if (!Array.isArray(scheduleBps)) {
+      throw new TypeError('priceStage was given an index but no schedule');
+    }
+    if (!Number.isInteger(index) || index < 0 || index >= scheduleBps.length) {
+      throw new RangeError(
+        `priceStage index ${index} is outside a schedule of ${scheduleBps.length}`);
+    }
+    base = stageBases(agreementValuePaise, scheduleBps)[index];
+  } else {
+    if (!Number.isInteger(pctBp) || pctBp <= 0) {
+      throw new TypeError('priceStage needs either a schedule and an index, or a pctBp');
+    }
+    base = stageBase(agreementValuePaise, pctBp);
+  }
   const gst = gstOn(base + extrasPaise);
   const total = base + extrasPaise + gst;
   const dueAt = addDays(raisedAt, DUE_DAYS);

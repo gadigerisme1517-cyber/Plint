@@ -55,7 +55,7 @@ machine this repo now lives on, not in the sandbox it was built in.
 
 `npm test` is green from nothing: it creates a scratch database, bootstraps,
 migrates, seeds, proves the migrator is a no-op on a populated database, runs
-all eight suites, and drops the database again. **101 assertions, all passing.**
+all nine suites, and drops the database again. **109 assertions, all passing.**
 
     money       21   the calculation layer, called directly
     isolation   24   the boundary, unchanged from the sandbox
@@ -64,6 +64,7 @@ all eight suites, and drops the database again. **101 assertions, all passing.**
     ledger      10   demands immutable, audit trail append-only
     evidence    12   photographs stored, hashed, thumbnailed, buyer-only
     pack         6   delivery recorded, and the copy that says so is true
+    reconcile    8   stored demands, screens and the layer agree, to the paise
     ratelimit    6   failed sign-ins block; a success clears the count
 
 ### Built
@@ -99,6 +100,13 @@ all eight suites, and drops the database again. **101 assertions, all passing.**
   nine, so no amount of rounding can drift. Nothing already billed moved: the
   seeded value divides cleanly and a test asserts the residual equals the
   figure that stage already had.
+- **Villa A-07 is seeded on a deliberately awkward agreement value**,
+  ₹2,98,76,543.21, which drifts by a paise under per-stage rounding. It exists
+  so that the residual is exercised by real seeded data rather than only by
+  unit tests, and so a call site that priced a stage alone would show up as a
+  demand disagreeing with the ledger. `reconcile.test.js` checks every stored
+  demand in the database against the calculation layer, and reads A-07's and
+  B-14's buyer screens to confirm the rendered figures match.
 - **Evidence photographs are real files**, content-addressed by the sha256 the
   schema already carried, verified by reading back off the disk after writing.
   JPEG and PNG by magic bytes, never by the declared type; 12 MB cap; the

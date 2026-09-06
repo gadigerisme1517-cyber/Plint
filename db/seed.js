@@ -8,8 +8,23 @@ const config = require('../src/config');
 const M = require('../src/money');
 
 const PROJECT = 'eterna-p1';
-const AGV = 3200000000;              // ₹3.2 Cr in paise
+const AGV = 3200000000;              // ₹3.2 Cr in paise, the 4 BHK
 const SANCTION = 2400000000;         // ₹2.4 Cr in paise
+
+/* A-07 is a smaller villa on a different agreement value, and a deliberately
+   awkward one: ₹2,98,76,543.21 does not divide cleanly by any of the stage
+   percentages.
+
+   That is the point. Every other villa is on a figure where all ten stages
+   round exactly, so per-stage rounding and residual allocation produce
+   identical numbers and a bug in either would be invisible on every screen.
+   This villa is the one where they differ, so the seeded data itself exercises
+   the residual and any call site that priced a stage on its own would show up
+   as a demand that disagrees with the ledger. */
+const AGV_A07 = 2987654321;
+const SANCTION_A07 = 2200000000;
+
+const agvFor = code => (code === 'A-07' ? AGV_A07 : AGV);
 
 const MILES = [
   ['book',  'Booking',                   1000, 'On agreement of sale'],
@@ -24,9 +39,11 @@ const MILES = [
   ['hand',  'Handover',                   700, 'Snag clearance and keys'],
 ];
 
-// Every villa in this project is on the same agreement value, so the priced
-// schedule is the same for all of them and is computed once.
-const priced = M.schedule(AGV, MILES.map(m => m[2]));
+// The schedule is priced per villa, because villas are not all on the same
+// agreement value. The last stage carries the residual, so this must be the
+// whole schedule at once and never a stage at a time.
+const BPS = MILES.map(m => m[2]);
+const pricedFor = code => M.schedule(agvFor(code), BPS);
 
 const BANKS = ['HDFC Ltd', 'SBI', 'ICICI Bank', 'LIC Housing', 'Axis Bank'];
 const CPS = ['Homzn Realty', 'Bricks & Beyond', 'Sarjapur Prop Co', 'Direct'];
@@ -94,7 +111,12 @@ async function main() {
       `INSERT INTO units VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
       [id, PROJECT, v.code, buyerId, isB14 ? 'Arjun Nair' : v.code === 'A-07' ? 'M. Sharma' : v.buyer,
        isB14 ? '4 BHK, 3,640 sq ft, lake facing' : '3 BHK, 2,100 sq ft',
-       AGV, v.bank, v.bank ? SANCTION : null, v.cp, 'Suresh Kumar', 'Deepa R.']);
+       agvFor(v.code), v.bank,
+       v.bank ? (v.code === 'A-07' ? SANCTION_A07 : SANCTION) : null,
+       v.cp, 'Suresh Kumar', 'Deepa R.']);
+
+    // Priced once per villa, from that villa's own agreement value.
+    const priced = pricedFor(v.code);
 
     const at = isB14 ? 6 : v.at;   // B-14 is at blockwork, per the prototype
     for (let i = 0; i < MILES.length; i++) {
