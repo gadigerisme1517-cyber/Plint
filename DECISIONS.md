@@ -964,3 +964,154 @@ one sanction tab, and this pass restyled those into v21's `.desk` / `.side` /
 `.wl` shell rather than building the other ten tabs. The instruction was to
 make the existing screens match v21's markup and class names, not to implement
 v21.
+
+---
+
+# Eighth pass: deployment
+
+## Vercel cannot run this, and the reason is not the process model
+
+The process model is the obvious objection - `src/server.js` is a raw
+`http.createServer` holding a connection pool, and Vercel runs request-scoped
+functions - but that one is fixable with an adapter.
+
+**The disk is not.** Evidence photographs are content-addressed files under
+`PLINT_EVIDENCE_DIR`, written by `src/evidence.js` and read back to build
+certificate thumbnails. Vercel's filesystem is read-only except `/tmp`, and
+`/tmp` does not survive between invocations. Every uploaded photograph would
+vanish, `restore.test.js`'s integrity check would find rows pointing at
+nothing, and completion certificates would print "photograph unavailable"
+where the evidence should be. That is the product failing, not a deployment
+detail.
+
+Transaction-scoped RLS identity would in fact survive a transaction-mode
+pooler, since `set_config(..., true)` and the statements that depend on it
+travel in one transaction on one connection. It is not the blocker. The disk is.
+
+## Railway, and the reason is superuser
+
+**The deciding test.** Every `SECURITY DEFINER` function in this schema -
+`login_lookup`, `session_open`, `session_lookup`, `login_attempt`,
+`demand_settle`, `record_sanction` - is owned by the role that owns the
+tables, and those tables carry `FORCE ROW LEVEL SECURITY`. `FORCE` means the
+owner is subject to the policies too. On this machine `plint_owner` is a
+superuser, which bypasses RLS and hides what happens when it is not.
+
+Built the case that managed Postgres actually gives you - a non-superuser
+database owner - and probed it directly:
+
+    building as: probe_owner | superuser: false
+    owner selecting users directly, FORCE on, no identity: 0 rows
+    login_lookup equivalent returned: 0 row(s) -> LOGIN WOULD FAIL
+
+**Nobody could sign in.** Not a degraded mode: `login_lookup` returns zero
+rows for every credential, because the definer is the non-superuser owner and
+`u_self` grants nothing without an identity, and there is no identity yet
+during login. This would have passed every local test and failed on the first
+click of the demo.
+
+Two more, found on the way and confirmed:
+
+- `db/bootstrap.js` runs `ALTER ROLE ... NOSUPERUSER NOBYPASSRLS`, and clearing
+  `SUPERUSER` requires superuser. `CREATEROLE` is not enough.
+- The migrations grant to the literal name `plint_app`, twenty references
+  across nine files, and forward-only migrations cannot be retroactively
+  parameterised. The runtime role has to carry that name.
+
+So the platform requirement is not "managed Postgres". It is **Postgres where
+we own the superuser**.
+
+| | long process | disk | superuser Postgres |
+|---|---|---|---|
+| Vercel | no | **no** | n/a |
+| Render | yes | yes, paid | **no** - you get a database owner |
+| Neon / Supabase | n/a | n/a | **no** - owner, not superuser |
+| Railway | yes | yes, volumes | **yes** - Postgres runs as a container you own |
+
+Railway. Its Postgres is a container in your project running as `postgres`,
+so the two-role model, `FORCE` RLS and the definer functions all work exactly
+as tested, with no change to the security model.
+
+**The alternative was to weaken the schema to suit the platform** - drop
+`FORCE` on `users` so a non-superuser owner can read past it. That is a real
+option and it is not obviously wrong, since `plint_app` is not the owner and
+is bound by RLS either way, making `FORCE` defence in depth rather than the
+boundary. It was rejected because a platform exists that does not require it,
+and relaxing an isolation control to fit a host is the wrong direction of
+travel. If Railway is ever swapped for Neon or Render, this is the change that
+has to be made, and it should be made deliberately.
+
+## What was built
+
+- **`Dockerfile`** - Node 22, `npm ci --omit=dev`, evidence directory at
+  `/data/evidence` for a mounted volume, runs as `node`, entrypoint
+  `scripts/deploy-start.js`. **Not built locally**: there is no Docker daemon
+  on this machine. Railway's build will be its first. `npm ci --omit=dev` and
+  a boot with production dependencies only were verified directly.
+- **`railway.json`** - Dockerfile builder, health check on `/health`, one
+  replica. One, because the service has a disk attached and the evidence store
+  is not shared.
+- **`scripts/deploy-start.js`** - bootstrap, migrate, seed if asked and if the
+  database is empty, **verify TLS**, then serve.
+- **`DATABASE_URL` support in `src/config.js`** - platforms hand you one
+  connection string and it is the **owning** role. It fills the admin half
+  only. `PGUSER`/`PGPASSWORD`, the runtime role that cannot bypass RLS, stay
+  separate and still have no default. Buyer isolation does not get to depend
+  on which variable a host happened to set.
+- **`start()` exported from `src/server.js`** so the entrypoint can migrate
+  first and then start the same server rather than reimplementing the block.
+- **A role-name guard in bootstrap.** `PGUSER` other than `plint_app` now
+  fails at boot, because the failure it prevents is silent: the role is
+  created, the server connects, and every query returns nothing, since the
+  grants and policies name a different role.
+
+## TLS is verified at boot, not assumed
+
+The entrypoint opens the runtime connection and reads `pg_stat_ssl`, the same
+check `tls.test.js` uses. If the link is not encrypted it refuses to serve.
+"Managed Postgres with TLS" is a claim about a running system, and a client
+asking for TLS is not the same as getting it. `PLINT_ALLOW_PLAINTEXT_DB=1`
+overrides it for a genuinely private link, deliberately, with a name that says
+what it is.
+
+Verified locally against the WSL cluster, which rejects plaintext:
+
+    ── database TLS
+      encrypted, TLSv1.3
+
+## What was verified locally, end to end
+
+Against a fresh database, with no `.env`, `DATABASE_URL` only, `NODE_ENV=
+production`, `PGSSLMODE=require`:
+
+- bootstrap created the database and role; migrate applied all nine; seed ran
+  and reconciled 269 demands to 269 audit rows, 221 settled to 221.
+- Run again on the populated database: nine migrations skipped, seed skipped
+  on 48 villas already present, still served. Idempotent.
+- TLS verified TLSv1.3.
+- All three logins work, and the cookie carries
+  `HttpOnly; Path=/; SameSite=Lax; Max-Age=43200; Secure` - `Secure` because
+  `NODE_ENV=production` and `PLINT_INSECURE_COOKIES` is unset, which is what
+  will be true behind Railway's HTTPS.
+
+## Two defects found by deploying rather than by reading
+
+- **The engineer's sidebar linked to office pages.** `desk()` had one fixed
+  nav, so a certifying engineer was offered "Stuck money" and "Sanction not
+  recorded", both of which 404 for him. The nav is built from the role now.
+  Only running it as each of the three roles showed this.
+- **My own patch failed silently.** The edit that added `.start()` to the
+  entrypoint never applied - the same backslash mangling this shell does to
+  quoted heredocs - and the script printed a success message it had not
+  earned, because I did not assert the replacement. The symptom was a
+  container that migrated, seeded, logged "serving" and exited 0 without ever
+  listening, which on a platform would have looked like a crash loop with no
+  error. Asserted patches, or the Edit tool, for anything containing an escape.
+
+## Not done, and why
+
+Nothing has been deployed. Creating a Railway project, provisioning Postgres
+and a volume, and attaching a payment method all need the account holder.
+`PLINT_SECRET`, the database URL and the runtime role password are set in the
+platform's own variable store and **no secret was written to the repository** -
+`.env` remains untracked and `.env.example` remains empty of values.

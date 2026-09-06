@@ -53,9 +53,27 @@ async function ensureAppRole() {
 const quoteIdent = s => '"' + String(s).replace(/"/g, '""') + '"';
 const quoteLiteral = s => "'" + String(s).replace(/'/g, "''") + "'";
 
+/* The migrations grant to the literal name `plint_app` - twenty references
+   across nine files, and migrations are forward-only history that cannot be
+   retroactively parameterised. So the runtime role has to carry that name.
+
+   Getting this wrong is quiet and nasty: the role is created, the server
+   connects, and then every query returns nothing because the grants and
+   policies were written for a role that is not this one. Fail at boot instead. */
+function assertRoleName(name) {
+  if (name !== 'plint_app') {
+    process.stderr.write(
+      `\nplint: PGUSER is "${name}", but the migrations grant to "plint_app".\n` +
+      '  The runtime role must be named plint_app, or it will connect\n' +
+      '  successfully and then see nothing at all.\n\n');
+    process.exit(1);
+  }
+}
+
 async function bootstrap() {
   config.adminDb();                                   // fails loudly if unset
   config.required('PGUSER', 'The runtime role name.');
+  assertRoleName(APP_ROLE);
   await ensureDatabase();
   await ensureAppRole();
 }

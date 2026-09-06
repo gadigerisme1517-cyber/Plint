@@ -48,10 +48,13 @@ ${sess ? `<span class="role" aria-pressed="true">${esc(sess.name)}</span>
 
 /** The office runs in v21's desktop shell, not the phone frame. */
 function desk(sess, tab, title, sub, main) {
-  const nav = [
-    ['', [['/office', 'Stuck money', null]]],
-    ['Buyer loans', [['/office/sanctions', 'Sanction not recorded', null]]],
-  ];
+  /* The sidebar is built from the role, not fixed. An engineer given the
+     office nav sees two links that 404 for him, which is a worse answer than
+     not offering them. */
+  const nav = sess.role === 'office'
+    ? [['', [['/office', 'Stuck money']]],
+       ['Buyer loans', [['/office/sanctions', 'Sanction not recorded']]]]
+    : [['', [['/engineer', 'Sign-off and evidence']]]];
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Plint</title>
 <meta name="theme-color" content="#0A2540">
@@ -833,12 +836,19 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-if (require.main === module) {
+/* Listening is a function so the deploy entrypoint can migrate first and then
+   start the same server, rather than reimplementing this block. */
+function start() {
   const port = config.port();
-  server.listen(port, () => LOG.info('listening', { port, url: 'http://localhost:' + port }));
+  server.listen(port, () => LOG.info('listening', { port }));
 
   // A crash that is not caught is still a crash, but it is a logged one.
   process.on('unhandledRejection', e => LOG.error('unhandledRejection', e));
   process.on('uncaughtException', e => { LOG.error('uncaughtException', e); process.exit(1); });
+  return server;
 }
+
+if (require.main === module) start();
+
 module.exports = server;
+module.exports.start = start;

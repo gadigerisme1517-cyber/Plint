@@ -21,6 +21,32 @@ const path = require('path');
 const envFile = process.env.PLINT_ENV_FILE || path.join(__dirname, '..', '.env');
 if (fs.existsSync(envFile)) process.loadEnvFile(envFile);
 
+/* Platforms hand you one connection string, and it is the OWNING role: on
+   Railway that is `postgres`, the superuser that created the database. It is
+   emphatically not the runtime role.
+
+   So DATABASE_URL fills in the admin half only. PGUSER and PGPASSWORD - the
+   role the server actually connects as, which cannot bypass RLS - stay
+   separate and still have no default. Buyer isolation is the whole product;
+   it does not get to depend on which environment variable a host happened to
+   set for us.
+
+   Anything set explicitly wins, so a deployment can override any single part. */
+if (process.env.DATABASE_URL && !process.env.PGHOST) {
+  try {
+    const u = new URL(process.env.DATABASE_URL);
+    const set = (k, v) => { if (v && !process.env[k]) process.env[k] = v; };
+    set('PGHOST', decodeURIComponent(u.hostname));
+    set('PGPORT', u.port || '5432');
+    set('PGDATABASE', decodeURIComponent(u.pathname.replace(/^\//, '')));
+    set('PGADMINUSER', decodeURIComponent(u.username));
+    set('PGADMINPASSWORD', decodeURIComponent(u.password));
+  } catch {
+    process.stderr.write('\nplint: DATABASE_URL is set but is not a URL.\n\n');
+    process.exit(1);
+  }
+}
+
 function die(name, why) {
   process.stderr.write(
     `\nplint: ${name} is not set.\n` +

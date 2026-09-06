@@ -1,0 +1,10 @@
+node_modules
+.git
+.env
+var
+out
+*.md
+plint-v15.html
+plint-v21.html
+test
+scripts/mutation-audit.js
