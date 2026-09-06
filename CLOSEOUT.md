@@ -19,8 +19,12 @@ equivalent. §5 says what that is worth and what it is not.
 
 These are built, tested, and have been shown to fail when broken (see §5).
 
-**Buyer isolation.** Enforced in PostgreSQL with `ENABLE` plus `FORCE ROW LEVEL
-SECURITY`, not in route handlers. The application connects as a role that is
+**Buyer isolation.** Enforced in PostgreSQL with `ENABLE` row-level security,
+not in route handlers. `FORCE` was dropped by migration 010 so the schema can
+run on a managed database whose owner is not a superuser; `FORCE` only ever
+bound the owner, and that case is now asserted at every boot instead - the
+server refuses to start if its runtime role owns a table, is a superuser or
+holds `BYPASSRLS`. The application connects as a role that is
 not a superuser, not `BYPASSRLS`, does not own the tables, and holds no
 `DELETE` grant anywhere. A session with no identity sees zero rows on every
 table. A buyer asking for a neighbour's villa gets 404, never 403, because 403

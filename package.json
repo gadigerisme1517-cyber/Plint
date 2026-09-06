@@ -12,7 +12,8 @@
     "setup": "node db/bootstrap.js && node db/migrate.js && node db/seed.js",
     "test": "node test/run.js",
     "audit": "node scripts/mutation-audit.js",
-    "backup": "bash scripts/backup.sh"
+    "backup": "bash scripts/backup.sh",
+    "preflight": "node scripts/preflight.js"
   },
   "keywords": [],
   "author": "",

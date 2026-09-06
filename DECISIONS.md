@@ -1115,3 +1115,124 @@ and a volume, and attaching a payment method all need the account holder.
 `PLINT_SECRET`, the database URL and the runtime role password are set in the
 platform's own variable store and **no secret was written to the repository** -
 `.env` remains untracked and `.env.example` remains empty of values.
+
+---
+
+# Ninth pass: free tier. Render, and the schema change that makes it possible
+
+No card. That removes Railway, and it removes Fly.io too - **Fly requires a
+payment method before it will deploy anything**, even inside the free
+allowances. Its Postgres would have suited this app best, because you get a
+real superuser in a container you own.
+
+So: **Render free web service plus Render free Postgres.**
+
+## The blocker had to be fixed, not worked around
+
+Last pass established that every `SECURITY DEFINER` function here is owned by
+the role that owns the tables, that eight tables carried `FORCE ROW LEVEL
+SECURITY`, and that `FORCE` binds the owner too - so on a non-superuser owner
+`login_lookup` returns zero rows and **nobody can sign in**. Render's free
+Postgres gives a database owner, not a superuser. Railway was chosen precisely
+to avoid this.
+
+Without a card that escape is gone, so the schema had to change.
+
+**Migration 010 drops `FORCE` on the nine tables that carried it.** RLS itself
+stays `ENABLE`d on every one.
+
+### Why that is not a hole
+
+`FORCE` was never what protects a buyer from his neighbour. The application
+connects as `plint_app`, which does **not own** these tables, and ordinary
+row-level security binds any role that is not the owner whether or not `FORCE`
+is set. `FORCE` closed exactly one further case: the application connecting
+**as the owner**, which would then bypass RLS entirely.
+
+That case is now closed by assertion instead. `db/bootstrap.js` gained
+`assertIsolationHolds()`, which runs at every boot - and again after
+migrations, from the deploy entrypoint - and refuses to start if the runtime
+role owns any table, is a superuser, holds `BYPASSRLS`, or if any table has
+RLS switched off. A refusal to start is a better answer than a flag the
+platform will not let us set, because the flag was only ever defence against a
+misconfiguration and the assertion catches the same misconfiguration louder.
+
+`restore.test.js` used to assert `FORCE` survived a restore. It now asserts the
+thing that actually guarantees isolation: the restored `plint_app` is not a
+superuser, does not hold `BYPASSRLS`, and owns none of the tables.
+
+### Proven, not assumed
+
+Built the database Render will hand us - a **non-superuser owner** - and ran
+the whole stack against it:
+
+    bootstrap: cannot set role attributes here (permission denied to alter
+               role); they will be verified instead
+    bootstrap: isolation verified - plint_app is not an owner, not a
+               superuser, not BYPASSRLS
+    migrate: applied 10
+    seeded 48 units
+      demands 269 -> audit certified 269
+      settled 221 -> audit settled   221
+    ── database TLS
+      encrypted, TLSv1.3
+
+    isolation suite: 24 passed, 0 failed
+    arjun@example.in    -> Villa B-14
+    ramachandran@nvt.in -> Sign-off and evidence
+    priya@nvt.in        -> Stuck money
+    B-14 buyer -> /villa/A-07  HTTP 404
+    B-14 buyer -> /office      HTTP 404
+
+`bootstrap` also had to stop insisting on `ALTER ROLE ... NOSUPERUSER`, which
+requires being a superuser. It attempts it, and where the platform refuses it
+says so and falls through to verifying the same facts.
+
+`ensureDatabase` now asks the target database directly before reaching for the
+`postgres` maintenance database, because on a managed platform the database
+already exists and we may have no rights there at all.
+
+## The remaining unknown, and the probe for it
+
+The single thing that decides whether **any** Postgres can run this safely is
+whether it will let us create a **second role**. With one role the server must
+connect as the owner, an owner bypasses RLS, and every buyer sees every villa.
+
+I cannot test Render's free Postgres without an account, so rather than assert
+it, `scripts/preflight.js` answers it in about ten seconds against any
+connection string: connects, reports superuser/bypassrls/createrole, checks
+TLS, creates a probe role and a probe table, and verifies that **a non-owner
+role with no identity sees 0 of 2 rows**. It drops everything it made.
+
+It found a bug in itself on the first run, which is the reason it reports the
+user it connected as: passing `user` alongside `connectionString` to `pg` does
+**not** override the string, so the "non-owner" connection was silently the
+owner and the check reported the opposite of the truth.
+
+## What breaks on the free tier
+
+Written up for the demo in `docs/DEPLOY.md`. The one that matters:
+
+**There is no persistent disk.** Disks are a paid feature on Render, so
+`PLINT_EVIDENCE_DIR` points inside the container. Uploaded photographs are lost
+on every deploy, every restart, and every cold start after the service sleeps.
+
+The failure is graceful and was already designed for: the evidence **rows**
+survive with their captions, GPS and hashes, `/evidence/<hash>` returns 404,
+and the completion certificate prints "photograph unavailable" in the thumbnail
+box rather than failing to render. The seeded 48 villas never had image files,
+only rows, so nothing that ships in the seed is affected. **Upload photographs
+during the demo, not before it.**
+
+Also: the service sleeps after ~15 minutes idle with a ~50 second cold start,
+and Render's free Postgres is deleted after 30 days. Sessions are in the
+database, so a cold start does not sign anyone out - which is what makes a
+sleeping service tolerable, and is the first punch-list item paying off.
+
+## Not done
+
+Nothing is deployed. Creating the Render account, connecting the repository and
+clicking Apply need the account holder, and the repository still has to reach
+GitHub first. `PGPASSWORD` and `PLINT_SECRET` are declared `generateValue: true`
+in `render.yaml`, so Render mints them itself and **no secret is typed into or
+stored in this repository**.

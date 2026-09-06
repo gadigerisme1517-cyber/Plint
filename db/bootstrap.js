@@ -13,11 +13,23 @@ const config = require('../src/config');
 const APP_ROLE = process.env.PGUSER;
 
 async function ensureDatabase() {
-  // Connect to the maintenance database: the target may not exist yet.
+  const name = process.env.PGDATABASE;
+
+  /* On a managed platform the database already exists - the platform made it -
+     and we may have no rights on the `postgres` maintenance database at all.
+     So ask the target directly first. If it answers, there is nothing to do
+     and no reason to go looking for privileges we do not need. */
+  try {
+    const direct = new Client(config.adminDb());
+    await direct.connect();
+    await direct.end();
+    console.log('bootstrap: database ' + name + ' already present');
+    return;
+  } catch { /* not there, or not reachable: fall through and try to create it */ }
+
   const c = new Client(config.adminDb({ database: 'postgres' }));
   await c.connect();
   try {
-    const name = process.env.PGDATABASE;
     const r = await c.query('SELECT 1 FROM pg_database WHERE datname = $1', [name]);
     if (!r.rows.length) {
       // Identifiers cannot be parameterised. The name comes from the operator's
@@ -43,11 +55,76 @@ async function ensureAppRole() {
       await c.query(`ALTER ROLE ${quoteIdent(APP_ROLE)} LOGIN PASSWORD ${quoteLiteral(pw)}`);
       console.log('bootstrap: role ' + APP_ROLE + ' already present, password re-applied');
     }
-    // The runtime role must never be able to step around row-level security.
-    // Assert it rather than trust it: this is the whole isolation boundary.
-    await c.query(`ALTER ROLE ${quoteIdent(APP_ROLE)} NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE`);
-    await c.query(`GRANT CONNECT ON DATABASE ${quoteIdent(process.env.PGDATABASE)} TO ${quoteIdent(APP_ROLE)}`);
+    /* Clearing SUPERUSER requires being one, which a managed database will not
+       give us. So try to set the attributes, and if the platform refuses, fall
+       through to verifying them instead. Either way the process does not
+       continue with a runtime role that can step around RLS - see
+       assertIsolationHolds below, which is the check that actually decides. */
+    try {
+      await c.query(`ALTER ROLE ${quoteIdent(APP_ROLE)} NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE`);
+    } catch (e) {
+      console.log('bootstrap: cannot set role attributes here (' + e.message.trim() +
+                  '); they will be verified instead');
+    }
+    try {
+      await c.query(`GRANT CONNECT ON DATABASE ${quoteIdent(process.env.PGDATABASE)} TO ${quoteIdent(APP_ROLE)}`);
+    } catch (e) {
+      console.log('bootstrap: could not grant CONNECT (' + e.message.trim() + ')');
+    }
   } finally { await c.end(); }
+}
+
+/**
+ * The isolation boundary, checked rather than assumed.
+ *
+ * Migration 010 dropped FORCE ROW LEVEL SECURITY so that this schema can run
+ * on a database whose owner is not a superuser. FORCE was what stopped the
+ * OWNER from bypassing RLS; ordinary RLS still binds every role that is not
+ * the owner. So the whole boundary now rests on one fact: the role the server
+ * connects as is not the owner, is not a superuser, and does not hold
+ * BYPASSRLS.
+ *
+ * If that is not true, every buyer can read every other buyer's villa and
+ * nothing would look wrong. This refuses to continue.
+ */
+async function assertIsolationHolds() {
+  const c = new Client(config.adminDb());
+  await c.connect();
+  try {
+    const r = (await c.query(
+      `SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = $1`, [APP_ROLE])).rows[0];
+    if (!r) fail(`the runtime role ${APP_ROLE} does not exist.`);
+    if (r.rolsuper) fail(`the runtime role ${APP_ROLE} is a SUPERUSER, so row-level security does not apply to it.`);
+    if (r.rolbypassrls) fail(`the runtime role ${APP_ROLE} holds BYPASSRLS, so row-level security does not apply to it.`);
+
+    const owned = (await c.query(
+      `SELECT count(*)::int n FROM pg_class c
+         JOIN pg_namespace ns ON ns.oid = c.relnamespace
+        WHERE ns.nspname = 'plint' AND c.relkind = 'r'
+          AND pg_get_userbyid(c.relowner) = $1`, [APP_ROLE])).rows[0].n;
+    if (owned > 0) {
+      fail(`the runtime role ${APP_ROLE} owns ${owned} of the tables, and an owner ` +
+           `bypasses row-level security. It must be a separate role from the one ` +
+           `that runs migrations.`);
+    }
+
+    const rls = (await c.query(
+      `SELECT count(*)::int n FROM pg_class c
+         JOIN pg_namespace ns ON ns.oid = c.relnamespace
+        WHERE ns.nspname = 'plint' AND c.relkind = 'r' AND NOT c.relrowsecurity
+          AND c.relname NOT IN ('schema_migrations')`)).rows[0].n;
+    if (rls > 0) fail(`${rls} table(s) in plint have row-level security switched off.`);
+
+    console.log('bootstrap: isolation verified - ' + APP_ROLE +
+                ' is not an owner, not a superuser, not BYPASSRLS');
+  } finally { await c.end(); }
+}
+
+function fail(why) {
+  process.stderr.write(
+    '\nplint: refusing to start.\n  ' + why +
+    '\n  Buyer isolation depends on this and nothing else would look wrong.\n\n');
+  process.exit(1);
 }
 
 const quoteIdent = s => '"' + String(s).replace(/"/g, '""') + '"';
@@ -76,6 +153,7 @@ async function bootstrap() {
   assertRoleName(APP_ROLE);
   await ensureDatabase();
   await ensureAppRole();
+  await assertIsolationHolds();
 }
 
 if (require.main === module) {
@@ -83,4 +161,4 @@ if (require.main === module) {
     .catch(e => { console.error('bootstrap failed:', e.message); process.exit(1); });
 }
 
-module.exports = { bootstrap, ensureDatabase, ensureAppRole, quoteIdent };
+module.exports = { bootstrap, ensureDatabase, ensureAppRole, assertIsolationHolds, quoteIdent };

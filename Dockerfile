@@ -21,8 +21,11 @@ COPY . .
 
 # Where uploaded photographs live. Mount a volume here, or they are lost on
 # every deploy and the completion certificates lose their thumbnails.
+# Default for a platform with a disk. Render's free plan has none, so
+# render.yaml overrides this to a path inside the container and the
+# photographs do not survive a restart. See docs/DEPLOY.md.
 ENV PLINT_EVIDENCE_DIR=/data/evidence
-RUN mkdir -p /data/evidence && chown -R node:node /data
+RUN mkdir -p /data/evidence /tmp/plint-evidence  && chown -R node:node /data /tmp/plint-evidence
 
 USER node
 EXPOSE 3000

@@ -178,10 +178,23 @@ test('the restored database carries the whole evidence trail', async () => {
       `SELECT count(*)::int n FROM pg_tables WHERE schemaname='plint' AND rowsecurity`);
     assert.ok(rls.rows[0].n >= 8, 'RLS is on the restored tables: ' + rls.rows[0].n);
 
-    const forced = await back.query(
+    /* FORCE is deliberately gone as of migration 010, so the restored database
+       is checked for what actually keeps a buyer out of his neighbour's villa:
+       that the runtime role is not an owner and cannot bypass RLS. FORCE only
+       ever bound the owner, and the owner is the migrations and the seed. */
+    const bypass = await back.query(
+      `SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'plint_app'`);
+    assert.strictEqual(bypass.rows[0].rolsuper, false,
+      'the restored runtime role must not be a superuser');
+    assert.strictEqual(bypass.rows[0].rolbypassrls, false,
+      'nor hold BYPASSRLS');
+
+    const owned = await back.query(
       `SELECT count(*)::int n FROM pg_class c JOIN pg_namespace ns ON ns.oid=c.relnamespace
-        WHERE ns.nspname='plint' AND c.relforcerowsecurity`);
-    assert.ok(forced.rows[0].n >= 6, 'and FORCE survived too: ' + forced.rows[0].n);
+        WHERE ns.nspname='plint' AND c.relkind='r'
+          AND pg_get_userbyid(c.relowner) = 'plint_app'`);
+    assert.strictEqual(owned.rows[0].n, 0,
+      'and must own none of the tables, because an owner bypasses RLS');
 
     // The figures, not just the counts.
     const sum = t => t.query(

@@ -34,6 +34,12 @@ const run = (label, args) => {
   run('bootstrap', ['db/bootstrap.js']);
   run('migrate', ['db/migrate.js']);
 
+  /* Again, now that the tables exist. In bootstrap this passes trivially on a
+     fresh database because there is nothing yet to own; here it is checking
+     the real schema. Since migration 010 dropped FORCE, this is the whole
+     isolation boundary and it is worth two seconds at every boot. */
+  await require('../db/bootstrap.js').assertIsolationHolds();
+
   const { Client } = require('pg');
   const config = require('./../src/config');
 
