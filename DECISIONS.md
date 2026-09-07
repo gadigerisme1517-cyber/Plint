@@ -1608,17 +1608,29 @@ app, because installing one is a step on the user's device.
 
 # Fourteenth pass: what the deployed URL showed that localhost could not
 
-## The live site was three commits behind, and that was my doing
+## The live site was behind, and I misdiagnosed why
 
 `https://plint-o0vr.onrender.com/sw.js` answered **302**, not 200 - the old
 build has no such route, so it fell through to the catch-all redirect. Nothing
-about the service worker was live at all.
+about the service worker was live.
 
-`render.yaml` carried `autoDeploy: false` with **no reason recorded anywhere**,
-in a file where every other line has a comment explaining itself. An unlogged
-decision is a bug, and this one cost a working push sitting on GitHub while the
-demo URL served something else and looked like a code fault. It is now `true`,
-with the reasoning in the file.
+I found `autoDeploy: false` in `render.yaml`, with **no reason recorded
+anywhere**, and concluded that was the cause. **It was not.** A Docker build on
+Render's free plan takes six to thirteen minutes, and both pushes deployed on
+their own while I was writing: `186dddf` was committed at 11:59 and was live by
+12:05, with no dashboard step from anyone. The service is not blueprint-synced,
+so that line in `render.yaml` was never in effect at all.
+
+Two things to keep separate. `autoDeploy: true` is still the right value and
+still stands, because the file should not say the opposite of how the service
+behaves - but it fixed nothing, and the honest reason the URL looked stale is
+that **I checked it about ninety seconds after pushing**. A free-tier Docker
+deploy is slow enough that "the push did not deploy" and "the push has not
+deployed *yet*" are indistinguishable without waiting. Wait, or read the
+dashboard; do not infer a cause from a config file that happens to be nearby.
+
+The `no reason recorded` complaint about the original `autoDeploy: false` still
+holds on its own terms. It just was not the bug.
 
 Worth naming the near-miss: a service worker script served through a redirect
 fails registration with an opaque error. Had the route existed and 302'd, the
@@ -1694,3 +1706,38 @@ cache; it is held by a source assertion instead, and that is stated in the test
 rather than hidden.
 
 162 assertions, fourteen suites, green from a clean database.
+
+## The ETag comparison was wrong, and only the deployed URL could show it
+
+`if (req.headers['if-none-match'] === a.etag)`. String equality. Correct on
+localhost, wrong on every origin this app is actually served from.
+
+The proxy in front of Render compresses text responses and rewrites the ETag to
+its **weak** form. The server issues `"ff82fad949bbb584"`; the client is handed
+`W/"ff82fad949bbb584"`; it sends that back; the equality fails; the server
+returns 200 with the whole body. Measured against the live URL - the exact ETag
+the server had just issued came back as **200 and 45,537 bytes**, while the
+strong form of the same validator returned 304 and zero.
+
+`If-None-Match` was never a string comparison. RFC 9110 s8.8.3.2 specifies the
+**weak** comparison function, over a **list**, with `*` matching anything. The
+code now does that.
+
+This is worse than it sounds, and it is my doing twice over: the same pass that
+introduced the bad comparison also changed the stylesheets from a week-long
+`max-age` to `no-cache`, which makes revalidation happen on **every single
+navigation**. So the failure was not an occasional extra download. It was 45KB
+of CSS on every page load, on a phone, for every user, on the free plan whose
+whole constraint is that it is small and slow.
+
+The test now sends every form a real client sends - strong, weak, in a list on
+either side, and `*` - and asserts a 304 with an empty body for each, plus a
+200 for an ETag the server never issued. Three mutations confirmed it fails:
+back to `===`, dropping `*`, and dropping the weak-form stripping.
+
+**The general lesson, which is the reason this pass exists.** Localhost has no
+proxy, no compression layer, and no CDN. Three defects in this feature -
+the constant cache name, the immutable stylesheet, and this - were all
+invisible until the code ran on a real origin, and all three were shipped
+green. A local suite proves the code does what it says. It cannot prove the
+network agrees.

@@ -82,6 +82,23 @@ const BUILD = crypto.createHash('sha256')
   a.etag = '"' + crypto.createHash('sha256').update(a.bytes).digest('hex').slice(0, 16) + '"';
 }
 
+/* If-None-Match is a WEAK comparison and a list, not a string equality.
+   RFC 9110 s8.8.3.2: `W/"x"` and `"x"` are the same validator here.
+
+   This was `===`, which is right on localhost and wrong everywhere the app is
+   actually deployed. The proxy in front of Render compresses text and rewrites
+   the ETag to its weak form, so the browser sends back `W/"ff82..."`, the
+   comparison failed, and every page load re-downloaded 45KB of stylesheet that
+   the browser already had. `no-cache` on the stylesheets makes that
+   revalidation happen on every single navigation, so the cost was paid every
+   time. Measured against the live URL: 200 with the full body for the ETag the
+   server itself had just issued. */
+function etagMatches(header, etag) {
+  if (!header) return false;
+  const bare = t => t.trim().replace(/^W\//, '');
+  return header.split(',').some(t => t.trim() === '*' || bare(t) === bare(etag));
+}
+
 /* Registers the service worker, and clears its cache on sign-out.
 
    The whole script is inert without it: no data is read, nothing is stored,
@@ -737,7 +754,7 @@ const server = http.createServer(async (req, res) => {
       const a = ASSETS[p];
       // Cheap revalidation, which is what makes `no-cache` on the stylesheets
       // affordable on a phone.
-      if (req.headers['if-none-match'] === a.etag) {
+      if (etagMatches(req.headers['if-none-match'], a.etag)) {
         res.writeHead(304, { etag: a.etag, 'cache-control': a.cache });
         return res.end();
       }

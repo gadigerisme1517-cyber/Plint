@@ -217,9 +217,19 @@ test('the stylesheets revalidate instead of claiming to be immutable', async () 
     const etag = r.headers.get('etag');
     assert.match(etag || '', /^"[0-9a-f]{16}"$/, p + ' has no ETag, so revalidation costs a download');
 
-    const again = await fetch(BASE + p, { headers: { 'if-none-match': etag } });
-    assert.strictEqual(again.status, 304, p + ' ignored If-None-Match');
-    assert.strictEqual((await again.arrayBuffer()).byteLength, 0);
+    /* Every form a real client sends. The weak one is not hypothetical: the
+       proxy in front of the deployed app compresses text and rewrites the
+       ETag to `W/"..."`, so that is what the browser sends back. A strict
+       `===` shipped, and on the live URL it meant a full 45KB stylesheet on
+       every navigation - which `no-cache` guarantees happens every time. */
+    for (const sent of [etag, 'W/' + etag, '"other", ' + etag, etag + ' , "other"', '*']) {
+      const again = await fetch(BASE + p, { headers: { 'if-none-match': sent } });
+      assert.strictEqual(again.status, 304, p + ' re-sent the body for If-None-Match: ' + sent);
+      assert.strictEqual((await again.arrayBuffer()).byteLength, 0);
+    }
+
+    const stale = await fetch(BASE + p, { headers: { 'if-none-match': '"0000000000000000"' } });
+    assert.strictEqual(stale.status, 200, p + ' claimed 304 for an ETag it never issued');
   }
 
   // The icons genuinely may be held: a stale mark for a week is cosmetic.
