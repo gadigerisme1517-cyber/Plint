@@ -17,6 +17,51 @@ const THROTTLE = require('./throttle');
 const esc = s => String(s == null ? '' : s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+/* The only files served straight off disk. Path -> [file, content type,
+   cache-control]. Nothing here is personal, which is what makes it cacheable
+   both by the browser and by the service worker.
+
+   sw.js is served no-cache on purpose: it is how every future change reaches
+   an installed app, so it must never be the stale thing. */
+const IMMUTABLE = 'public, max-age=604800';
+const STATIC = {
+  '/plint.css':            ['plint.css', 'text/css; charset=utf-8', IMMUTABLE],
+  '/app.css':              ['app.css', 'text/css; charset=utf-8', IMMUTABLE],
+  '/manifest.webmanifest': ['manifest.webmanifest', 'application/manifest+json; charset=utf-8', 'public, max-age=3600'],
+  '/sw.js':                ['sw.js', 'text/javascript; charset=utf-8', 'no-cache'],
+  '/offline':              ['offline.html', 'text/html; charset=utf-8', 'public, max-age=3600'],
+  '/icons/icon-192.png':          ['icons/icon-192.png', 'image/png', IMMUTABLE],
+  '/icons/icon-512.png':          ['icons/icon-512.png', 'image/png', IMMUTABLE],
+  '/icons/icon-maskable-192.png': ['icons/icon-maskable-192.png', 'image/png', IMMUTABLE],
+  '/icons/icon-maskable-512.png': ['icons/icon-maskable-512.png', 'image/png', IMMUTABLE],
+  '/icons/apple-touch-icon.png':  ['icons/apple-touch-icon.png', 'image/png', IMMUTABLE],
+  '/icons/favicon.svg':           ['icons/favicon.svg', 'image/svg+xml; charset=utf-8', IMMUTABLE],
+};
+
+/* Registers the service worker, and clears its cache on sign-out.
+
+   The whole script is inert without it: no data is read, nothing is stored,
+   and the app works identically in a browser that refuses service workers.
+   That is the point - the worker adds installability and an honest offline
+   screen, and is not load-bearing for anything else. */
+const SW = `<script>
+if ('serviceWorker' in navigator) {
+  addEventListener('load', function () {
+    navigator.serviceWorker.register('/sw.js').catch(function (e) {
+      // Swallowing this hid a registration failure once. The app works
+      // without a worker, so this must not throw, but it must be findable.
+      console.warn('plint: service worker did not register:', e && e.message);
+    });
+  });
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('a[href="/logout"]');
+    if (a && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage('plint:signout');
+    }
+  });
+}
+</script>`;
+
 // ------------------------------------------------------------------- chrome
 
 /* v21's mark. Its own logo() takes a `light` flag and paints the mark #FFF,
@@ -32,18 +77,25 @@ function page(title, sess, body, wide) {
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Plint</title>
 <meta name="theme-color" content="#0A2540">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Plint">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/plint.css"></head><body><div class="wrap">
+<link rel="stylesheet" href="/plint.css">
+<link rel="stylesheet" href="/app.css"></head><body><div class="wrap">
 <div class="bar"><span class="blogo">${LOGO}</span>
 <span class="bm" style="color:var(--ink)">Plint</span>
 <span class="sub">NVT Eterna &middot; Phase 1 &middot; 48 villas</span>
 ${sess ? `<span class="role" aria-pressed="true">${esc(sess.name)}</span>
 <a class="role" href="/logout" style="text-decoration:none">Sign out</a>` : ''}</div>
-<div class="stagearea"><div class="phone${wide ? ' wide' : ''}">
+<div class="stagearea"><div class="phone${wide ? ' wide solo' : ''}">
 <div class="sysbar"><span>9:41</span><span>Plint</span></div>
-<div class="scroll anim">${body}</div></div></div></div></body></html>`;
+<div class="scroll anim">${body}</div></div></div></div>${SW}</body></html>`;
 }
 
 /** The office runs in v21's desktop shell, not the phone frame. */
@@ -58,10 +110,17 @@ function desk(sess, tab, title, sub, main) {
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Plint</title>
 <meta name="theme-color" content="#0A2540">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Plint">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/plint.css"></head><body><div class="wrap">
+<link rel="stylesheet" href="/plint.css">
+<link rel="stylesheet" href="/app.css"></head><body><div class="wrap">
 <div class="bar"><span class="blogo">${LOGO}</span>
 <span class="bm" style="color:var(--ink)">Plint</span>
 <span class="sub">NVT Eterna &middot; Phase 1 &middot; 48 villas</span>
@@ -78,7 +137,7 @@ ${items.map(([href, label]) => `<a class="sbtn st" href="${href}" aria-selected=
 <div class="main">
 <div class="topbar"><div class="crumb"><span>NVT Eterna</span><b>${esc(title)}</b></div></div>
 ${main}
-</div></div></div></body></html>`;
+</div></div></div>${SW}</body></html>`;
 }
 
 // -------------------------------------------------------------------- login
@@ -207,7 +266,7 @@ ${open ? `<div class="blk">
 <div class="gap"></div><div class="rule"></div><div class="gap s"></div>
 <div class="blk"><p class="k">Stage by stage</p></div><div class="gap s"></div>
 ${stageRows}
-<div class="gap l"></div>`);
+<div class="gap l"></div>`, true);
 }
 
 /* ---------------------------------------------------------------- documents
@@ -270,7 +329,7 @@ ${DOC_SETS[a.kind].map(([label, ca]) => `<div class="drow2">
 </div></div>
 <p class="b note">Plint holds no loan papers and sends nothing to any bank. Your bank runs
 its own checks and you sign at the branch yourself.</p>
-<div class="gap l"></div>`);
+<div class="gap l"></div>`, true);
 }
 
 /**
@@ -604,7 +663,8 @@ const server = http.createServer(async (req, res) => {
   const reqId = crypto.randomBytes(8).toString('hex');
   let sess = null;
 
-  const send = (code, type, b) => { res.writeHead(code, { 'content-type': type }); res.end(b); };
+  const send = (code, type, b, extra) =>
+    { res.writeHead(code, { 'content-type': type, ...(extra || {}) }); res.end(b); };
   const html = (code, b) => send(code, 'text/html; charset=utf-8', b);
   res.on('finish', () => LOG.request(req, res, { start, sess, id: reqId }));
 
@@ -625,7 +685,16 @@ const server = http.createServer(async (req, res) => {
 
     sess = await sessionOf(req);
 
-    if (p === '/plint.css') return send(200, 'text/css', fs.readFileSync(path.join(__dirname, '../public/plint.css')));
+    /* Static, non-personal files. An explicit map rather than a path join, so
+       no request can ever walk out of public/ and no route can be added to
+       this list by accident. These are the only things the service worker is
+       allowed to cache, and the two lists have to agree. */
+    if (STATIC[p]) {
+      const [file, type, cache] = STATIC[p];
+      return send(200, type, fs.readFileSync(path.join(__dirname, '..', 'public', file)), {
+        'cache-control': cache,
+      });
+    }
 
     if (p === '/' ) {
       if (!sess) return html(200, loginPage(url.searchParams.get('e')));

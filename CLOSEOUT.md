@@ -7,7 +7,7 @@ engineer certified it, and that a demand for money followed from that
 certificate. Its value is the evidence trail, not the screens.
 
 `npm test` builds a scratch database, migrates it, seeds it, runs every suite,
-and drops it. **148 assertions across thirteen suites, green from nothing.**
+and drops it. **158 assertions across fourteen suites, green from nothing.**
 
 Every one of them has been checked by mutation — break the behaviour, confirm a
 test fails. `npm run audit`: 36 mutations, 34 killed, 2 demonstrated
@@ -352,3 +352,55 @@ Both sides now refuse to race, via `var/.mutation-audit.lock`.
   prototype's own media query, not a bug.
 - **`npm test` needs PostgreSQL running.** On the machine this was built on it
   lives in WSL2 and does not restart itself; see `DECISIONS.md`.
+
+## 7. The progressive web app: what works offline and what does not
+
+Plint installs to a home screen and opens without browser chrome. It is almost
+useless without a network, on purpose.
+
+**Works with no connection**
+
+- The app opens instead of showing the browser's error page. Any screen you
+  navigate to falls back to `/offline`, which is styled, carries the mark, and
+  says in plain words why there is nothing to show.
+- The stylesheets, all six icons and the manifest are served from cache, so
+  the shell looks like Plint rather than unstyled text.
+- The installed icon, name and splash screen come from the manifest, which is
+  cached, so the app still launches.
+
+**Does not work with no connection — by design**
+
+- Your villa screen, the engineer's worklist, the head-office worklist. None
+  of them is ever cached.
+- Demand letters and completion certificates. A PDF request simply fails.
+- Evidence photographs and their thumbnails.
+- Signing in, signing out, certifying a stage, recording a sanction. Nothing
+  is queued for later; a certification that cannot reach the server does not
+  happen, and the person is told so rather than being told it worked.
+
+**Why it is this way.** A service worker cache is keyed by origin, not by
+session, and it survives sign-out. If one buyer's villa page were cached, the
+next person to open Plint on that phone could be shown it offline, with no
+session and no way for the server to intervene. On a phone that gets handed
+around a sales office, that is a disclosure of someone's financial position.
+The cache is therefore an explicit allowlist of ten static files, and
+`test/pwa.test.js` fails the build if anything else joins it.
+
+Signing out clears the cache entirely and immediately re-adds the shell, so
+the offline page survives for the next person.
+
+**Verified**, in real Chrome against a running server that was then stopped
+mid-session: the worker registers and activates; a signed-in villa page goes
+through the worker and is not cached; with the server down, navigation renders
+the offline page from cache and a demand PDF throws; sign-out drops a sentinel
+entry and restores all ten shell entries.
+
+**Not verified**: the `@media (display-mode: standalone)` layout — full-bleed,
+no fake status bar, safe-area padding — has not been seen on an actually
+installed app. Install it on a phone and look at the top and bottom edges.
+
+**Note for the preview pane.** Service worker registration fails in Claude's
+embedded browser with *"An unknown error occurred when fetching the script"*
+even though `/sw.js` answers 200. That is the pane, not the app. Registration
+failures are logged with `console.warn('plint: service worker did not
+register:')` — never swallowed.

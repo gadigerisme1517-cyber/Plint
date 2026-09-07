@@ -1,0 +1,62 @@
+/* ============================================================================
+   Application-level styling, layered on top of public/plint.css.
+
+   plint.css is lines 14-628 of plint-v21.html, verbatim, and is not edited.
+   Anything the running application needs that the design file does not carry -
+   a buyer screen that is not a phone-shaped card on a desktop monitor, and the
+   full-bleed layout of an installed app - lives here instead.
+   ========================================================================= */
+
+/* ------------------------------------------------- the buyer on a desktop
+   The buyer screen is rendered with `phone wide`, so plint.css already gives
+   it the desktop paddings above 900px and collapses it back to 392px below.
+   1160px is right for the office worklist and far too wide for one column of
+   a buyer's own villa, so cap the measure. */
+@media (min-width: 901px) {
+  .phone.wide.solo { max-width: 860px; }
+}
+
+/* ---------------------------------------------------- installed on a phone
+   No browser chrome, so the app should own the whole viewport: no page
+   padding, no floating rounded card, no fake status bar. The top bar stays -
+   it carries who you are signed in as and the way to sign out, which the
+   browser's own chrome was otherwise providing. */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  body { padding: 0; }
+  .wrap { max-width: none; }
+  .bar { padding: 10px 14px; margin-bottom: 0; }
+  .stagearea { display: block; }
+
+  .phone,
+  .phone.wide,
+  .phone.wide.solo {
+    max-width: none;
+    width: 100%;
+    height: calc(100vh - 44px);
+    height: calc(100dvh - 44px);
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .sysbar { display: none; }
+
+  .desk {
+    border-radius: 0;
+    box-shadow: none;
+    min-height: calc(100vh - 44px);
+    min-height: calc(100dvh - 44px);
+  }
+
+  /* Keep content clear of the home indicator and the notch. */
+  .scroll { padding-bottom: env(safe-area-inset-bottom); }
+  .bar { padding-top: calc(10px + env(safe-area-inset-top)); }
+}
+
+/* -------------------------------------------------------------- offline
+   Shown by the service worker when a navigation cannot reach the server. */
+.offline-note {
+  margin: 0 auto;
+  max-width: 42ch;
+  text-align: center;
+  padding: 64px 24px;
+}
+.offline-note .mark { display: block; margin: 0 auto 22px; }

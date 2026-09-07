@@ -31,6 +31,7 @@ const SUITES = [
   'pack.test.js',
   'loan.test.js',
   'reconcile.test.js',   // seeded rows against the layer, before anything mutates more
+  'pwa.test.js',        // manifest, icons, and the worker's cache allowlist
   'config.test.js',
   'tls.test.js',
   'restore.test.js',     // dump, restore, and prove the restore is usable

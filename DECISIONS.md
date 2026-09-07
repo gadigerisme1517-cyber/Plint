@@ -1521,3 +1521,87 @@ migrations up to date, TLSv1.3, health 200, and all three logins landing on
 their own screens.
 
 148 assertions still green locally.
+
+# Thirteenth pass: an installable app that deliberately works badly offline
+
+## The buyer screen was a phone card on a 27-inch monitor
+
+`plint.css` is v21 verbatim and gives `.phone` a fixed 392px. That is right for
+the design file, where the phone is a prop sitting next to a desk view. It is
+wrong for the running application, where the buyer opening Plint on a laptop
+got a narrow strip in the middle of the screen.
+
+v21 already carries a `.phone.wide` variant with desktop paddings above 900px
+that collapses back to 392px below it, so the buyer screens now render
+`phone wide solo`. The extra `solo` class is ours: `wide` alone goes to 1160px,
+which is right for the office worklist and far too wide for one column of a
+buyer's own villa. `public/app.css` caps it at 860px.
+
+**`plint.css` is still not edited.** Everything the running app needs beyond the
+design file lives in `app.css`, loaded after it. Measured in Chrome at a 1910px
+viewport: wrap 1340px centred, card 860px centred inside it.
+
+## What the service worker caches: the shell, and nothing else
+
+Every screen in Plint is server-rendered HTML behind a session cookie, and the
+content is one buyer's financial position. **A service worker cache is keyed by
+origin, not by session, and it outlives sign-out.** Cache a villa page and the
+next person to open the app on that phone - the buyer's spouse, a colleague,
+whoever the device is handed to - can be served it while offline, with no
+session and no way for the server to intervene.
+
+So the cache is an explicit allowlist of ten static files: two stylesheets, six
+icons, the manifest, and one offline page. Everything else is network-only.
+The list is written out rather than pattern-matched, so adding a route can
+never silently make it cacheable, and `test/pwa.test.js` fails if anything
+under `/villa`, `/office`, `/engineer`, `/doc`, `/evidence`, `/login` or
+`/logout` appears in it, or if a non-asset does.
+
+This buys less offline function than a demo would like. It is the right trade
+for an application whose entire product is an evidence trail about money, and
+the offline page says so to the person looking at it.
+
+## Sign-out clears the cache, then puts the shell straight back
+
+Clearing alone looked correct and was not. Verified in Chrome: after a
+sign-out the cache refilled lazily from whatever the next page requested and
+settled at **four of ten entries with no `/offline`** - so the first person to
+lose signal after someone signed out would have got the browser's error page
+instead of ours. The handler now deletes every cache and re-adds the shell in
+the same turn. Re-verified with a sentinel entry: sentinel gone, ten entries
+back, `/offline` among them.
+
+## The registration failure the embedded browser reported, and the one it hid
+
+`navigator.serviceWorker.register('/sw.js')` fails in the Claude preview pane
+with *"An unknown error occurred when fetching the script"*, while the server
+log shows that same request answered `200`. In real Chrome on the same origin
+and the same port it registers, activates, and takes control. The pane is not
+a service worker host; that is not a defect in this app.
+
+It was findable only because the `.catch(function () {})` I wrote first was
+changed to log. **A swallowed failure in a feature whose whole point is that it
+works when nothing else does is worse than no feature.** It now warns.
+
+## What was tested where
+
+Ten assertions in `test/pwa.test.js` run in `npm test` against the served
+routes and the worker's source: manifest validity, both icon sizes in both
+`any` and `maskable` purposes with the bytes checked to really be PNGs, the
+head tags on every page, `no-cache` on `/sw.js` because it is the update
+channel for an installed app, and the allowlist rules above. Five mutations
+confirmed they can fail, including adding `/villa/B-14` to the shell (3 fail)
+and dropping the maskable icons (1 fail).
+
+The parts a Node process cannot observe - registration, activation, cache
+contents, the offline fallback - were driven in real Chrome against a running
+server, with the server **stopped** to produce a genuine offline navigation.
+Result: the offline page rendered, styled, from cache; the manifest and icons
+answered from cache; a demand PDF threw. See CLOSEOUT.md for the plain list.
+
+## Not done here
+
+The `@media (display-mode: standalone)` rules - full-bleed layout, no fake
+status bar, safe-area padding for the notch - are asserted by the media query
+and by the rules being present. They have not been observed on an installed
+app, because installing one is a step on the user's device.
