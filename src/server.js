@@ -744,7 +744,25 @@ const server = http.createServer(async (req, res) => {
 
   const send = (code, type, b, extra) =>
     { res.writeHead(code, { 'content-type': type, ...(extra || {}) }); res.end(b); };
-  const html = (code, b) => send(code, 'text/html; charset=utf-8', b);
+  /* Every page in this application is server-rendered behind a session cookie
+     and is one person's financial position. It was going out with no
+     `cache-control` at all, which does not mean "do not store" - with no
+     directive, no `expires` and no `last-modified` a browser may apply its own
+     heuristic and reuse the response without ever asking again.
+
+     Chrome on Android does. The symptom reached us as a screenshot of a layout
+     this stylesheet cannot produce at any width: a phone showing the bottom
+     tab bar and the breadcrumb together, which stopped being possible several
+     deploys ago. The page had come from the phone's own HTTP cache, and it
+     named a stylesheet hash that is served `max-age=604800` - correct for a
+     content-addressed file, and unreachable once the page pointing at it is
+     stale too. Deploying could not fix it because the device never asked.
+
+     `no-store` rather than `no-cache`: this is somebody's money, on a phone
+     that gets handed around a site office, and there is no reason for any of
+     it to be written to disk. */
+  const html = (code, b) =>
+    send(code, 'text/html; charset=utf-8', b, { 'cache-control': 'no-store' });
   res.on('finish', () => LOG.request(req, res, { start, sess, id: reqId }));
 
   try {

@@ -11,6 +11,23 @@
 
 :root {
   --appbar-h: 52px;
+
+  /* One button scale, for every button on every screen at every width.
+
+     There were four heights in the application - v21's 33px, the sidebar's
+     36, a 38px carve-out for the button inside a list row and a 44px phone
+     minimum - three font sizes and two corner radii, so no two buttons on the
+     same screen were quite the same object. Two sizes now, and the difference
+     between them says something: `--btn-h` is a button that sits in a line of
+     other things, `--btn-h-full` is one that takes the whole width and is the
+     only thing you can do on that screen. */
+  --btn-h: 36px;
+  --btn-h-full: 44px;
+  --btn-r: 9px;
+  --btn-fs: 13px;
+  /* Short labels next to long ones - "Accept" beside "Ask to reassign" - read
+     as an accident rather than a pair. Nothing narrower than this. */
+  --btn-min-w: 96px;
   --tabbar-h: 56px;
   --safe-b: env(safe-area-inset-bottom, 0px);
 
@@ -173,6 +190,27 @@ body { padding: 0; margin: 0; background: var(--paper); }
    still one tap away on the sign-out control beside it. */
 @media (max-width: 480px) {
   .ab-who { display: none; }
+}
+
+/* --------------------------------------------------------- 3b. the button
+
+   Applied at every width, so a button is the same object on a monitor and on
+   a handset. v21 draws `.wbtn` at 33px with 12.5px text and a 6px radius and
+   `.sortb` at 12px text with a 9px radius; this is the one place the two are
+   reconciled rather than carried forward separately. */
+.wbtn, .sortb {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: var(--btn-h);
+  padding: 0 16px;
+  font: 600 var(--btn-fs)/1 'Instrument Sans', system-ui, sans-serif;
+  border-radius: var(--btn-r);
+}
+/* A button that takes the whole width is the only thing you can do on that
+   screen, so it is the taller of the two sizes. */
+.act, .authbtn, .wbtn.full {
+  min-height: var(--btn-h-full);
+  border-radius: var(--btn-r);
+  font-size: var(--btn-fs);
 }
 
 /* ------------------------------------------- 4. `wide` is a desktop rendering
@@ -411,14 +449,9 @@ body { padding: 0; margin: 0; background: var(--paper); }
      as more important than the row it acts on. Two or more controls will not
      fit beside an amount, so those still take their own line; the row says
      which through `actc wide`. */
-  /* 38px, not the 44px every other control in this application gets. This one
-     sits inside a card beside a line of text, and at 44 it was the tallest
-     thing on a 120px card and read as the point of the row. It is still well
-     over the 24px WCAG asks for, and it is the only exception - every button
-     that stands on its own keeps 44. */
-  .wrow .actc:not(.s):not(.wide) .wbtn {
-    padding: 7px 14px; font-size: 13px; min-height: 38px;
-  }
+  /* Nothing here. The button inside a row is the same button as everywhere
+     else - it used to be its own size, 38px against 44, which is how a reader
+     ends up seeing four different buttons on one screen. */
   .wrow .actc:not(.s):not(.wide) {
     grid-area: 3 / 2 / 4 / 4;
     display: flex; align-items: center; justify-content: flex-end;
@@ -429,6 +462,14 @@ body { padding: 0; margin: 0; background: var(--paper); }
     display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end;
     margin-top: 8px;
   }
+  /* Two controls on a line of their own split it evenly. "Accept" is 72px of
+     text and "Ask to reassign" is 119px, so left to size themselves they read
+     as one button and an afterthought rather than a choice between two. */
+  .wrow .actc.wide .wbtn { flex: 1 1 0; min-width: var(--btn-min-w); }
+  .wrow .actc.wide form { flex: 1 1 0; display: flex; }
+  .wrow .actc.wide form .wbtn { width: 100%; }
+  /* And a single control never shrinks below the shared minimum. */
+  .wrow .actc:not(.wide) .wbtn { min-width: var(--btn-min-w); }
   /* A status line rather than a control - "Too few photographs". */
   /* A status word rather than a control. It sits beside the amount, not on top
      of it: spanning the whole line printed "Too few photographs" straight
@@ -501,11 +542,12 @@ body { padding: 0; margin: 0; background: var(--paper); }
 
   /* ------------------------------------------------ 5b. tap targets
 
-     Forty-four pixels, on everything you can press. v21's own `.wbtn` is about
-     thirty-one and its `.tab` about thirty-four, which is fine for a mouse on
-     a design file and too small for a thumb. This is a deliberate divergence
-     from v21's metrics, and the only one in this file. */
-  .wbtn, .sortb, .act, .lgb, .ib, .dest,
+     A field is not a button. You aim at a button once and it is gone; you aim
+     at a text field, miss, and aim again with the keyboard already up. So the
+     fields keep 44px while the buttons take the shared scale above - which is
+     also why this list no longer names `.wbtn` or `.sortb`: their height comes
+     from one place now, and a second rule here is how it forked before. */
+  .lgb, .ib, .dest,
   .uprow .fi, .uprow select, .fld input, .fld textarea,
   input[type="text"], input[type="email"], input[type="password"], select {
     min-height: 44px;
@@ -517,10 +559,6 @@ body { padding: 0; margin: 0; background: var(--paper); }
      text with no box around it, and it is the control someone reaches for on a
      shared phone. The bar is 52px, so a 44px target fits inside it. */
   .appbar a { min-height: 44px; display: inline-flex; align-items: center; }
-  .wbtn, .sortb {
-    display: inline-flex; align-items: center; justify-content: center;
-    padding: 12px 16px; font-size: 13.5px; border-radius: 9px;
-  }
   .uprow .fi, .uprow select { padding: 11px 12px !important; font-size: 15px; }
   .tabs { gap: 20px; }
   .tab { padding: 14px 0; min-height: 44px; font-size: 14px; }

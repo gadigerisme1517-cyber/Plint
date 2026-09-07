@@ -100,6 +100,30 @@ test('the stylesheet unfixes the card rather than leaving it 392px', async () =>
   assert.match(css, /\.bar\s*\{\s*display:\s*none/, "the prototype's chrome is not hidden");
 });
 
+test('no screen is ever written to the browser cache', async () => {
+  /* Every page here is server-rendered behind a session cookie and is one
+     person's financial position. These went out with no `cache-control` at
+     all, which does not mean "do not store": with no directive, no `expires`
+     and no `last-modified`, a browser may apply its own heuristic and reuse
+     the response without asking again. Chrome on Android does.
+
+     It reached us as a screenshot of a layout this stylesheet cannot produce
+     at any width - a phone showing the bottom tab bar and the breadcrumb at
+     once, which stopped being possible several deploys earlier. The page had
+     come from the phone's own HTTP cache and named a stylesheet hash served
+     `max-age=604800`, so the whole shell was frozen and no deploy could reach
+     it, because the device never asked. */
+  for (const [role, path] of everyScreen()) {
+    const r = await get(path, role);
+    const cc = r.headers.get('cache-control');
+    assert.strictEqual(cc, 'no-store',
+      role + ' ' + path + ' is cacheable: cache-control is ' + JSON.stringify(cc));
+  }
+  // The sign-in page too: it is the one that carries the sign-in form.
+  assert.strictEqual((await get('/')).headers.get('cache-control'), 'no-store',
+    'the sign-in page is cacheable');
+});
+
 // ------------------------------------------------------------- app bar
 
 test('every screen carries the app bar, signed in or not', async () => {
@@ -471,40 +495,61 @@ test('no day count is shown without a verdict', async () => {
   }
 });
 
-test('everything you can press is at least 44px on a phone', async () => {
+test('every button in the application is the same object', async () => {
   const css = await (await get('/app.css')).text();
-  const narrow = /@media \(max-width: 720px\) \{([\s\S]*?)\n\}/.exec(css)[1];
 
-  /* v21's own `.wbtn` is about 31px and its `.tab` about 34. That is fine for
-     a mouse on a design file and too small for a thumb, so this is the one
-     place the phone layer deliberately departs from v21's metrics. */
-  const rule = /([^{}]*)\{[^}]*min-height:\s*44px/.exec(narrow);
-  assert.ok(rule, 'nothing in the phone layer sets a 44px minimum');
-  for (const sel of ['.wbtn', '.sortb', '.lgb', '.ib', 'select']) {
-    assert.ok(rule[1].includes(sel), sel + ' is not covered by the 44px minimum');
+  /* There were four button heights - v21's 33px, the sidebar's 36, a 38px
+     carve-out for the button inside a list row, and a 44px phone minimum -
+     three font sizes and two corner radii, so no two buttons on one screen
+     were quite the same thing. Two sizes now, from tokens, and the difference
+     between them says something: one sits in a line beside other things, the
+     other takes the whole width and is the only thing you can do there. */
+  for (const tok of ['--btn-h', '--btn-h-full', '--btn-r', '--btn-fs', '--btn-min-w']) {
+    assert.match(css, new RegExp('\\' + tok.slice(1) + ':\\s*\\S'), tok + ' is not defined');
   }
+
+  const base = /\n\.wbtn, \.sortb \{([^}]*)\}/.exec(css);
+  assert.ok(base, 'there is no single rule that sizes a button');
+  assert.match(base[1], /min-height:\s*var\(--btn-h\)/, 'the button height is not the token');
+  assert.match(base[1], /font:[^;]*var\(--btn-fs\)/, 'the button font is not the token');
+  assert.match(base[1], /border-radius:\s*var\(--btn-r\)/, 'the button radius is not the token');
+
+  const full = /\.act, \.authbtn, \.wbtn\.full \{([^}]*)\}/.exec(css);
+  assert.ok(full, 'the full-width action has no rule of its own');
+  assert.match(full[1], /min-height:\s*var\(--btn-h-full\)/,
+    'the full-width action does not take the taller of the two sizes');
+
+  /* The rule is outside every media query, so a button is the same object on
+     a monitor and on a handset. It forked once by being redeclared inside the
+     phone layer, and that is what produced 38px against 44px. */
+  const narrow = /@media \(max-width: 720px\) \{([\s\S]*?)\n\}/.exec(css)[1];
+  // Comments stripped first: they talk about these selectors by name.
+  const code = narrow.replace(/\/\*[\s\S]*?\*\//g, '');
+  const forked = code.match(/\.wbtn[^{}]*\{[^}]*(?:min-height|font-size|border-radius|padding)\s*:/g) || [];
+  const bad = forked.filter(r => !/min-width/.test(r));
+  assert.deepStrictEqual(bad, [],
+    'the phone layer resizes a button again, which is how four heights happened: ' + bad.join(' | '));
+
+  /* A field is not a button: you aim at a button once and it is gone, and you
+     aim at a text field, miss, and aim again with the keyboard already up. */
+  const fields = /([^{}]*)\{[^}]*min-height:\s*44px/.exec(code);
+  assert.ok(fields, 'nothing holds the fields at 44px');
+  for (const sel of ['select', 'input[type="text"]', '.fld textarea']) {
+    assert.ok(fields[1].includes(sel), sel + ' is not held at 44px');
+  }
+  assert.ok(!/\.wbtn/.test(fields[1]),
+    'the button is named in the field rule again, so its height has two sources');
+
   assert.match(narrow, /\.tab \{[^}]*min-height:\s*44px/, 'the villa detail tabs are still 34px');
   assert.match(narrow, /a\.wrow \{[^}]*min-height:\s*44px/, 'a row that is a link has no minimum height');
 
-  /* Exactly one control is allowed under 44: the button inside a list row.
-     It sits in a card beside a line of text, and at 44 it was the tallest
-     thing on a 120px card and read as the point of the row. 38 is still well
-     over the 24px WCAG asks for. Every other pressable thing keeps 44, and
-     this counts them so a second exception cannot arrive unannounced. */
-  const under = [];
-  const re = /([^{}]*)\{[^}]*min-height:\s*(\d+)px/g;
-  let m;
-  while ((m = re.exec(narrow))) {
-    const px = Number(m[2]);
-    // The capture runs back to the previous rule, so it picks up any comment
-    // sitting above this one. The selector is what follows the last of them.
-    const sel = m[1].replace(/\/\*[\s\S]*?\*\//g, '').trim().replace(/\s+/g, ' ');
-    if (px < 44) under.push(sel + ' = ' + px + 'px');
-  }
-  assert.strictEqual(under.length, 1,
-    'expected one control under 44px, found ' + under.length + ': ' + under.join('; '));
-  assert.match(under[0], /^\.wrow \.actc.*\.wbtn = 3[89]px$/,
-    'the one control allowed under 44px is not the button inside a list row: ' + under[0]);
+  /* Two controls on a line of their own split it evenly. "Accept" is 72px of
+     text and "Ask to reassign" is 119px, so left to size themselves they read
+     as one button and an afterthought rather than a choice between two. */
+  assert.match(narrow, /\.wrow \.actc\.wide \.wbtn \{[^}]*flex:\s*1 1 0/,
+    'paired controls do not share their line evenly');
+  assert.match(narrow, /\.wrow \.actc:not\(\.wide\) \.wbtn \{[^}]*min-width:\s*var\(--btn-min-w\)/,
+    'a single control may shrink below the shared minimum width');
 });
 
 test('the money leads its line, tabular, and never breaks mid-value', async () => {
