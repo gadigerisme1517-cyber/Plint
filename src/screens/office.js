@@ -173,28 +173,35 @@ module.exports = function officeScreens(ctx) {
 
   /* The same nine groups as a screen, for a phone. A drawer would need script;
      this is one tap to a list and one tap to a destination, it works with no
-     JavaScript at all, and it is the same list the sidebar draws rather than a
-     second copy that will drift from it. */
+     JavaScript at all, and it is the same GROUPS the sidebar is drawn from
+     rather than a second copy that will drift from it.
+
+     Drawn as a menu, not as another screen. It used to have the hero with a
+     count in it, the cards, and the subtitle under every row - so opening it
+     looked exactly like arriving at a fifteenth dashboard, and the only way to
+     tell was to read it. It also ran to two screens of scrolling, which is the
+     opposite of what a menu is for. One line each, no count in the header, and
+     all fifteen inside one screen. */
   function menu(sess, n, msg) {
     const body = GROUPS.map(([g, items]) =>
-      (g ? `<div class="blk"><p class="k">${esc(g)}</p></div>` : '') +
-      `<div class="wl">${items.map(([k, label]) => wrow({
-        href: href(k),
-        title: label,
-        detail: esc(HEAD[k][1]),
-        chip: n[k] === null || n[k] === undefined ? ''
-          : n[k] === 0 ? '<i class="chip ok">clear</i>'
-          : `<i class="chip ${k === 'chase' || k === 'silent' ? 'late' : 'wait'}">${n[k]}</i>`,
-      })).join('')}</div><div class="gap"></div>`).join('');
+      (g ? `<p class="grp">${esc(g)}</p>` : '') +
+      items.map(([k, label]) => {
+        const c = n[k];
+        /* The number, and nothing else. What each destination is for belongs on
+           the destination, which says it in its own subtitle; repeating it here
+           is what made every row two lines and the menu two screens. */
+        const num = c === null || c === undefined ? ''
+          : `<span class="n${c === 0 ? ' zero' : k === 'chase' || k === 'silent' ? ' due' : ''}">${c}</span>`;
+        return `<a href="${href(k)}">${esc(label)}${num}</a>`;
+      }).join('')).join('');
 
-    const open = Object.entries(n)
-      .filter(([k, v]) => KEYS.has(k) && typeof v === 'number')
-      .reduce((a, [, v]) => a + v, 0);
-
-    return desk(sess, 'menu', 'Everything', '', `
-${hero(open, 'across the office', 'Everything', 'Nine groups, in the order a file moves through them: '
-  + 'from the day sales let go of it to the last account transferred after possession.', open > 0)}
-<div class="mbody anim">${flash(msg)}${body}</div>`, sidebar(null, n));
+    return desk(sess, 'menu', 'Menu', '', `
+<div class="mhead"><div class="hstrip"><div class="g">
+<h1 class="pgt">Everything</h1>
+<p class="s" style="margin-top:2px">Nine groups, in the order a file moves through them.</p>
+</div></div></div>
+<div class="mbody anim">${flash(msg)}<nav class="omenu">${body}</nav></div>`,
+      sidebar(null, n));
   }
 
   // ---------------------------------------------------------------- the reads

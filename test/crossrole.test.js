@@ -505,8 +505,15 @@ test('the sidebar is the nine groups, on every one of the fifteen', async () => 
   for (const g of ['New from sales', 'Compliance']) {
     assert.ok(menu.html.includes(g), 'the phone menu is missing the group "' + g + '"');
   }
-  const links = (menu.html.match(/class="wrow[^"]*" href="\/office/g) || []).length;
+  /* Counted on the menu's own markup, not on `.wrow`. A menu drawn as a
+     worklist reads as a sixteenth dashboard, which is exactly what it did. */
+  const links = (menu.html.match(/<a href="\/office[^"]*"/g) || []).length;
   assert.strictEqual(links, 15, 'the phone menu offers ' + links + ' destinations, not fifteen');
+  assert.match(menu.html, /<nav class="omenu">/, 'the menu is not drawn as a menu');
+  assert.ok(!/class="wrow/.test(menu.html),
+    'the menu is built out of worklist cards, so it reads as another screen');
+  assert.ok(!/class="kpin/.test(menu.html),
+    'the menu leads with a count, which is a dashboard doing that');
 });
 
 test('every row on every office screen leads somewhere', async () => {

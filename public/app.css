@@ -112,13 +112,49 @@ body { padding: 0; margin: 0; background: var(--paper); }
 .ab-ctx  { font-size: 12.5px; color: var(--ink-3); white-space: nowrap;
            overflow: hidden; text-overflow: ellipsis; }
 .ab-g    { flex: 1; }
-/* The head office's way into its fifteen. It sits on the right with the sign
-   out rather than beside the screen name, where it read as part of the title -
-   "Today Menu", "Owner view Menu". It is a control, so it is drawn as one. */
-.ab-menu { font: 600 13px/1 'Instrument Sans', system-ui, sans-serif;
+/* The head office's way into its fifteen, on a phone only.
+
+   It is the mirror of `.side`: the sidebar is the desktop rendering of these
+   destinations and the button is the phone one, so exactly one of them is ever
+   drawn. On a monitor it was a 36px bordered box sitting between two 16px text
+   labels, on a screen that already listed all fifteen down the left - it read
+   as misaligned because it was furniture with no job. */
+.ab-menu { display: none;
+           font: 600 13px/1 'Instrument Sans', system-ui, sans-serif;
            color: var(--brand); border: 1px solid var(--hair); border-radius: var(--btn-r);
            padding: 0 12px; min-height: var(--btn-h);
-           display: inline-flex; align-items: center; white-space: nowrap; }
+           align-items: center; white-space: nowrap; }
+
+/* ----------------------------------------------------------------- the menu
+
+   A menu that is drawn like a dashboard is not a menu. This one was: the same
+   hero with a count in it, the same cards, the same detail sentence under each
+   row - so opening it looked like arriving at another screen, and the only way
+   to tell it apart was to read it. It scrolled for two screens as well, which
+   is the opposite of what a menu is for.
+
+   So it has its own shape: no count, no cards, one line per destination, and
+   the whole of the head office's fifteen inside one screen. The rows are still
+   44px, because it is the one screen whose entire content is things to tap. */
+.omenu { display: block; }
+.omenu .grp {
+  font: 500 11.5px/1 'Instrument Sans', system-ui, sans-serif;
+  letter-spacing: .04em; text-transform: uppercase;
+  color: var(--ink-3); margin: 18px 0 2px;
+}
+.omenu .grp:first-child { margin-top: 4px; }
+.omenu a {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 44px; padding: 0 2px;
+  border-bottom: 1px solid var(--hair);
+  text-decoration: none; color: var(--ink);
+  font: 500 15px/20px 'Instrument Sans', system-ui, sans-serif;
+}
+.omenu a:last-child { border-bottom: 0; }
+.omenu a .n { margin-left: auto; font-variant-numeric: tabular-nums; font-size: 13px; }
+.omenu a .n.zero { color: var(--ink-3); }
+.omenu a .n.due  { color: var(--hot); font-weight: 600; }
+.omenu a[aria-current="page"] { color: var(--brand); }
 /* The screen name is a phone affordance: on a desktop the breadcrumb in the
    topbar already names it, and saying it twice is noise. */
 .ab-screen { display: none; }
@@ -164,8 +200,10 @@ body { padding: 0; margin: 0; background: var(--paper); }
     padding-bottom: calc(var(--tabbar-h) + var(--safe-b));
     min-height: calc(100dvh - var(--appbar-h) - var(--tabbar-h) - var(--safe-b));
   }
-  /* The sidebar is the desktop rendering of the same destinations. */
+  /* The sidebar is the desktop rendering of the same destinations, and the
+     menu button is the phone one. Exactly one of the two is ever drawn. */
   .side { display: none; }
+  .ab-menu { display: inline-flex; }
   .ab-nav { display: none; }
   .ab-ctx { display: none; }
 
