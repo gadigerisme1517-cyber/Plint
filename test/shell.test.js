@@ -225,10 +225,15 @@ test('the worklists can stop being tables', async () => {
      from the markup, which only `!important` will beat. */
   assert.match(narrow[1], /\.wrow \+ \.uprow \.mid \{[^}]*display:\s*contents\s*!important/,
     'the span around the sentence and the picker is still a box, so the button cannot sit beside them');
-  assert.match(narrow[1], /\.wrow \+ \.uprow select \{[^}]*flex:[^;]*!important/,
+  assert.match(narrow[1], /\.wrow \+ \.uprow \.mid select\s+\{[^}]*flex:[^;]*!important/,
     'the picker keeps its fixed 220px, so it cannot share a line with the button');
-  assert.match(narrow[1], /\.wrow \+ \.uprow \.s \{[^}]*flex:\s*1 1 100%/,
+  assert.match(narrow[1], /\.wrow \+ \.uprow \.mid \.s\s+\{[^}]*flex:\s*1 1 100%/,
     'the sentence does not take its own line, so it will squeeze the picker');
+  /* And after the four `!important` rules that stack every other .uprow field
+     full width - equal importance, so this one wins on specificity, and the
+     picker needs `.mid` in its selector to outrank `.uprow .mid .fi`. */
+  assert.ok(narrow[1].indexOf('.uprow .mid .fi') < narrow[1].indexOf('.wrow + .uprow .mid select'),
+    'the reassign rules come before the ones that stack every field full width');
 
   /* The narrow rule for the histogram must outrank the base rule rather than
      merely differ from it. The first version used the same selector, `.agebar`,
