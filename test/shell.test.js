@@ -289,6 +289,23 @@ test('one gutter, and everything on a phone starts on it', async () => {
   // And nothing may re-pad them afterwards, which is what happened once.
   const dupes = (narrow.match(/\.tools \{[^}]*padding-left:\s*18px/g) || []).length;
   assert.strictEqual(dupes, 0, 'a later rule pads .tools again, so its contents will not line up');
+
+  /* Vertical space stacked the same way it did horizontally. Between the last
+     card of one section and the next section's heading there were four
+     separate contributions: the row's own 8px margin, 8px of padding inside
+     `.wl`, `.wl`'s 18px margin, and a 36px spacer element - 70px of nothing on
+     a 812px screen. On a phone `.wl` has no border and no background, so its
+     padding and margin are buying nothing and the spacer is left to do the
+     job alone. */
+  const panel = /\.wl, \.tools \{([^}]*)\}/.exec(narrow);
+  assert.ok(panel, 'the list panel is never stripped down on a phone');
+  assert.match(panel[1], /padding-bottom:\s*0/, 'the stripped panel still pads its own bottom');
+  assert.match(panel[1], /margin-bottom:\s*0/, 'the stripped panel still adds a bottom margin');
+  const gap = /\.mbody \.gap \{([^}]*)\}/.exec(narrow);
+  assert.ok(gap, 'the section spacer keeps its desktop height on a phone');
+  const px = Number(/height:\s*(\d+)px/.exec(gap[1])[1]);
+  assert.ok(px > 0 && px <= 24,
+    'the section spacer is ' + px + 'px; it is the only separator left, but it is not a screenful');
 });
 
 test('the day count sits with the status pill, on the heading line', async () => {

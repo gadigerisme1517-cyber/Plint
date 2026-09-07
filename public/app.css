@@ -242,7 +242,16 @@ body { padding: 0; margin: 0; background: var(--paper); }
     border-radius: 0;
     background: none;
     box-shadow: none;
+    /* With the panel's border and background gone the list is no longer a box,
+       so its inner padding is only dead space. It was stacking with the last
+       card's own margin, the panel's margin and the section spacer to put 70px
+       of nothing between the last card of one section and the next heading. */
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    margin-bottom: 0 !important;
   }
+  /* Which leaves the spacer as the one thing separating two sections. */
+  .mbody .gap { height: 20px; }
 
   .wrow {
     display: grid !important;
