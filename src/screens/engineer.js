@@ -361,7 +361,7 @@ ${pend.length ? pend.map(x => {
     chip: '<i class="chip ' + (thin ? 'warn' : 'wait') + '">'
           + (thin ? x.shots + ' photo' + (x.shots === 1 ? '' : 's') : 'ready') + '</i>',
     amount: M.money(stageTotal(d.byProject, x)),
-    action: thin ? 'Too few photographs'
+    action: thin ? 'Too few photos'
           : '<a class="wbtn solid st" href="/engineer/cert/' + encodeURIComponent(x.id)
             + '" style="text-decoration:none">Review</a>',
     actionIsText: thin,

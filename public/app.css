@@ -247,9 +247,16 @@ body { padding: 0; margin: 0; background: var(--paper); }
   .wrow {
     display: grid !important;
     grid-template-columns: minmax(0, 1fr) auto auto;
-    align-items: baseline;
-    column-gap: 10px;
-    row-gap: 4px;
+    /* Not `baseline`. Baseline alignment across a row that contains a 44px
+       control inflates every track to find a common baseline - tracks of
+       25.7 / 18 / 44 came out as a 141px card. */
+    align-items: start;
+    /* plint.css:420 sets `gap: 14px !important` on `.wrow` for the desktop
+       table, so a plain `row-gap` here loses to it and every card carried 28px
+       of gaps it was never asked for - 20px per card, on every list. The third
+       rule of this file's kind that plint.css was quietly winning. */
+    column-gap: 10px !important;
+    row-gap: 4px !important;
     margin: 0 0 8px !important;
     padding: 12px 14px !important;
     border: 1px solid var(--hair) !important;
@@ -311,8 +318,17 @@ body { padding: 0; margin: 0; background: var(--paper); }
   .wrow .stc  { grid-area: 1 / 3; justify-self: end; text-align: right; }
 
   /* Line two: the detail, with the money right-aligned beside it. */
-  .wrow .mid p.s { grid-area: 2 / 1; margin-top: 3px; }
-  .wrow .amt  { grid-area: 2 / 2; align-self: end; justify-self: end;
+  /* The detail is a sentence, so it gets the width of the card.
+
+     It used to share the line with the amount and the action, which left it
+     162px of a 393px screen: "N. Prasad · marked by Suresh Kumar on 31 Aug
+     2026" folded into a narrow column with the amount stranded beneath it,
+     and the card came out 110px against 84px for a row without an action. */
+  .wrow .mid p.s { grid-area: 2 / 1 / 3 / 4; margin-top: 3px; }
+
+  /* Then the money and the control that acts on it, together and hard right.
+     A row with neither never draws this line. */
+  .wrow .amt  { grid-area: 3 / 1 / 4 / 2; align-self: center; justify-self: end;
                 text-align: right; white-space: nowrap;
                 font-variant-numeric: tabular-nums; }
 
@@ -323,17 +339,20 @@ body { padding: 0; margin: 0; background: var(--paper); }
      which through `actc wide`. */
   .wrow .actc:not(.s):not(.wide) .wbtn { padding: 10px 12px; font-size: 13px; }
   .wrow .actc:not(.s):not(.wide) {
-    grid-area: 2 / 3;
+    grid-area: 3 / 3;
     display: flex; align-items: center; justify-content: flex-end;
-    align-self: end;
+    align-self: center;
   }
   .wrow .actc.wide {
-    grid-area: 3 / 1 / 4 / 4;
+    grid-area: 4 / 1 / 5 / 4;
     display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end;
     margin-top: 8px;
   }
   /* A status line rather than a control - "Too few photographs". */
-  .wrow .actc.s { grid-area: 3 / 1 / 4 / 4; justify-self: end; text-align: right; }
+  /* A status word rather than a control. It sits beside the amount, not on top
+     of it: spanning the whole line printed "Too few photographs" straight
+     through "₹33,60,000". */
+  .wrow .actc.s { grid-area: 3 / 2 / 4 / 4; justify-self: end; text-align: right; }
   /* But when the whole row is a link, a word saying "Open" is furniture. */
   a.wrow .actc.s { display: none; }
   .wrow .actc:not(.s) form { display: flex; gap: 8px; flex-wrap: wrap; }

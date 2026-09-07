@@ -403,14 +403,25 @@ test('amounts are right-aligned, tabular, and never break mid-value', async () =
      under the other. The day count used to get a line of its own across the
      row, right-aligned against nothing. */
   assert.match(amt[1], /justify-self:\s*end/, 'the amount is not aligned to the right edge');
-  /* The amount shares row two with a compact action now, so it sits in the
-     middle column rather than spanning to the edge: a full-width row holding
-     one "Review" button cost a whole line on every card. */
-  assert.match(amt[1], /grid-area:\s*2 \/ 2/, 'the amount is not on the detail line');
+  /* The amount and the control that acts on it share a line of their own,
+     below the detail. The detail had been sharing that line and was left 162px
+     of a 393px screen, folding a one-line sentence into two. */
+  assert.match(amt[1], /grid-area:\s*3 \/ 1/, 'the amount is not on the action line');
   const act = /\.wrow \.actc:not\(\.s\):not\(\.wide\) \{([^}]*)\}/.exec(narrow);
   assert.ok(act, 'a single control has no compact placement');
-  assert.match(act[1], /grid-area:\s*2 \/ 3/, 'a single control is not beside the amount');
-  assert.match(narrow, /\.wrow \.actc\.wide \{[^}]*grid-area:\s*3 \//,
+  assert.match(act[1], /grid-area:\s*3 \/ 3/, 'a single control is not beside the amount');
+
+  /* A status word is a third thing that can land on that line, and it must not
+     land on top of the amount - spanning the full width printed "Too few
+     photographs" straight through "₹33,60,000". */
+  const status = /\.wrow \.actc\.s \{([^}]*)\}/.exec(narrow);
+  assert.ok(status, 'no placement for a status word');
+  assert.match(status[1], /grid-area:\s*3 \/ 2/, 'a status word overlaps the amount');
+
+  /* The detail gets the width of the card. */
+  assert.match(narrow, /\.wrow \.mid p\.s \{[^}]*grid-area:\s*2 \/ 1 \/ 3 \/ 4/,
+    'the detail sentence does not span the card');
+  assert.match(narrow, /\.wrow \.actc\.wide \{[^}]*grid-area:\s*4 \//,
     'two or more controls must still take their own line, they will not fit beside an amount');
 });
 
@@ -435,6 +446,14 @@ test('the phone list is v21\'s, not a table in disguise', async () => {
      a margin here is exactly how the card ended up inset further than the
      label above it. */
   assert.match(card[1], /margin:\s*0 0 8px/, 'the card sets its own horizontal margin again');
+
+  /* plint.css:420 sets `gap: 14px !important` on `.wrow` for its desktop
+     table. Without `!important` here every card carried 28px of row gaps it
+     was never asked for - 20px per card, on every list on every screen. */
+  assert.match(card[1], /row-gap:\s*4px\s*!important/,
+    'the row gap will lose to plint.css and every card grows 20px');
+  assert.match(card[1], /align-items:\s*start/,
+    'baseline alignment inflates every track around a 44px control');
 
   /* And the heading is one heading. The villa came out at 12.5px and the stage
      at 13px, so they read as two labels with a dot floating between them. */
