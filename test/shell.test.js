@@ -459,7 +459,7 @@ test('the office menu names every destination and counts it', async () => {
                    'Waiting on the bank', 'Your own money', 'Buyer decisions', 'Compliance']) {
     assert.ok(panel.includes(g), 'the menu is missing the group "' + g + '"');
   }
-  for (const label of ['Today', 'Owner dashboard', 'Waiting for pickup', 'Ready to send',
+  for (const label of ['Today', 'The position', 'Waiting for pickup', 'Ready to send',
                        'Lender asked a question', 'Sanction not recorded', 'Sign-off and evidence',
                        'Site gone quiet', 'Sent, not yet paid', 'Escrow drawdown',
                        'Choices not made', 'Warranty claims', 'Evidence certificates',
@@ -763,7 +763,7 @@ test('the header is one bar, not four bands', async () => {
   for (const [role, p, name] of [['engineer', '/engineer', 'Me'],
                                  ['engineer', '/engineer/villas', 'Villas'],
                                  ['office', '/office', 'Today'],
-                                 ['office', '/office/owner', 'Owner dashboard'],
+                                 ['office', '/office/owner', 'The position'],
                                  ['buyer', '/journey', 'Journey']]) {
     const h = await body(p, role);
     assert.ok(h.includes('<span class="ab-screen">' + name + '</span>'),
@@ -1042,6 +1042,29 @@ test('nothing is laid out with a width the page cannot override', async () => {
     assert.ok(!/style="[^"]*height:/.test(b), 'a column still carries an inline height: ' + b);
     assert.match(b, /--h:|--pct:/, 'a column does not pass its size as a property: ' + b);
   }
+});
+
+test('no destination is named after the person reading it', async () => {
+  /* "Owner view" and then "Owner dashboard" both named who was looking rather
+     than what they were looking at, and an owner does not need telling whose
+     dashboard it is. Every other destination in this role is named for its
+     content - Today, Ready to send, Sanction not recorded - and this one is
+     "The position", which is the question it answers and pairs with Today:
+     where we stand, against what needs doing now. */
+  const h = await body('/office', 'office');
+  const panel = h.split('<nav class="dpanel"')[1] || '';
+  assert.ok(panel, 'no menu to read the destination names from');
+
+  /* Destination labels only. The group headings are content and may name a
+     party - "Buyer decisions" is whose decisions they are, read by the office,
+     which is the right way round. */
+  const labels = [...panel.matchAll(/<span class="dl">([^<]*)<\/span>/g)].map(m => m[1]);
+  assert.strictEqual(labels.length, 15, 'read ' + labels.length + ' destination labels, not fifteen');
+  for (const l of labels) {
+    assert.ok(!/^(Owner|Admin|My|Your)/i.test(l),
+      'a destination is named after who is reading it: ' + JSON.stringify(l));
+  }
+  assert.ok(labels.includes('The position'), 'the position has lost its name');
 });
 
 test('the owner dashboard answers the three questions it exists for', async () => {

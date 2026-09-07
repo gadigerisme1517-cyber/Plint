@@ -47,7 +47,7 @@ module.exports = function officeScreens(ctx) {
   const GROUPS = [
     ['', [
       ['today',      'Today'],
-      ['owner',      'Owner dashboard'],
+      ['owner',      'The position'],
     ]],
     ['New from sales', [
       ['handoff',    'Waiting for pickup'],
@@ -110,7 +110,7 @@ module.exports = function officeScreens(ctx) {
   /** v21's own headline and subtitle for each screen, kept as it wrote them. */
   const HEAD = {
     today:      ['Today', 'What is on this office now'],
-    owner:      ['Owner dashboard', 'The position, not the worklist'],
+    owner:      ['The position', 'Where the project stands, rather than what needs doing today'],
     handoff:    ['New from sales', 'Buyers who have paid a token and have no owner yet'],
     packs:      ['Ready to send', 'Stage verified. Pack generated. Not yet with the lender'],
     query:      ['Lender questions', 'Open queries holding a disbursement'],
@@ -614,9 +614,9 @@ ${stuckByHolder(b) || `<div class="blk"><p class="k">Stuck money</p></div>
         rows.map(([k, v]) => wrow({ title: k, amount: v })).join('')}</div>`;
 
     return screen(sess, 'owner', n, `
-${UI.head('Owner dashboard',
-  'The position, not the worklist. ' + r.villas.n + ' villas, '
-  + M.crore(book) + ' of agreements.',
+${UI.head('The position',
+  r.villas.n + ' villas, ' + M.crore(book) + ' of agreements, and where all of '
+  + 'it stands today.',
   UI.summary({
     cap: 'Collected',
     figure: M.crore(collected),
