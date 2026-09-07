@@ -55,6 +55,11 @@ const run = (label, args) => {
 
     if (already > 0) {
       console.log('\n── seed\n  skipped: ' + already + ' villas already present');
+      /* But a database seeded before migrations 011 and 012 has their tables
+         and none of their rows, and every new screen would render an empty
+         worklist - which on screen is indistinguishable from a broken one.
+         The top-up is a no-op once it has run. */
+      run('state top-up', ['db/seed-state-topup.js']);
     } else {
       run('seed (demo data)', ['db/seed.js']);
     }
