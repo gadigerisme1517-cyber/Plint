@@ -532,13 +532,18 @@ test('every button in the application is the same object', async () => {
 
   /* A field is not a button: you aim at a button once and it is gone, and you
      aim at a text field, miss, and aim again with the keyboard already up. */
-  const fields = /([^{}]*)\{[^}]*min-height:\s*44px/.exec(code);
-  assert.ok(fields, 'nothing holds the fields at 44px');
+  const fields = /([^{}]*)\{[^}]*min-height:\s*var\(--field-h\)/.exec(code);
+  assert.ok(fields, 'nothing holds the fields at the field height');
   for (const sel of ['select', 'input[type="text"]', '.fld textarea']) {
     assert.ok(fields[1].includes(sel), sel + ' is not held at 44px');
   }
   assert.ok(!/\.wbtn/.test(fields[1]),
     'the button is named in the field rule again, so its height has two sources');
+  /* But a button standing on a line with a field takes the field's height, or
+     the pair reads as two unrelated controls: the head office's Reassign was
+     36px beside a 45px picker, centred against it. */
+  assert.match(css, /\.uprow \.wbtn, \.fld \.wbtn \{[^}]*min-height:\s*var\(--field-h\)/,
+    'a button beside a field does not match its height');
 
   assert.match(narrow, /\.tab \{[^}]*min-height:\s*44px/, 'the villa detail tabs are still 34px');
   assert.match(narrow, /a\.wrow \{[^}]*min-height:\s*44px/, 'a row that is a link has no minimum height');

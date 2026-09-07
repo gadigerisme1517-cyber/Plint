@@ -23,6 +23,9 @@
      only thing you can do on that screen. */
   --btn-h: 36px;
   --btn-h-full: 44px;
+  /* A field is not a button. You aim at a button once and it is gone; you aim
+     at a text field, miss, and aim again with the keyboard already up. */
+  --field-h: 44px;
   --btn-r: 9px;
   --btn-fs: 13px;
   /* Short labels next to long ones - "Accept" beside "Ask to reassign" - read
@@ -212,6 +215,10 @@ body { padding: 0; margin: 0; background: var(--paper); }
   border-radius: var(--btn-r);
   font-size: var(--btn-fs);
 }
+/* And a button standing on a line with a field takes the field's height. The
+   head office's Reassign was 36px beside a 45px picker, centred against it, so
+   the pair read as two unrelated controls that happened to land together. */
+.uprow .wbtn, .fld .wbtn { min-height: var(--field-h); }
 
 /* ------------------------------------------- 4. `wide` is a desktop rendering
 
@@ -550,7 +557,7 @@ body { padding: 0; margin: 0; background: var(--paper); }
   .lgb, .ib, .dest,
   .uprow .fi, .uprow select, .fld input, .fld textarea,
   input[type="text"], input[type="email"], input[type="password"], select {
-    min-height: 44px;
+    min-height: var(--field-h);
   }
   /* The back arrow is an icon with nothing around it - about 20px of target. */
   .ib { min-width: 44px; display: inline-flex; align-items: center; justify-content: center; }
