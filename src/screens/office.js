@@ -30,6 +30,11 @@ module.exports = function officeScreens(ctx) {
   const { esc, desk, M, asUser, schedules, stageTotal } = ctx;
 
   const { wrow, whead, empty, ageChip, AGE } = require('./rows')({ esc });
+  /* The furniture every dashboard is built from. One platform, three
+     dashboards: the summary card, the tile grid and the section panel are
+     defined once in ./ui, and this file composes them rather than drawing its
+     own. Eleven places used to draw the same header. */
+  const UI = require('./ui')({ esc });
 
   const days = d => Math.max(0, Math.round((Date.now() - new Date(d).getTime()) / 86400000));
   const until = d => Math.round((new Date(d).getTime() - Date.now()) / 86400000);
@@ -129,13 +134,18 @@ module.exports = function officeScreens(ctx) {
      are here rather than typed into the queries that use them. */
   const PACK_LATE_DAYS = 14;
 
-  const hero = (count, unitWord, title, sentence, hot) => `
-<div class="mhead"><div class="hstrip">
-<div class="g"><h1 class="pgt">${esc(title)}</h1>
-<p class="s" style="margin-top:2px">${sentence}</p></div>
-<div class="kpi"><span class="kpin ${hot ? 'hot' : ''}">${esc(String(count))}</span>
-<span class="k">${esc(unitWord)}</span></div>
-</div></div>`;
+  /* The header, from the shared furniture rather than drawn here.
+
+     The fourteen screens behind Today are worklists: a title, a sentence and
+     one figure is what a worklist owes its reader. Today and Owner view are
+     dashboards, and they pass `parts`, `bar` and a tile grid through the same
+     helper - so the difference between a worklist and a dashboard is what the
+     screen has to say, not how it is built. */
+  const hero = (count, unitWord, title, sentence, hot, extra) =>
+    UI.head(title, sentence, UI.summary({
+      cap: unitWord, figure: esc(String(count)), tone: hot ? 'hot' : null,
+      parts: extra && extra.parts, bar: extra && extra.bar,
+    }) + (extra && extra.tiles ? extra.tiles : ''));
 
   // ------------------------------------------------------------------ counts
 
@@ -249,6 +259,11 @@ ${body}
     switch (k) {
 
       case 'today': return {
+        /* How far through the book the project is, for the summary's bar. */
+        stagesPaid: Number((await c.query(
+          `SELECT count(*) n FROM unit_stages WHERE status = 'paid'`)).rows[0].n),
+        stagesAll: Number((await c.query(
+          `SELECT count(*) n FROM unit_stages`)).rows[0].n),
         blockers: (await c.query(
           `SELECT u.id unit_id, u.code, u.buyer_name, u.bank, u.agreement_value_paise,
                   u.project_id, u.assigned_engineer_id,
@@ -479,20 +494,23 @@ ${g.length} villa${g.length === 1 ? '' : 's'} &middot; ${M.crore(sum)}</span><di
     const stuck = b.reduce((a, x) => a + x.value, 0);
     const onYou = n.handoff + n.packs + n.query + n.chase + n.questions;
 
-    /* What this office can do something about today, before what it is only
-       waiting on. Each row is a link to the destination that holds it, so the
-       count and the screen it counts are never two different truths. */
-    const yours = [
-      ['handoff', n.handoff, 'files from sales with no owner yet'],
-      ['packs', n.packs, 'packs verified and not sent'],
-      ['query', n.query, 'lender questions holding a disbursement'],
-      ['chase', n.chase, 'buyers with no sanction letter on file'],
-    ].filter(([, c]) => c > 0).map(([k, c, what]) => wrow({
-      href: href(k),
-      title: HEAD[k][0],
-      detail: c + ' ' + what,
-      chip: `<i class="chip ${k === 'chase' ? 'late' : 'wait'}">${c}</i>`,
-    })).join('');
+    /* The four things this office can act on, as tiles rather than as rows.
+
+       They were rows in a list under a heading, which is the same weight as
+       every other row on the screen - so fourteen missing sanction letters and
+       one settled stage read alike, and the fourteen got scrolled past. A tile
+       with the number at 30px and the colour of how late it is says which of
+       them is the problem before anything is read. */
+    const tiles = UI.stats([
+      { n: n.chase,   label: 'No sanction', sub: 'nothing can be disbursed',
+        href: href('chase'),   tone: UI.countTone(n.chase, true) },
+      { n: n.packs,   label: 'Packs to send', sub: 'verified, not with the lender',
+        href: href('packs'),   tone: UI.countTone(n.packs, true) },
+      { n: n.handoff, label: 'New from sales', sub: 'no owner in this office',
+        href: href('handoff'), tone: UI.countTone(n.handoff, true) },
+      { n: n.query,   label: 'Lender asked', sub: 'holding a disbursement',
+        href: href('query'),   tone: UI.countTone(n.query, true) },
+    ]);
 
     const questions = (d.rows.questions || []).map(q => wrow({
       href: '/office/question/' + encodeURIComponent(q.id),
@@ -506,17 +524,36 @@ ${g.length} villa${g.length === 1 ? '' : 's'} &middot; ${M.crore(sum)}</span><di
 
     const oldest = b.length ? Math.max(...b.map(x => x.age)) : 0;
 
+    /* What is happening, before what needs doing. The money is the headline
+       because this is the screen an owner opens: how much is not moving, what
+       it is made of, and how far through the book the project is. */
+    const paid = d.rows.stagesPaid || 0, allStages = d.rows.stagesAll || 1;
+
     return screen(sess, 'today', n, `
-${hero(onYou, 'on this office', 'Today',
+${UI.head('Today',
   onYou ? 'Work this office can move today. What it is only waiting on is under '
           + '&ldquo;Chasing your team&rdquo; and &ldquo;Waiting on the bank&rdquo;.'
-        : 'Nothing is sitting with this office. ' + M.crore(stuck) + ' is stuck elsewhere, '
-          + 'and the oldest has been waiting ' + oldest + ' days.',
-  onYou > 0)}
+        : 'Nothing is sitting with this office. The rest is with the site, the '
+          + 'lenders and the buyers.',
+  UI.summary({
+    cap: 'Stuck money',
+    figure: M.crore(stuck),
+    tone: stuck > 0 ? 'hot' : null,
+    note: b.length + ' stage' + (b.length === 1 ? '' : 's') + ' blocked across the project'
+      + (oldest ? ', the oldest for ' + oldest + ' days' : ''),
+    parts: [
+      { cap: 'On this office', value: String(onYou), tone: UI.countTone(onYou, true) },
+      { cap: 'Oldest', value: oldest + 'd', tone: UI.ageTone(oldest) },
+      { cap: 'Blocked', value: String(b.length) },
+    ],
+    bar: {
+      pct: Math.round(paid / allStages * 100),
+      left: Math.round(paid / allStages * 100) + '% of stages paid',
+      right: paid + ' of ' + allStages,
+    },
+  }) + tiles)}
 <div class="mbody anim">
 ${flash(msg)}
-${yours ? `<div class="blk"><p class="k">Waiting on you</p></div>
-<div class="wl">${yours}</div><div class="gap"></div>` : ''}
 ${questions ? `<div class="blk"><p class="k">Buyers have asked you something</p></div>
 <div class="wl">${questions}</div><div class="gap"></div>` : ''}
 ${stuckByHolder(b) || `<div class="blk"><p class="k">Stuck money</p></div>

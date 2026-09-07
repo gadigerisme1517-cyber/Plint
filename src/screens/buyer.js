@@ -33,6 +33,10 @@ module.exports = function buyerScreens(ctx) {
   const { esc, desk, M, asUser } = ctx;
 
   const { wrow, empty, ageChip, AGE } = require('./rows')({ esc });
+  /* The furniture every dashboard is built from. One platform, three
+     dashboards: the header, the summary card and the tile grid are defined
+     once in ./ui and composed here. Nothing in this file draws its own. */
+  const UI = require('./ui')({ esc });
 
   const days = d => Math.max(0, Math.round((Date.now() - new Date(d).getTime()) / 86400000));
   const until = d => Math.round((new Date(d).getTime() - Date.now()) / 86400000);
@@ -46,13 +50,15 @@ module.exports = function buyerScreens(ctx) {
   /* The hero, in one place. Every tab on every role opens with the same
      shape - a count, a title and a sentence - and it was being retyped per
      screen, which is how the office ended up with two counts a line each. */
-  const hero = (count, unitWord, title, sentence, hot) => `
-<div class="mhead"><div class="hstrip">
-<div class="g"><h1 class="pgt">${esc(title)}</h1>
-<p class="s" style="margin-top:2px">${sentence}</p></div>
-<div class="kpi"><span class="kpin ${hot ? 'hot' : ''}">${esc(String(count))}</span>
-<span class="k">${esc(unitWord)}</span></div>
-</div></div>`;
+  /* Same signature as before, so every screen in this file is unchanged; what
+     it draws is the shared header and summary card rather than markup of its
+     own. `extra` carries the parts and the bar for the screens that are
+     dashboards rather than lists. */
+  const hero = (count, unitWord, title, sentence, hot, extra) =>
+    UI.head(title, sentence, UI.summary({
+      cap: unitWord, figure: esc(String(count)), tone: hot ? 'hot' : null,
+      parts: extra && extra.parts, bar: extra && extra.bar,
+    }) + (extra && extra.tiles ? extra.tiles : ''));
 
   // ------------------------------------------------------------------ reads
 

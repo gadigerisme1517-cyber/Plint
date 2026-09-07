@@ -73,12 +73,14 @@ test('the buyer sees every paper his bank will ask for, from the database', asyn
   for (const name of new Set(papers.map(p => p.full_name))) {
     assert.ok(html.includes(esc(name)), 'the applicant is not named: ' + name);
   }
-  // The hero puts the figure and its unit in separate spans, so match the span.
-  const kpi = /<span class="kpin[^"]*">([^<]*)<\/span>\s*<span class="k">([^<]*)</.exec(html);
-  assert.ok(kpi, 'the screen has no hero count at all');
-  assert.strictEqual(kpi[1].trim(), String(papers.length),
+  /* The headline figure and the word for it, from the shared summary card.
+     It was a `.kpin` each screen drew for itself until the dashboards were
+     built from one set of pieces. */
+  const cap = /<p class="cap">([^<]*)<\/p>\s*<p class="fig[^"]*">([^<]*)</.exec(html);
+  assert.ok(cap, 'the screen has no headline figure at all');
+  assert.strictEqual(cap[2].trim(), String(papers.length),
     'the count does not match the ' + papers.length + ' papers on file');
-  assert.match(kpi[2], /paper/, 'the count is not counting papers');
+  assert.match(cap[1], /paper/, 'the count is not counting papers');
 
   /* And the state of each one, which is the part a constant could never show:
      the office marks a paper seen and this screen says so. */

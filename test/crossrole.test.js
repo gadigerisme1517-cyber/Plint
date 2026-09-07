@@ -481,7 +481,9 @@ test('every one of the fifteen destinations opens, and none of them is a stub', 
     const path = k ? '/office/' + k : '/office';
     const { status, html } = await get('office', path);
     assert.strictEqual(status, 200, path + ' does not open');
-    assert.match(html, /<span class="kpin/, path + ' has no hero count');
+    /* The figure a screen opens with. A worklist puts it in `.summary .fig`
+       through the shared header; nothing draws its own any more. */
+    assert.match(html, /<p class="fig/, path + ' has no headline figure');
     assert.match(html, /class="pgt"/, path + ' has no title');
     assert.ok(/class="wrow/.test(html) || /class="emptyrow"/.test(html) || /class="agebar/.test(html),
       path + ' shows neither rows, nor a reason there are none');

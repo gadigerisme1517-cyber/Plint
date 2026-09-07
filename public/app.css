@@ -125,6 +125,104 @@ body { padding: 0; margin: 0; background: var(--paper); }
            padding: 0 12px; min-height: var(--btn-h);
            align-items: center; white-space: nowrap; }
 
+/* ------------------------------------------------- the dashboard furniture
+
+   One platform, three dashboards. These are the pieces every one of them is
+   built from, so the design lives here and not eleven times over.
+
+   A dashboard owes its reader three things in this order: what is happening,
+   what needs doing, and what to do about it. `.summary` is the first, `.stats`
+   is the second, and the worklist panels are the third.
+
+   AND URGENCY HAS TO BE VISIBLE. `hot` and `warn` are not decoration - they
+   are the same thresholds the day-count pills use, and a screen where a stuck
+   crore and a settled stage are the same weight of grey is a screen where the
+   crore gets scrolled past. That is what was happening. */
+
+.summary {
+  background: var(--paper);
+  border: 1px solid var(--hair);
+  border-radius: 14px;
+  padding: 18px 16px 16px;
+  margin-bottom: 12px;
+}
+.summary .cap {
+  font: 500 11.5px/14px 'Instrument Sans', system-ui, sans-serif;
+  letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3);
+}
+.summary .fig {
+  font: 500 40px/46px 'Instrument Sans', system-ui, sans-serif;
+  letter-spacing: -1.2px; color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+.summary .fig.hot  { color: var(--hot); }
+.summary .fig.warn { color: var(--warn); }
+.summary .fig.ok   { color: var(--ok); }
+.summary .note {
+  font: 400 13.5px/19px 'Instrument Sans', system-ui, sans-serif;
+  color: var(--ink-2); margin-top: 6px;
+}
+
+/* What the figure is made of. Two or three columns, hairline above them. */
+.summary .split {
+  display: flex; gap: 18px;
+  margin-top: 16px; padding-top: 14px;
+  border-top: 1px solid var(--hair);
+}
+.summary .part { flex: 1 1 0; min-width: 0; }
+.summary .part .v {
+  font: 600 19px/24px 'Instrument Sans', system-ui, sans-serif;
+  font-variant-numeric: tabular-nums; color: var(--ink); margin-top: 2px;
+}
+.summary .part .v.hot  { color: var(--hot); }
+.summary .part .v.warn { color: var(--warn); }
+.summary .part .v.ok   { color: var(--ok); }
+
+/* How far along it is. The width is a custom property so the bar is one rule
+   and never an inline `width:` that no stylesheet can answer. */
+.summary .prog {
+  height: 8px; border-radius: 999px; background: var(--hair-2);
+  margin-top: 14px; overflow: hidden;
+}
+.summary .prog i {
+  display: block; height: 100%; width: var(--pct, 0%);
+  border-radius: 999px; background: var(--brand);
+}
+.summary .progline {
+  display: flex; justify-content: space-between; gap: 12px; margin-top: 8px;
+  font: 400 12.5px/17px 'Instrument Sans', system-ui, sans-serif; color: var(--ink-3);
+}
+.summary .progline span:first-child { color: var(--ink-2); font-weight: 500; }
+
+/* ------------------------------------------------------------- the tiles
+
+   Four numbers big enough to read without stopping. Every tile is a link,
+   because a number nobody can act on is a number that gets ignored. */
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.stat {
+  background: var(--paper); border: 1px solid var(--hair); border-radius: 12px;
+  padding: 14px; color: inherit; min-width: 0;
+}
+.stat .n {
+  font: 500 30px/34px 'Instrument Sans', system-ui, sans-serif;
+  letter-spacing: -.6px; font-variant-numeric: tabular-nums; color: var(--ink);
+}
+.stat .n.hot  { color: var(--hot); }
+.stat .n.warn { color: var(--warn); }
+.stat .n.ok   { color: var(--ok); }
+.stat .l {
+  font: 500 13.5px/18px 'Instrument Sans', system-ui, sans-serif;
+  color: var(--ink); margin-top: 4px;
+}
+.stat .s {
+  font: 400 12.5px/17px 'Instrument Sans', system-ui, sans-serif;
+  color: var(--ink-3); margin-top: 2px;
+}
+@media (min-width: 721px) {
+  .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
 /* --------------------------------------------------------------- the drawer
 
    The head office's fifteen, as a layer over whatever you were looking at.

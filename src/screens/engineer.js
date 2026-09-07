@@ -23,6 +23,11 @@ module.exports = function engineerScreens(ctx) {
   /* One list row, built in one place. See src/screens/rows.js for why the
      villa code has to be inside the heading rather than beside it. */
   const { wrow, whead, empty, ageChip, AGE } = require('./rows')({ esc });
+  /* The furniture every dashboard is built from. One platform, three
+     dashboards: the header, the summary card and the tile grid are defined
+     once in ./ui and composed here. Nothing in this file draws its own - it
+     used to draw nine, each slightly different from the other eight. */
+  const UI = require('./ui')({ esc });
 
   /* v21's six kinds of log entry, with the quick entries it offers under each.
      Two taps, which is the point: a site person will not type a paragraph, and
@@ -119,13 +124,28 @@ module.exports = function engineerScreens(ctx) {
     const total = chased.length + pending.length + open.length;
 
     return desk(sess, '/engineer', 'Me', '', `
-<div class="mhead"><div class="hstrip">
-<div class="g"><h1 class="pgt">On you today</h1>
-<p class="s" style="margin-top:2px">${chased.length} villa${chased.length === 1 ? '' : 's'} the office has
-chased, ${pending.length} certificate${pending.length === 1 ? '' : 's'} to sign,
-${open.length} snag${open.length === 1 ? '' : 's'} to close.</p></div>
-<div class="kpi"><span class="kpin ${total ? 'hot' : ''}">${total}</span><span class="k">on you</span></div>
-</div></div>
+${UI.head('On you today',
+  'Everything on this engineer, in the order it will be asked for.',
+  UI.summary({
+    cap: 'on you',
+    figure: String(total),
+    tone: total ? 'hot' : null,
+    note: 'Nothing here moves without you, and nothing reaches a lender until you sign.',
+    parts: [
+      { cap: 'Chased', value: String(chased.length), tone: UI.countTone(chased.length, true) },
+      { cap: 'To sign', value: String(pending.length), tone: UI.countTone(pending.length, false) },
+      { cap: 'Snags', value: String(open.length), tone: UI.countTone(open.length, true) },
+    ],
+  }) + UI.stats([
+    { n: chased.length, label: 'Office chasing', sub: 'villas they have flagged',
+      href: '/engineer/villas', tone: UI.countTone(chased.length, true) },
+    { n: pending.length, label: 'To certify', sub: 'ready for your signature',
+      href: '/engineer/certs', tone: UI.countTone(pending.length, false) },
+    { n: open.length, label: 'Snags', sub: 'to photograph and close',
+      href: '/engineer/snags', tone: UI.countTone(open.length, true) },
+    { n: d.visits.length, label: 'Visits', sub: 'buyers coming to site',
+      href: '/engineer/visits' },
+  ]))}
 <div class="mbody anim">
 ${flash(msg)}
 ${open.length ? `<div class="tools"><a class="wbtn st" href="/engineer/snags"
@@ -175,12 +195,14 @@ ${chased.length ? `<div class="blk"><p class="k">Office is chasing you</p></div>
        the sentence counts villas the rows do not flag. */
     const behind = d.mine.filter(v => !v.last_shot || days(v.last_shot) >= AGE.overdue).length;
     return desk(sess, '/engineer/villas', 'Villas', '', `
-<div class="mhead"><div class="hstrip">
-<div class="g"><h1 class="pgt">Villas to update</h1>
-<p class="s" style="margin-top:2px">${behind} ${behind === 1 ? 'has' : 'have'} gone three weeks
-without a photograph.</p></div>
-<div class="kpi"><span class="kpin">${d.mine.length}</span><span class="k">assigned</span></div>
-</div></div>
+${UI.head('Villas to update',
+  `${behind} ${behind === 1 ? 'has' : 'have'} gone three weeks without a photograph.`,
+  UI.summary({ cap: 'assigned', figure: String(d.mine.length),
+    tone: behind ? 'warn' : null,
+    parts: [
+      { cap: 'Quiet', value: String(behind), tone: UI.countTone(behind, true) },
+      { cap: 'Photographed', value: String(d.mine.length - behind), tone: 'ok' },
+    ] }))}
 <div class="mbody anim">${flash(msg)}
 <div class="wl">${d.mine.length ? `<div class="whead"><span class="id">Villa</span>
 <span class="mid">Next stage and buyer</span><span class="stc">Evidence</span>
@@ -227,12 +249,9 @@ ${v.status === 'confirmed'
     }).join('');
 
     return desk(sess, '/engineer/visits', 'Visits', '', `
-<div class="mhead"><div class="hstrip">
-<div class="g"><h1 class="pgt">Buyers coming to site</h1>
-<p class="s" style="margin-top:2px">You are named to each. Flags raised while you are there,
-you answer on the spot.</p></div>
-<div class="kpi"><span class="kpin">${d.visits.length}</span><span class="k">booked</span></div>
-</div></div>
+${UI.head('Buyers coming to site',
+  'You are named to each. Flags raised while you are there, you answer on the spot.',
+  UI.summary({ cap: 'booked', figure: String(d.visits.length) }))}
 <div class="mbody anim">${flash(msg)}
 <div class="wl">${d.visits.length ? cards
   : '<div class="emptyrow"><p class="b ink">No visits booked. Buyers request a slot from their app.</p></div>'}</div>
@@ -269,12 +288,10 @@ ${s.status === 'open' ? `<form method="post" action="/engineer/snag" enctype="mu
        the shell is told Me is the current destination, or the bar would
        highlight nothing while the engineer is standing on a real screen. */
     return desk(sess, '/engineer', 'Snags', '', `
-<div class="mhead"><div class="hstrip">
-<div class="g"><h1 class="pgt">Snags to close</h1>
-<p class="s" style="margin-top:2px">Photograph the fix. The buyer signs it off, not you.</p></div>
-<div class="kpi"><a class="wbtn st" href="/engineer" style="text-decoration:none">Back</a></div>
-<div class="kpi"><span class="kpin ${open.length ? 'hot' : ''}">${open.length}</span><span class="k">open</span></div>
-</div></div>
+${UI.head('Snags to close',
+  'Photograph the fix. The buyer signs it off, not you.',
+  UI.summary({ cap: 'open', figure: String(open.length), tone: open.length ? 'hot' : null }),
+  { href: '/engineer', label: 'Back' })}
 <div class="mbody anim">${flash(msg)}
 <div class="wl">${open.length ? open.map(row).join('')
   : '<div class="emptyrow"><p class="b ink">No open snags. Everything raised has been fixed and sent for sign-off.</p></div>'}</div>
@@ -289,10 +306,7 @@ ${done.length ? `<div class="gap"></div><div class="blk"><p class="k">Fixed, wai
     if (kind && LOG_KINDS[kind]) {
       const [label, detail, quick] = LOG_KINDS[kind];
       return desk(sess, '/engineer/log', label, '', `
-<div class="mhead"><div class="hstrip"><div class="g">
-<h1 class="pgt">${esc(label)}</h1><p class="s" style="margin-top:2px">${esc(detail)}</p></div>
-<div class="kpi"><a class="wbtn st" href="/engineer/log" style="text-decoration:none">Back</a></div>
-</div></div>
+${UI.head(label, esc(detail), '', { href: '/engineer/log', label: 'Back' })}
 <div class="mbody anim">
 <div class="blk"><p class="k">Quick entries</p></div>
 <div class="wl">${quick.map(q => `<form method="post" action="/engineer/log" class="wrow">
@@ -315,11 +329,9 @@ ${done.length ? `<div class="gap"></div><div class="blk"><p class="k">Fixed, wai
     }
 
     return desk(sess, '/engineer/log', 'Site log', '', `
-<div class="mhead"><div class="hstrip">
-<div class="g"><h1 class="pgt">Site log</h1>
-<p class="s" style="margin-top:2px">Two taps. This is what settles a dispute six months later.</p></div>
-<div class="kpi"><span class="kpin">${d.log.length}</span><span class="k">entries</span></div>
-</div></div>
+${UI.head('Site log',
+  'Two taps. This is what settles a dispute six months later.',
+  UI.summary({ cap: 'entries', figure: String(d.log.length) }))}
 <div class="mbody anim">${flash(msg)}
 <div class="blk"><div class="lgrid">
 ${Object.entries(LOG_KINDS).map(([k, [label, detail]]) => `<a class="lgb st"
@@ -343,11 +355,15 @@ ${Object.entries(LOG_KINDS).map(([k, [label, detail]]) => `<a class="lgb st"
   function certs(sess, d, msg) {
     const pend = d.certs;
     return desk(sess, '/engineer/certs', 'Certs', '', `
-<div class="mhead"><div class="hstrip">
-<div class="g"><h1 class="pgt">Waiting for your signature</h1>
-<p class="s" style="margin-top:2px">Nothing reaches the lender until you sign.</p></div>
-<div class="kpi"><span class="kpin ${pend.length ? 'hot' : ''}">${pend.length}</span><span class="k">files</span></div>
-</div></div>
+${UI.head('Waiting for your signature',
+  'Nothing reaches the lender until you sign.',
+  UI.summary({ cap: 'files', figure: String(pend.length),
+    tone: pend.length ? 'hot' : null,
+    parts: [
+      { cap: 'Ready', value: String(pend.filter(x => x.shots >= 2).length), tone: 'ok' },
+      { cap: 'Short of photographs', value: String(pend.filter(x => x.shots < 2).length),
+        tone: UI.countTone(pend.filter(x => x.shots < 2).length, false) },
+    ] }))}
 <div class="mbody anim">${flash(msg)}
 <div class="wl">${pend.length ? `<div class="whead"><span class="id">Villa</span>
 <span class="mid">Stage and buyer</span><span class="stc">Evidence</span>
@@ -392,11 +408,9 @@ ${pend.length ? pend.map(x => {
     const line = (k, v) => `<p class="cline"><span>${esc(k)}</span><b>${esc(v)}</b></p>`;
 
     return desk(sess, '/engineer/certs', 'Certificate &middot; Villa ' + x.code, '', `
-<div class="mhead"><div class="hstrip"><div class="g">
-<h1 class="pgt">Engineer's certificate of stage completion</h1>
-<p class="s" style="margin-top:2px">Villa ${esc(x.code)} &middot; ${esc(x.stage_name)}</p></div>
-<div class="kpi"><a class="wbtn st" href="/engineer/certs" style="text-decoration:none">Back</a></div>
-</div></div>
+${UI.head("Engineer's certificate of stage completion",
+  `Villa ${esc(x.code)} &middot; ${esc(x.stage_name)}`,
+  '', { href: '/engineer/certs', label: 'Back' })}
 <div class="mbody anim">
 <div class="blk"><div class="certdoc">
 ${line('Villa', x.code)}
@@ -546,12 +560,9 @@ ${M.money(priced[live.seq].totalPaise)} to ${esc(u.unit.buyer_name)}, due in fou
     }
 
     return desk(sess, '/engineer/villas', 'Villa ' + esc(code), '', `
-<div class="mhead"><div class="hstrip">
-<div class="g"><h1 class="pgt">${esc(next ? next.name : 'All stages done')}</h1>
-<p class="s" style="margin-top:2px">${esc(u.unit.buyer_name)} &middot;
-${esc(u.unit.bank || 'self funded')} &middot; villa ${esc(code)}</p></div>
-<div class="kpi"><a class="wbtn st" href="/engineer/villas" style="text-decoration:none">Back</a></div>
-</div></div>
+${UI.head(next ? next.name : 'All stages done',
+  `${esc(u.unit.buyer_name)} &middot; ${esc(u.unit.bank || 'self funded')} &middot; villa ${esc(code)}`,
+  '', { href: '/engineer/villas', label: 'Back' })}
 <div class="mbody anim">${flash(msg)}
 <div class="tools"><div class="tabs" style="padding:0">
 ${tab('update', 'Update')}${tab('flag', 'Problem')}${tab('snag', 'Snags')}</div><div class="g"></div></div>

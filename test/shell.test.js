@@ -478,6 +478,75 @@ test('the office menu names every destination and counts it', async () => {
   assert.ok(!/class="kpin/.test(panel), 'the menu leads with a count, which is a dashboard doing that');
 });
 
+test('one platform: the dashboards are composed, not drawn', async () => {
+  /* The critique that produced this test: "instead of doing from the rules,
+     you are picking each dashboard separately". It was right. There were two
+     copies of a `hero` helper and nine hand-written `.mhead` blocks - eleven
+     places drawing the same header - so "the summary" meant something slightly
+     different on every screen, and a change to the design had to be made
+     eleven times and remembered a twelfth.
+
+     The buyer, the engineer and the head office are not three products. They
+     are three views of one file and they have to look like it, which means the
+     furniture is defined once and composed, never redrawn. */
+  const src = f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+  const ROLES = ['src/screens/buyer.js', 'src/screens/engineer.js', 'src/screens/office.js'];
+
+  for (const f of ROLES) {
+    assert.match(src(f), /require\('\.\/ui'\)/,
+      f + ' does not use the shared dashboard furniture');
+  }
+
+  /* And nothing draws a header of its own. `.mhead` is emitted by `ui.head`,
+     which is the one place that decides what a screen opens with. */
+  for (const f of ROLES) {
+    const drawn = (src(f).match(/class="mhead"/g) || []).length;
+    assert.strictEqual(drawn, 0,
+      f + ' hand-writes ' + drawn + ' page header(s) instead of composing one');
+  }
+  assert.match(src('src/screens/ui.js'), /class="mhead"/,
+    'the shared layer does not own the header it is supposed to own');
+});
+
+test('urgency is visible, and it is the same urgency everywhere', async () => {
+  /* "They are just not bleeding into the background because of the design, and
+     they are getting ignored." A screen where a stuck crore and a settled
+     stage are the same weight of grey is a screen where the crore is scrolled
+     past. So a figure carries a tone, and the tone is not decoration: it comes
+     off the same thresholds the day-count pills use, so a summary and the rows
+     under it can never disagree about what late means. */
+  const ui = fs.readFileSync(path.join(__dirname, '..', 'src/screens/ui.js'), 'utf8');
+  assert.match(ui, /require\('\.\/rows'\)/,
+    'the summary invents its own thresholds instead of using the row builder\'s');
+  assert.match(ui, /AGE\.overdue/, 'the tone is not tied to the overdue threshold');
+  assert.match(ui, /AGE\.ageing/, 'the tone is not tied to the ageing threshold');
+
+  const css = await (await get('/app.css')).text();
+  for (const sel of ['\\.summary \\.fig\\.hot', '\\.stat \\.n\\.hot']) {
+    assert.ok(new RegExp(sel + '[^{]*\\{[^}]*var\\(--hot\\)').test(css),
+      'a hot figure is not drawn in the hot colour: ' + sel.replace(/\\\\/g, ''));
+  }
+
+  /* And the head office's own dashboard actually uses it: the money that is
+     not moving is the headline, in red, with tiles under it. */
+  const h = await body('/office', 'office');
+  assert.match(h, /<p class="fig hot">/, 'the office dashboard has no red headline figure');
+  assert.match(h, /<div class="stats">/, 'the office dashboard has no tiles to scan');
+  assert.match(h, /<div class="prog">/, 'the office dashboard does not say how far along it is');
+  const tiles = (h.match(/class="stat"/g) || []).length;
+  assert.strictEqual(tiles, 4, 'the dashboard shows ' + tiles + ' tiles, not four');
+});
+
+test('the progress bar is not named after something v21 hides', async () => {
+  /* v21 uses `.bar` for the prototype's own chrome and this application hides
+     it outright, so a progress bar called that is `display: none` on every
+     screen. It was, until the frame test caught it. */
+  const h = await body('/office', 'office');
+  assert.ok(!/class="bar"/.test(h), 'the progress bar is using v21\'s hidden chrome class');
+  const css = await (await get('/app.css')).text();
+  assert.match(css, /\.summary \.prog \{/, 'the progress bar has no rule of its own');
+});
+
 // ------------------------------------------------------- responsive rules
 
 test('the sideways-scroll backstop does not cost a scrollbar', async () => {

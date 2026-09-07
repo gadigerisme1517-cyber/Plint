@@ -95,7 +95,10 @@ const get = (p, cookie) => fetch(BASE + p, { headers: cookie ? { cookie } : {}, 
   ok(rows === 48, 'the worklist shows all 48 villas (' + rows + ')');
   ok(/Waiting on the certifying engineer/.test(o) && /Waiting on the lender/.test(o),
      'grouped by who is holding each one up');
-  ok(/class="kpin hot"/.test(o), 'stuck money is the only red KPI');
+  /* Stuck money is the headline figure and it is red. It is `.summary .fig`
+     now, from the shared dashboard furniture, rather than a `.kpin` this
+     screen drew for itself. */
+  ok(/<p class="fig hot">/.test(o), 'stuck money is not the red headline figure');
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
   server.close();
