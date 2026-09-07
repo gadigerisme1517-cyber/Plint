@@ -196,6 +196,21 @@ body { padding: 0; margin: 0; background: var(--paper); }
   }
   .wrow > * { flex: none !important; min-width: 0; }
 
+  /* The buyer's screens are built from v21's `.item`, not from the worklist
+     row, so they need the same card or that role keeps flat rows while the
+     other two get cards. `.drow2` is deliberately left alone: it is the
+     checklist of papers the bank will ask for, which is a form and reads as
+     one. */
+  .scroll .item {
+    margin: 0 18px 10px;
+    padding: 14px 16px !important;
+    border: 1px solid var(--hair) !important;
+    border-radius: 12px;
+    background: var(--paper);
+    width: auto;
+  }
+  .scroll .item:last-of-type { border-bottom: 1px solid var(--hair) !important; }
+
   /* `.mid` wraps the title and the meta line together, which on a phone traps
      both in one narrow column - "J. Kulkarni · marked by Suresh Kumar on 31
      Aug 2026" came out five lines deep beside a chip. `display: contents`
