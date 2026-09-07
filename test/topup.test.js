@@ -57,6 +57,70 @@ test('on an already-filled database it does nothing', async () => {
   });
 });
 
+test('it puts the missing site staff on a database that predates them', async () => {
+  /* The deployed demo had exactly one engineer: Suresh and Venkatesh were
+     added to db/seed.js, which never runs again once villas exist. So the
+     office's reassign control offered a select with no options and the write
+     answered "could not be reassigned" - a control that did nothing, on the
+     one flow that screen exists for. Found by running it against the live URL,
+     which is the only place it could have shown. */
+  await withRollback(async c => {
+    /* Wind the database back to before those two existed. Everything that
+       points at them moves to the one engineer who did, which is the state a
+       database seeded before they were added is actually in. */
+    const GONE = ['u-eng-suresh', 'u-eng-venkat'];
+    await c.query(`UPDATE units SET assigned_engineer_id = 'u-eng-ram'`);
+    await c.query(`UPDATE visits SET engineer_id = 'u-eng-ram' WHERE engineer_id = ANY($1)`, [GONE]);
+    await c.query(`UPDATE site_log SET logged_by = 'u-eng-ram' WHERE logged_by = ANY($1)`, [GONE]);
+    await c.query(`UPDATE snags SET fixed_by = 'u-eng-ram' WHERE fixed_by = ANY($1)`, [GONE]);
+    await c.query(`DELETE FROM sessions WHERE user_id = ANY($1)`, [GONE]);
+    await c.query(`DELETE FROM users WHERE id = ANY($1)`, [GONE]);
+
+    const before = (await c.query(
+      `SELECT count(*)::int n FROM users WHERE role = 'engineer'`)).rows[0].n;
+    assert.strictEqual(before, 1, 'the setup did not leave a single engineer');
+
+    const r = await topUp(c);
+    assert.ok(r.staff.added.length === 2, 'the missing engineers were not added: '
+      + JSON.stringify(r.staff));
+
+    const after = (await c.query(
+      `SELECT count(*)::int n FROM users WHERE role = 'engineer'`)).rows[0].n;
+    assert.ok(after >= 3, 'only ' + after + ' engineers after the top-up');
+
+    // Reassignment is meaningless unless work sits with more than one of them.
+    const spread = (await c.query(
+      `SELECT count(DISTINCT assigned_engineer_id)::int n FROM units`)).rows[0].n;
+    assert.ok(spread > 1, 'every villa is still with one engineer, so nothing can be reassigned');
+
+    // Exactly one of them may sign: v21's supervisor is not a qualified engineer.
+    const signers = (await c.query(
+      `SELECT display_name FROM users WHERE role = 'engineer' AND engineer_reg IS NULL`)).rows;
+    assert.ok(signers.some(s => s.display_name === 'Suresh Kumar'),
+      'the site supervisor was given a registration he does not have');
+  });
+});
+
+test('it does not undo a reassignment somebody made', async () => {
+  /* The spread only fires on the degenerate case - every villa with one
+     person, which only happens when the round robin ran with one engineer to
+     run it over. If the office has moved work about, that is a decision. */
+  await withRollback(async c => {
+    const two = (await c.query(
+      `SELECT id FROM users WHERE role = 'engineer' ORDER BY id LIMIT 2`)).rows;
+    assert.strictEqual(two.length, 2, 'need two engineers for this test');
+    await c.query(`UPDATE units SET assigned_engineer_id = $1`, [two[0].id]);
+    await c.query(`UPDATE units SET assigned_engineer_id = $1 WHERE code = 'B-14'`, [two[1].id]);
+
+    const r = await topUp(c);
+    assert.strictEqual(r.staff.spreadOver, 0, 'the top-up redistributed villas it should have left alone');
+
+    const b14 = (await c.query(
+      `SELECT assigned_engineer_id a FROM units WHERE code = 'B-14'`)).rows[0].a;
+    assert.strictEqual(b14, two[1].id, 'B-14 was moved off the engineer it was assigned to');
+  });
+});
+
 test('it fills every table from the database alone', async () => {
   await withRollback(async c => {
     // units references lenders, so the columns 011 and 012 added come off

@@ -15,11 +15,60 @@
    ========================================================================= */
 const { Client } = require('pg');
 const config = require('../src/config');
+const { hash } = require('../src/db');
 const { seedState } = require('./seed-state');
 
+/* v21 names three people on site and only one of them may sign a certificate.
+   They were added to db/seed.js, which never runs again on a seeded database -
+   so the deployed demo had exactly one engineer, and "reassign this villa" had
+   nowhere to move work to. The office screen offered a select with no options
+   and the write returned "could not be reassigned".
+
+   Found by running the flow against the live URL, which is the only place it
+   was ever going to show. Idempotent and gated on its own absence, separately
+   from the tables below, because a database can need one and not the other. */
+const STAFF = [
+  ['u-eng-suresh', 'suresh@nvt.in',    'engineer', 'Suresh Kumar', 'Site supervisor', null],
+  ['u-eng-venkat', 'venkatesh@nvt.in', 'engineer', 'A. Venkatesh', 'B.E. Civil', 'KAR/CE/2019/3311'],
+];
+
+async function ensureStaff(c) {
+  const added = [];
+  for (const [id, email, role, name, qual, reg] of STAFF) {
+    const r = await c.query(
+      `INSERT INTO users VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (id) DO NOTHING RETURNING id`,
+      [id, email, hash('plint'), role, name, qual, reg]);
+    if (r.rowCount) added.push(name);
+  }
+
+  /* If every villa sits with one person, the round robin ran when there was
+     only one engineer to run it over. Spread them now. Guarded on the
+     degenerate case so it can never undo a real reassignment somebody made. */
+  const spread = (await c.query(
+    `SELECT count(DISTINCT assigned_engineer_id)::int n FROM units
+      WHERE assigned_engineer_id IS NOT NULL`)).rows[0].n;
+  const engineers = (await c.query(
+    `SELECT id FROM users WHERE role = 'engineer' ORDER BY id`)).rows.map(r => r.id);
+  let spreadOver = 0;
+  if (spread <= 1 && engineers.length > 1) {
+    const units = (await c.query('SELECT id FROM units ORDER BY code')).rows;
+    for (let i = 0; i < units.length; i++) {
+      await c.query('UPDATE units SET assigned_engineer_id = $1 WHERE id = $2',
+        [engineers[i % engineers.length], units[i].id]);
+    }
+    spreadOver = engineers.length;
+  }
+  return { added, spreadOver };
+}
+
 async function topUp(c) {
+  const staff = await ensureStaff(c);
+
   const already = (await c.query('SELECT count(*)::int n FROM lenders')).rows[0].n;
-  if (already > 0) return { skipped: 'lenders already present (' + already + ')' };
+  if (already > 0) {
+    return { skipped: 'lenders already present (' + already + ')', staff };
+  }
 
   const units = (await c.query('SELECT count(*)::int n FROM units')).rows[0].n;
   if (units === 0) return { skipped: 'no units: the full seed has not run' };
@@ -70,6 +119,9 @@ async function main() {
                           set_config('plint.role','office',true)`);
     const out = await topUp(c);
     await c.query('COMMIT');
+    const staff = out.staff || {};
+    if (staff.added && staff.added.length) console.log('  staff added: ' + staff.added.join(', '));
+    if (staff.spreadOver) console.log('  villas spread over ' + staff.spreadOver + ' engineers');
     console.log('state top-up: ' + (out.skipped ? 'skipped, ' + out.skipped : 'filled ' + out.filled));
   } catch (e) {
     await c.query('ROLLBACK').catch(() => {});
