@@ -475,7 +475,13 @@ body { padding: 0; margin: 0; background: var(--paper); }
     border-radius: 12px 12px 0 0;
     padding: 13px 14px 10px !important;
   }
-  .mbody .blk:has(+ .wl) + .wl { border-radius: 0 0 12px 12px; border-top: 0 !important; }
+  /* And no gap between the two halves of one card. v21 gives `.wl` an 18px top
+     margin for a list that stands on its own; a list joined to its own heading
+     is not standing on its own, and 18px there is a seam straight across the
+     middle of the card. A list with no heading above it keeps the margin. */
+  .mbody .blk:has(+ .wl) + .wl {
+    border-radius: 0 0 12px 12px; border-top: 0 !important; margin-top: 0 !important;
+  }
 
   /* Same for the count line the head office puts above a group of villas. */
   .mbody .tools:has(+ .wl) {
@@ -484,7 +490,9 @@ body { padding: 0; margin: 0; background: var(--paper); }
     padding: 13px 14px 10px !important;
     margin-bottom: 0 !important;
   }
-  .mbody .tools:has(+ .wl) + .wl { border-radius: 0 0 12px 12px; border-top: 0 !important; }
+  .mbody .tools:has(+ .wl) + .wl {
+    border-radius: 0 0 12px 12px; border-top: 0 !important; margin-top: 0 !important;
+  }
   /* No control on the row means the money has no one to share row three
      with, so it goes up onto the detail's line instead of taking a line of
      its own. Worth 28px on every row of a list that is only ever read. */

@@ -631,6 +631,11 @@ test('one gutter, and everything on a phone starts on it', async () => {
     "the last row's square corners will poke out of the card's radius");
   assert.match(narrow, /\.mbody \.blk:has\(\+ \.wl\) \{[^}]*border-radius:\s*12px 12px 0 0/,
     'a section heading is not joined to the list under it');
+  /* And joined with no gap. v21 gives `.wl` an 18px top margin for a list that
+     stands on its own; on one joined to its own heading that is a seam
+     straight across the middle of the card. */
+  assert.match(narrow, /\.mbody \.blk:has\(\+ \.wl\) \+ \.wl \{[^}]*margin-top:\s*0/,
+    'the heading and its list are one card with a gap down the middle of it');
   /* But not the toolbar: it has no card of its own below it to space it from
      the next heading, and zeroing it put the Close-a-snag button hard against
      the "Office is chasing you" label. */
