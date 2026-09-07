@@ -219,6 +219,14 @@ test('the worklists can stop being tables', async () => {
   assert.match(narrow[1], /\.whead\s*\{\s*display:\s*none/, 'column headings survive as cards');
   assert.match(narrow[1], /\.wrow\s*\{[\s\S]*?display:\s*grid/, 'rows do not reflow to cards');
   assert.match(narrow[1], /\.uprow/, 'the forms keep their fixed field widths');
+  /* The reassign form under a row: a sentence, a picker and a button. Three
+     full-width lines is 145px under every row of a six-row list, so the picker
+     and the button share a line. The select carries an inline `flex:0 0 220px`
+     from the markup, which only `!important` will beat. */
+  assert.match(narrow[1], /\.wrow \+ \.uprow \.mid select \{[^}]*flex:[^;]*!important/,
+    'the picker keeps its fixed 220px, so it cannot share a line with the button');
+  assert.match(narrow[1], /\.wrow \+ \.uprow \.mid \.s \{[^}]*flex:\s*1 1 100%/,
+    'the sentence does not take its own line, so it will squeeze the picker');
 
   /* The narrow rule for the histogram must outrank the base rule rather than
      merely differ from it. The first version used the same selector, `.agebar`,

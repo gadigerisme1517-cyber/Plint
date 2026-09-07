@@ -398,7 +398,17 @@ body { padding: 0; margin: 0; background: var(--paper); }
     border-top: 0 !important;
     border-radius: 0 0 12px 12px;
     background: var(--paper);
+    /* The sentence, the picker and the button were three full-width lines,
+       145px under every row of a six-row list. The sentence keeps its line -
+       it is a sentence - and the picker and the button share the next one.
+       The button aligns to the bottom of the pair because it sits outside the
+       span that holds them, so centring it would float it against both. */
+    flex-wrap: wrap;
   }
+  .wrow + .uprow .mid { flex: 1 1 auto; flex-wrap: wrap; }
+  .wrow + .uprow .mid .s { flex: 1 1 100%; }
+  .wrow + .uprow .mid select { flex: 1 1 auto !important; }
+  .wrow + .uprow > .wbtn { align-self: flex-end; flex: 0 0 auto; }
 
   /* ------------------------------------------------------ the hero summary
 
