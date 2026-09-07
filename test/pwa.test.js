@@ -259,9 +259,24 @@ test('the worker refuses to touch anything but same-origin GETs', () => {
   const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'sw.js'), 'utf8');
   assert.match(src, /req\.method !== 'GET'/, 'state-changing requests must go straight to the network');
   assert.match(src, /url\.origin !== self\.location\.origin/, 'other origins must be left alone');
-  // The only cache write must be guarded by the allowlist.
+  /* Every cache write must be inside a branch that has already decided the URL
+     is on the allowlist. Counting them is not the rule - the rule is that the
+     path everything else falls through to, which is where a villa page or an
+     evidence photograph arrives, never writes. So that stretch of the file is
+     what gets checked: from the fall-through comment to the end of the fetch
+     handler, there is no write at all. */
+  const from = src.indexOf('is network only');
+  const to = src.indexOf("'plint:signout'");
+  assert.ok(from > 0 && to > from, 'could not find the fall-through path in sw.js');
+  const fallThrough = src.slice(from, to);
+  assert.ok(!/\.put\(|\.addAll\(/.test(fallThrough),
+    'the path that serves screens and photographs writes to the cache');
+
+  // And every write that does exist is inside a guarded branch.
+  const guards = [...src.matchAll(/(CACHEABLE\.has\(url\.pathname\)|url\.pathname === '\/[^']*')[\s\S]{0,600}?\.put\(/g)].length;
   const puts = [...src.matchAll(/\.put\(/g)].length;
-  assert.strictEqual(puts, 1, 'expected exactly one cache write, found ' + puts);
+  assert.strictEqual(guards, puts,
+    puts + ' cache writes but only ' + guards + ' of them behind an allowlist check');
 });
 
 // ------------------------------------------ the cache name has to move

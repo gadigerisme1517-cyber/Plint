@@ -35,7 +35,11 @@ const REVALIDATE = 'no-cache';
 const STATIC = {
   '/plint.css':            ['plint.css', 'text/css; charset=utf-8', REVALIDATE],
   '/app.css':              ['app.css', 'text/css; charset=utf-8', REVALIDATE],
-  '/manifest.webmanifest': ['manifest.webmanifest', 'application/manifest+json; charset=utf-8', 'public, max-age=3600'],
+  /* `no-cache` for the same reason sw.js has it: this file configures the
+     install, including the colour the operating system paints the window
+     chrome with, and an hour of held-back revalidation is an hour an installed
+     app cannot be told any of it changed. */
+  '/manifest.webmanifest': ['manifest.webmanifest', 'application/manifest+json; charset=utf-8', 'no-cache'],
   '/sw.js':                ['sw.js', 'text/javascript; charset=utf-8', 'no-cache'],
   '/offline':              ['offline.html', 'text/html; charset=utf-8', 'public, max-age=3600'],
   '/icons/icon-192.png':          ['icons/icon-192.png', 'image/png', IMMUTABLE],

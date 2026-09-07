@@ -78,8 +78,35 @@ self.addEventListener('fetch', event => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
+  /* The manifest configures the install itself - the icon, the name, and the
+     colour the operating system paints the window's own chrome with. Chrome
+     re-reads it in the background to notice those changing, and cache-first
+     answered every one of those checks with the copy captured at install
+     time. An installed app could therefore never learn that any of it had
+     changed, which is how a title bar stayed the wrong colour through a
+     deploy that fixed it.
+
+     Network first, cache second. It is a few hundred bytes and it is not
+     needed to render anything, so the only thing the cache is for here is a
+     cold start with no signal. */
+  if (url.pathname === '/manifest.webmanifest') {
+    event.respondWith((async () => {
+      try {
+        const res = await fetch(req);
+        if (res && res.ok) (await caches.open(VERSION)).put(req, res.clone());
+        return res;
+      } catch (e) {
+        const hit = await caches.match(req);
+        if (hit) return hit;
+        throw e;
+      }
+    })());
+    return;
+  }
+
   if (CACHEABLE.has(url.pathname)) {
-    // Static, non-personal, versioned by the cache name. Cache first.
+    /* Static, non-personal, and versioned by the cache name rather than by the
+       URL, so cache-first is safe: a new build opens a new cache. */
     event.respondWith((async () => {
       const hit = await caches.match(req);
       if (hit) return hit;
