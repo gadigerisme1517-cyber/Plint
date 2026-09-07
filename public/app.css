@@ -307,15 +307,19 @@ body { padding: 0; margin: 0; background: var(--paper); }
   }
 
   /* Top right, on the heading's line: how long, and where it stands. */
+  /* The day count and the pill are smaller than the title they sit beside.
+     With the row top-aligned they hung above its cap height, so both are
+     given the title's own 20px line box and centre inside it. */
   .wrow .days { grid-area: 1 / 2; justify-self: end; white-space: nowrap;
                 color: var(--ink-2); font-variant-numeric: tabular-nums;
-                font-size: 13px; }
+                font-size: 13px; line-height: 20px; }
   /* Where the pill is busy saying something else, the number carries the
      verdict, on the same thresholds the pill would have used. */
   .wrow .days.age-warn { color: var(--warn); font-weight: 600; }
   .wrow .days.age-late { color: var(--hot);  font-weight: 600; }
   .wrow .days b { display: inline; }
-  .wrow .stc  { grid-area: 1 / 3; justify-self: end; text-align: right; }
+  .wrow .stc  { grid-area: 1 / 3; justify-self: end; text-align: right;
+                line-height: 20px; }
 
   /* Line two: the detail, with the money right-aligned beside it. */
   /* The detail is a sentence, so it gets the width of the card.
