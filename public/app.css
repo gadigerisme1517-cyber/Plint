@@ -231,7 +231,11 @@ body { padding: 0; margin: 0; background: var(--paper); }
     padding-left: var(--gutter) !important;
     padding-right: var(--gutter) !important;
   }
-  .wl, .tools, .blk, .mbody .lede {
+  /* Scoped to `.mbody`, which is the only container that puts the gutter back.
+     Unscoped, this stripped `.blk` on every screen built by `page()` - the
+     sign-in form and the whole of the buyer's side - and left their text
+     running into the left edge with nothing padding it at all. */
+  .mbody .wl, .mbody .tools, .mbody .blk, .mbody .lede {
     padding-left: 0 !important;
     padding-right: 0 !important;
     margin-left: 0 !important;

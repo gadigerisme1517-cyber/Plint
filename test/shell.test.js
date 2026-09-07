@@ -281,8 +281,14 @@ test('one gutter, and everything on a phone starts on it', async () => {
      18..357 and the button between them at 36..339. */
   assert.match(narrow, /\.mhead, \.mbody \{[^}]*padding-left:\s*var\(--gutter\)/,
     'the gutter is not applied to the one container that owns it');
-  const cleared = /\.wl, \.tools, \.blk, \.mbody \.lede \{([^}]*)\}/.exec(narrow);
+  const cleared = /\.mbody \.wl, \.mbody \.tools, \.mbody \.blk, \.mbody \.lede \{([^}]*)\}/.exec(narrow);
   assert.ok(cleared, 'the nested containers never give up their own padding');
+  /* And only inside `.mbody`, which is the container that puts the gutter
+     back. Unscoped it stripped `.blk` on every screen `page()` builds - the
+     sign-in form and all of the buyer's side - where nothing re-pads it and
+     the text ran into the left edge. */
+  assert.ok(!/(^|[^y])\s\.blk,/.test(narrow) && !/\{\s*\.blk/.test(narrow),
+    'a padding reset still reaches .blk outside .mbody');
   assert.match(cleared[1], /padding-left:\s*0/, 'a nested container still adds to the gutter');
   assert.match(cleared[1], /margin-left:\s*0/, 'a nested container still adds a margin');
 
