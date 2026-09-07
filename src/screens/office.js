@@ -195,13 +195,12 @@ module.exports = function officeScreens(ctx) {
         return `<a href="${href(k)}">${esc(label)}${num}</a>`;
       }).join('')).join('');
 
+    /* No page header. The app bar already says Menu, and a title block here
+       cost 160px of a screen whose whole job is to show fifteen things at
+       once - which is what made it scroll like a dashboard. */
     return desk(sess, 'menu', 'Menu', '', `
-<div class="mhead"><div class="hstrip"><div class="g">
-<h1 class="pgt">Everything</h1>
-<p class="s" style="margin-top:2px">Nine groups, in the order a file moves through them.</p>
-</div></div></div>
-<div class="mbody anim">${flash(msg)}<nav class="omenu">${body}</nav></div>`,
-      sidebar(null, n));
+<div class="mbody anim" style="padding-top:14px">${flash(msg)}
+<nav class="omenu">${body}</nav></div>`, sidebar(null, n));
   }
 
   // ---------------------------------------------------------------- the reads

@@ -138,11 +138,11 @@ body { padding: 0; margin: 0; background: var(--paper); }
    44px, because it is the one screen whose entire content is things to tap. */
 .omenu { display: block; }
 .omenu .grp {
-  font: 500 11.5px/1 'Instrument Sans', system-ui, sans-serif;
+  font: 500 11.5px/14px 'Instrument Sans', system-ui, sans-serif;
   letter-spacing: .04em; text-transform: uppercase;
-  color: var(--ink-3); margin: 18px 0 2px;
+  color: var(--ink-3); margin: 10px 0 0;
 }
-.omenu .grp:first-child { margin-top: 4px; }
+.omenu .grp:first-child { margin-top: 0; }
 .omenu a {
   display: flex; align-items: center; gap: 10px;
   min-height: 44px; padding: 0 2px;
@@ -204,6 +204,26 @@ body { padding: 0; margin: 0; background: var(--paper); }
      menu button is the phone one. Exactly one of the two is ever drawn. */
   .side { display: none; }
   .ab-menu { display: inline-flex; }
+
+  /* ONE SCROLL, NOT THREE.
+
+     v21's `.desk` is a rounded card holding a fixed sidebar beside a scrolling
+     pane: `overflow: hidden` on the card, `overflow-y: auto` on `.mbody`, and
+     a `min-height` so the card keeps its shape on a short window. All correct
+     for that card on a monitor.
+
+     On a phone there is no card and no sidebar, and it left three nested
+     scroll containers around a document that was the thing actually scrolling.
+     Neither inner one had any overflow of its own, so a touch that started
+     inside them scrolled nothing at all and the gesture had to be repeated
+     before the page moved - which reads as scrolling being broken rather than
+     as a layout being wrong, and it was reported that way.
+
+     So on a phone the page is the page: one scroll, at the document. */
+  .desk  { overflow: visible; min-height: 0; display: block;
+           border-radius: 0; box-shadow: none; }
+  .main  { min-height: 0; }
+  .mbody { overflow: visible; flex: none; }
   .ab-nav { display: none; }
   .ab-ctx { display: none; }
 

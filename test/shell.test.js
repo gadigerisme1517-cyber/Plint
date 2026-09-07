@@ -364,6 +364,51 @@ test('no screen prints a number it could not work out', async () => {
   }
 });
 
+test('a phone has one scroll, not three nested ones', async () => {
+  /* This one renders perfectly and only breaks under a finger, so nothing that
+     looks at the page can see it.
+
+     v21's `.desk` is a rounded card holding a fixed sidebar beside a scrolling
+     pane: `overflow: hidden` on the card, `overflow-y: auto` on `.mbody`, and
+     a min-height so the card keeps its shape. Right for that card on a
+     monitor. On a phone there is no card and no sidebar, and it left three
+     nested scroll containers around a document that was the thing actually
+     scrolling - neither inner one had any overflow of its own, so a touch
+     starting inside them scrolled nothing and the gesture had to be repeated.
+     It was reported as scrolling being broken, which is what it feels like. */
+  const css = await (await get('/app.css')).text();
+  const narrow = /@media \(max-width: 900px\) \{([\s\S]*?)\n\}/.exec(css)[1];
+
+  for (const [sel, why] of [['\\.desk', 'the card clips the page'],
+                            ['\\.mbody', 'the body pane is its own scroller']]) {
+    const rule = new RegExp(sel + '\\s*\\{[^}]*overflow[^:]*:\\s*visible').test(narrow);
+    assert.ok(rule, 'on a phone ' + why + ': it never gives up its overflow');
+  }
+  /* And the card's min-height with it, or a short menu still reserves 86vh of
+     card and the page scrolls past its own content. */
+  assert.match(narrow, /\.desk\s*\{[^}]*min-height:\s*0/,
+    'the desktop card keeps its minimum height on a phone');
+});
+
+test('the office menu is a menu, and fits like one', async () => {
+  /* A menu drawn with the same hero, the same cards and a subtitle under every
+     row reads as a sixteenth dashboard - it was reported as the menu not
+     opening at all, because there was nothing to tell it apart from the screen
+     it was opened from. */
+  const h = await body('/office/menu', 'office');
+  assert.match(h, /<nav class="omenu">/, 'the menu is not drawn as a menu');
+  assert.ok(!/class="kpin/.test(h), 'the menu leads with a count, which is a dashboard doing that');
+  assert.ok(!/class="wrow/.test(h), 'the menu is built out of worklist cards');
+  assert.ok(!/class="mhead"/.test(h),
+    'the menu carries a page header, which costs a sixth of the screen it needs');
+
+  const links = (h.match(/<a href="\/office[^"]*"/g) || []).length;
+  assert.strictEqual(links, 15, 'the menu offers ' + links + ' destinations, not fifteen');
+  // One line each. Two lines a row is what made it scroll for two screens.
+  assert.ok(!/<p class="s">/.test(h.split('<nav class="omenu">')[1] || ''),
+    'a menu row carries a subtitle, so every row is two lines');
+});
+
 // ------------------------------------------------------- responsive rules
 
 test('the sideways-scroll backstop does not cost a scrollbar', async () => {
