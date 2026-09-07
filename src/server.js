@@ -176,8 +176,15 @@ const HEAD = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
    the office's destinations gets two links that 404 for him. */
 function destinations(sess) {
   if (!sess) return [];
+  /* v21's five for the buyer: Journey, Villa, Visit, Money, More. Bank pick,
+     Documents, Agreement, Loan, Choices and Questions all sit behind More,
+     because five is what the bar holds and eleven is not a bar. */
   if (sess.role === 'buyer') {
-    return [['/villa/' + sess.unit, 'Villa', 'home'], ['/documents', 'Papers', 'doc']];
+    return [['/journey', 'Journey', 'path'],
+            ['/villa/' + sess.unit, 'Villa', 'home'],
+            ['/visit', 'Visit', 'cal'],
+            ['/money', 'Money', 'money'],
+            ['/more', 'More', 'more']];
   }
   if (sess.role === 'office') {
     return [['/office', 'Stuck money', 'money'], ['/office/sanctions', 'Sanctions', 'doc']];
@@ -195,6 +202,10 @@ const TABICON = {
   doc:   'M6 3h8l4 4v14H6Zm8 0v4h4',
   money: 'M7 5h10M7 9h10M15 5c0 4-3 5-6 5l7 9',
   tick:  'M4.5 12.5 9 17l10.5-11',
+  // The buyer's three: a route through the stages, a date, and everything else.
+  path:  'M4 19h5a3 3 0 0 0 3-3V8a3 3 0 0 1 3-3h5m0 0-3-3m3 3-3 3',
+  cal:   'M4 7h16v13H4zM4 11h16M8 4v4M16 4v4',
+  more:  'M6 12h.01M12 12h.01M18 12h.01',
 };
 const tabIcon = n => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${TABICON[n]}"/></svg>`;
@@ -228,6 +239,15 @@ ${dests.map(([href, label, icon]) => `<a href="${href}"${current === href ? ' ar
 ${tabIcon(icon)}<span>${esc(label)}</span></a>`).join('')}
 </nav>`;
 }
+
+/* The first path segment of everything the buyer's shell serves. A set rather
+   than a chain of `p === ...` so that one lookup decides whether to spend a
+   round trip on `BUY.load`, and so that adding a screen without adding it here
+   is a 404 rather than a page that quietly renders with no navigation. */
+const BUYER_GET = new Set([
+  'journey', 'villa', 'visit', 'money', 'more',
+  'bank', 'loan', 'agreement', 'choices', 'questions', 'stage', 'documents',
+]);
 
 function page(title, sess, body, wide, current) {
   return `${HEAD}${appbar(sess, current, true, title)}<div class="wrap">
@@ -383,69 +403,6 @@ ${stageRows}
 <div class="gap l"></div>`, true, '/villa/' + u.code);
 }
 
-/* ---------------------------------------------------------------- documents
-   v21's loan model: the builder does not chase papers. This lists what the
-   bank will ask for so the buyer can keep them ready, and that is all it does.
-   No upload, no ticking, nothing sent. The list is the product. */
-const DOC_SETS = {
-  salaried: [
-    ['PAN card', false], ['Aadhaar', false], ['Address proof', false],
-    ['Last 3 salary slips', false], ['Form 16', false], ['6 months bank statement', false],
-  ],
-  self: [
-    ['PAN card', false], ['Aadhaar', false], ['Address proof', false],
-    ['Last 3 years ITR', false], ['P&L and balance sheet', true],
-    ['GST returns, 12 months', false], ['Business registration proof', false],
-    ['12 months bank statement', false],
-  ],
-};
-
-async function documentsScreen(sess) {
-  const u = await asUser(sess, c =>
-    c.query('SELECT code, bank, sanction_recorded_at FROM units')).then(r => r.rows[0]);
-  if (!u) return null;
-
-  /* Two applicants, one salaried and one self-employed, which is what makes
-     v21's total fourteen. Applicant composition is not modelled in this
-     schema, so the shape comes from the design and is stated as such. */
-  const applicants = [
-    { name: 'Main applicant', kind: 'salaried', rel: 'Salaried' },
-    { name: 'Co-applicant', kind: 'self', rel: 'Self-employed' },
-  ];
-  const total = applicants.reduce((n, a) => n + DOC_SETS[a.kind].length, 0);
-
-  return page('Papers', sess, `
-<div class="top"><a class="ib st" href="/" style="text-decoration:none">&larr;</a>
-<div class="g"><p class="s">Your loan &middot; ${esc(u.bank || 'lender not chosen')}</p></div></div>
-<div class="gap s"></div>
-<div class="lede"><p class="k">What the bank will ask for</p>
-<span class="big" style="font-size:30px;line-height:34px">${total} papers</span>
-<p class="b cap">A list, so you can keep them ready. You give these to
-${esc(u.bank || 'your bank')} directly. Do not send them here.</p></div>
-<div class="gap l"></div>
-${applicants.map(a => `
-<div class="blk"><div class="apphdr">
-<span class="h2">${esc(a.name)}</span>
-<span class="s">${esc(a.rel)}</span></div></div>
-<div class="gap s"></div>
-<div class="doclist2">
-${DOC_SETS[a.kind].map(([label, ca]) => `<div class="drow2">
-<span class="dchk" style="border-style:dashed"></span>
-<span class="dmid"><span class="b ink">${esc(label)}</span>${
-  ca ? '<span class="caflag">needs CA sign-off</span>' : ''}</span>
-</div>`).join('')}
-</div>
-<div class="gap"></div>`).join('')}
-<div class="blk"><div class="said">
-<p class="b ink">${u.sanction_recorded_at
-  ? 'Your sanction is recorded. Every stage finished on site now releases your money, and you can watch each release.'
-  : 'When your loan is approved, come back to the sales office with the sanction letter. From that point every stage finished on site releases your money automatically.'}</p>
-</div></div>
-<p class="b note">Plint holds no loan papers and sends nothing to any bank. Your bank runs
-its own checks and you sign at the branch yourself.</p>
-<div class="gap l"></div>`, true, '/documents');
-}
-
 /**
  * The ordered basis points of every project's schedule, so a stage can be
  * priced inside the schedule it belongs to rather than on its own. A screen
@@ -477,6 +434,7 @@ function stageTotal(byProject, row) {
    stage and raises a demand, which is not a screen concern. */
 const ROW = require('./screens/rows')({ esc });
 const ENG = require('./screens/engineer')({ esc, desk, M, asUser, schedules, stageTotal, LOGO });
+const BUY = require('./screens/buyer')({ esc, desk, M, asUser });
 
 /** Certification. The only place a demand is created. */
 async function certify(sess, stageId) {
@@ -844,6 +802,54 @@ const server = http.createServer(async (req, res) => {
 
     if (!sess) { res.writeHead(302, { location: '/' }); return res.end(); }
 
+    /* ------------------------------------------------------------ the buyer
+
+       Five tabs and the six screens behind More, in src/screens/buyer.js. One
+       read serves whichever tab was asked for, the same way the engineer's
+       does: the tabs all count from the same handful of rows. */
+    if (sess.role === 'buyer' && req.method === 'GET' && BUYER_GET.has(p.split('/')[1])) {
+      const msg = url.searchParams.get('m');
+      const d = await BUY.load(sess);
+      if (!d) return html(404, page('Not found', sess,
+        '<div class="blk"><h1 class="h1">No such villa.</h1></div>'));
+
+      if (p === '/journey')   return html(200, BUY.journey(sess, d, msg));
+      if (p === '/visit')     return html(200, BUY.visit(sess, d, msg));
+      if (p === '/money')     return html(200, BUY.money(sess, d, msg));
+      if (p === '/more')      return html(200, BUY.more(sess, d, msg));
+      if (p === '/bank')      return html(200, BUY.bank(sess, d, msg));
+      if (p === '/loan')      return html(200, BUY.loan(sess, d, msg));
+      if (p === '/agreement') return html(200, BUY.agreement(sess, d, msg));
+      if (p === '/choices')   return html(200, BUY.choices(sess, d, msg));
+      if (p === '/questions') return html(200, BUY.questions(sess, d, null, msg));
+      if (p === '/documents') return html(200, BUY.documents(sess, d, msg));
+
+      if (p.startsWith('/questions/')) {
+        const id = decodeURIComponent(p.slice(11));
+        d.thread = await BUY.threadOf(sess, id);
+        const out = BUY.questions(sess, d, id, msg);
+        return out ? html(200, out) : html(404, page('Not found', sess,
+          '<div class="blk"><h1 class="h1">No such question.</h1></div>'));
+      }
+      if (p.startsWith('/stage/')) {
+        const out = BUY.stage(sess, d, decodeURIComponent(p.slice(7)), msg);
+        return out ? html(200, out) : html(404, page('Not found', sess,
+          '<div class="blk"><h1 class="h1">No such stage.</h1></div>'));
+      }
+      /* The code in the URL has to be this buyer's own. Rendering their villa
+         for any `/villa/*` would answer 200 to a probe for a neighbour's -
+         no data crosses, because `load()` reads the session's unit and never
+         the path, but a 200 says the villa exists and a 404 says nothing. The
+         answer for another villa and for one that was never built is the same
+         answer. */
+      if (p.startsWith('/villa/')) {
+        return decodeURIComponent(p.slice(7)) === sess.unit
+          ? html(200, BUY.villa(sess, d, msg))
+          : html(404, page('Not found', sess,
+              '<div class="blk"><h1 class="h1">No such villa.</h1></div>'));
+      }
+    }
+
     if (p.startsWith('/villa/')) {
       const out = await buyerScreen(sess, decodeURIComponent(p.slice(7)));
       // RLS returned nothing: the villa is not this buyer's. Same answer as
@@ -1044,11 +1050,128 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    if (p === '/documents' && sess.role === 'buyer') {
-      const out = await documentsScreen(sess);
-      return out ? html(200, out) : html(404, page('Not found', sess,
-        '<div class="gap l"></div><div class="blk"><h1 class="h1">Not found.</h1></div>'));
+    /* ---------------------------------------------------- the buyer writes
+
+       Four things a buyer may change, and every one of them is read by
+       somebody else: a visit request appears on the engineer's Visits tab, a
+       question lands in the office queue, a signed choice is what the site
+       builds, and the lender pick decides how fast money moves.
+
+       Each is checked here and again by row-level security, which is what
+       actually holds: `owns_unit()` and `requested_by = current_user_id()` are
+       in the policy, so a buyer who posts another villa's id gets nothing
+       inserted no matter what this code believes. */
+
+    if (p === '/visit' && req.method === 'POST' && sess.role === 'buyer') {
+      const f = form(await body(req));
+      const back = m => { res.writeHead(302, { location: '/visit?m=' + encodeURIComponent(m) }); res.end(); };
+      const day = /^\d{4}-\d{2}-\d{2}$/.test(f.day || '') ? f.day : null;
+      if (!day) return back('That is not a date the site can book.');
+      // Ten in the morning: a site visit is a daylight thing, and asking a
+      // buyer to pick a time as well is a field they will get wrong.
+      const slot = new Date(day + 'T10:00:00+05:30');
+      if (!(slot > new Date())) return back('Ask for a day that has not happened yet.');
+      const note = (f.note || '').trim().slice(0, 140);
+      const ok = await asUser(sess, async c => {
+        const u = (await c.query('SELECT id FROM units WHERE code = $1', [sess.unit])).rows[0];
+        if (!u) return false;
+        /* The engineer the villa is already assigned to, so the request lands
+           on somebody's list rather than in a pool nobody owns. */
+        await c.query(
+          `INSERT INTO visits (id, unit_id, slot_at, note, requested_by, engineer_id)
+           SELECT $1, $2, $3, $4, $5, assigned_engineer_id FROM units WHERE id = $2`,
+          ['visit-' + crypto.randomUUID(), u.id, slot.toISOString(), note, sess.id]);
+        return true;
+      });
+      return back(ok
+        ? 'Asked for ' + M.longDate(slot) + '. The engineer answers from their own list.'
+        : 'That visit could not be booked.');
     }
+
+    if (p === '/questions' && req.method === 'POST' && sess.role === 'buyer') {
+      const f = form(await body(req));
+      const back = m => { res.writeHead(302, { location: '/questions?m=' + encodeURIComponent(m) }); res.end(); };
+      const kind = ['query', 'warranty'].includes(f.kind) ? f.kind : 'query';
+      const subject = (f.subject || '').trim().slice(0, 120);
+      if (!subject) return back('A question needs a line saying what it is about.');
+      const ok = await asUser(sess, async c => {
+        const u = (await c.query('SELECT id FROM units WHERE code = $1', [sess.unit])).rows[0];
+        if (!u) return false;
+        await c.query(
+          `INSERT INTO queries (id, unit_id, kind, subject, raised_by)
+           VALUES ($1,$2,$3,$4,$5)`,
+          ['q-' + crypto.randomUUID(), u.id, kind, subject, sess.id]);
+        return true;
+      });
+      return back(ok
+        ? 'Asked. It is in the office queue with your villa attached.'
+        : 'That question could not be raised.');
+    }
+
+    if (p === '/questions/reply' && req.method === 'POST' && sess.role === 'buyer') {
+      const f = form(await body(req));
+      const to = '/questions/' + encodeURIComponent(f.id || '');
+      const back = m => { res.writeHead(302, { location: to + '?m=' + encodeURIComponent(m) }); res.end(); };
+      const text = (f.body || '').trim().slice(0, 400);
+      if (!text) return back('An empty message says nothing.');
+      const ok = await asUser(sess, async c => {
+        /* `author_id = current_user_id() AND author_role = current_role_name()`
+           is in the policy, so a message cannot be signed as anyone else. */
+        const r = await c.query(
+          `INSERT INTO query_messages (id, query_id, author_id, author_role, body)
+           SELECT $1, q.id, $3, 'buyer', $4 FROM queries q WHERE q.id = $2
+           RETURNING id`,
+          ['qm-' + crypto.randomUUID(), f.id, sess.id, text]);
+        return r.rowCount === 1;
+      });
+      return back(ok ? 'Sent. The office picks it up from here.' : 'That message could not be sent.');
+    }
+
+    if (p === '/choices' && req.method === 'POST' && sess.role === 'buyer') {
+      const f = form(await body(req));
+      const back = m => { res.writeHead(302, { location: '/choices?m=' + encodeURIComponent(m) }); res.end(); };
+      const r = await asUser(sess, async c => {
+        /* `selected = ANY(options)` and `choices_signed_whole` are both table
+           constraints, so an option that is not on the list, or a selection
+           without a signature, is refused by the database rather than by this
+           line. Signing an already-signed choice is refused here: it is not a
+           constraint violation, it is a second decision on a settled one. */
+        const row = await c.query(
+          `UPDATE choices SET selected = $2, signed_at = now(), signed_by = $3
+            WHERE id = $1 AND selected IS NULL
+            RETURNING label, selected`,
+          [f.id, f.option, sess.id]);
+        return row.rows[0] || null;
+      });
+      return back(r
+        ? r.label + ': ' + r.selected + ' signed. The site builds that.'
+        : 'That choice could not be signed. It may already be settled.');
+    }
+
+    if (p === '/bank' && req.method === 'POST' && sess.role === 'buyer') {
+      const f = form(await body(req));
+      const back = m => { res.writeHead(302, { location: '/bank?m=' + encodeURIComponent(m) }); res.end(); };
+      const r = await asUser(sess, async c => {
+        const u = (await c.query('SELECT id FROM units WHERE code = $1', [sess.unit])).rows[0];
+        if (!u) return null;
+        /* `choose_lender` is SECURITY DEFINER and takes the actor from the
+           transaction rather than from a parameter, because picking a lender
+           writes `units.bank`, which a buyer may not update directly - the
+           sanction figures live on the same row.
+
+           The third argument is an outside bank's name, not the actor, and the
+           function raises unless exactly one of the two is given. A buyer
+           picking from the panel passes null. */
+        const ok = (await c.query('SELECT choose_lender($1,$2,null) ok',
+          [u.id, f.lender])).rows[0].ok;
+        if (!ok) return null;
+        return (await c.query('SELECT name FROM lenders WHERE id = $1', [f.lender])).rows[0];
+      });
+      return back(r
+        ? r.name + ' is your lender. The office prepares your file for them.'
+        : 'That lender could not be picked. A lender is chosen once.');
+    }
+
 
     // Evidence photographs. Authorised by row-level security and nothing else:
     // the row is fetched as the asking session, and the disk is touched only if

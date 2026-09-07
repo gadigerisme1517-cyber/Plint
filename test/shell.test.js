@@ -36,7 +36,8 @@ const ROLES = {
    that adding a screen without deciding where it sits in the navigation is a
    test failure rather than an orphan page. */
 const SCREENS = {
-  buyer:    ['/villa/B-14', '/documents'],
+  buyer:    ['/journey', '/villa/B-14', '/visit', '/money', '/more',
+             '/bank', '/loan', '/agreement', '/choices', '/questions', '/documents'],
   engineer: ['/engineer', '/engineer/villas', '/engineer/visits', '/engineer/log',
              '/engineer/certs', '/engineer/snags'],
   office:   ['/office', '/office/sanctions'],
@@ -48,7 +49,7 @@ const SCREENS = {
    five fits a phone. Above five it becomes a menu button, which is the head
    office: fifteen destinations in nine groups are not a bar at any width. */
 const BAR_FITS = 5;
-const DESTINATIONS = { buyer: 2, engineer: 5, office: 2 };
+const DESTINATIONS = { buyer: 5, engineer: 5, office: 2 };
 
 const cookies = {};
 before(async () => {

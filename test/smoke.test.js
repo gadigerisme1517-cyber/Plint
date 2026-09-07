@@ -32,8 +32,11 @@ const get = (p, cookie) => fetch(BASE + p, { headers: cookie ? { cookie } : {}, 
   console.log('\nbuyer, villa B-14');
   const b = await (await get('/', buyer)).text();
   ok(/Villa B-14/.test(b), 'the buyer lands on his own villa without choosing one');
-  ok(/Blockwork/.test(b) && /Stage by stage/.test(b), 'the ten stage schedule renders');
-  ok(/₹1,84,80,000/.test(b), 'paid so far is ₹1,84,80,000');
+  // Five tabs since pass 3: the schedule is the Journey, the ledger is Money.
+  const j = await (await get('/journey', buyer)).text();
+  ok(/Blockwork/.test(j) && /Every stage, in order/.test(j), 'the ten stage schedule renders');
+  const mny = await (await get('/money', buyer)).text();
+  ok(/₹1,84,80,000/.test(mny), 'paid so far is ₹1,84,80,000');
   const other = await get('/villa/A-11', buyer);
   ok(other.status === 404, 'another villa answers 404, the same as one that does not exist');
   ok((await get('/office', buyer)).status === 404, 'the buyer cannot open the head-office worklist');

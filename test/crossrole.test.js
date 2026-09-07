@@ -181,6 +181,186 @@ test('engineer reports a problem: it lands on the office worklist', async () => 
 
 // ------------------------------------------------------------- the boundary
 
+// -------------------------------------------------------- the buyer acts
+
+test('buyer asks for a visit: it lands on the engineer\'s own list', async () => {
+  /* The buyer picks a day on the Visit tab. Nothing else happens: no email,
+     no office step. It appears on the list of the engineer the villa is
+     already assigned to, who answers it there. */
+  const day = new Date(Date.now() + 9 * 86400000).toISOString().slice(0, 10);
+  const note = 'Cross-role check ' + Date.now();
+
+  const before = await get('engineer', '/engineer/visits');
+  assert.ok(!before.html.includes(note), 'the note is on screen before it was asked for');
+
+  const r = await post('buyer', '/visit', { day, note });
+  assert.strictEqual(r.status, 302, 'the visit form did not post');
+  assert.match(r.location, /^\/visit\?m=/, 'the buyer was not told what happened');
+
+  const mine = await get('buyer', '/visit');
+  assert.ok(mine.html.includes(note), 'the buyer cannot see the visit they asked for');
+  assert.match(mine.html, /Waiting for the engineer/,
+    'the buyer is not told the request is with the engineer');
+
+  const theirs = await get('engineer', '/engineer/visits');
+  assert.ok(theirs.html.includes(note),
+    'the engineer never sees a visit the buyer asked for');
+
+  /* And it is named to the engineer the villa is already assigned to, rather
+     than dropped into a pool nobody owns. The Visits screen lists every open
+     request whoever is signed in, so the screen alone cannot show this - it
+     stayed green with the assignment removed - and the row is what carries it. */
+  const { asUser } = require('../src/db');
+  const row = await asUser({ id: 'u-office', role: 'office' }, c => c.query(
+    `SELECT v.engineer_id, u.assigned_engineer_id
+       FROM visits v JOIN units u ON u.id = v.unit_id WHERE v.note = $1`, [note]))
+    .then(x => x.rows[0]);
+  assert.ok(row, 'the visit was never written');
+  assert.ok(row.engineer_id, 'the visit was booked with no engineer named to it');
+  assert.strictEqual(row.engineer_id, row.assigned_engineer_id,
+    'the visit went to somebody other than the villa\'s own engineer');
+});
+
+test('a buyer cannot ask for a visit in the past, or on a day that is not one', async () => {
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  for (const day of [yesterday, 'tomorrow', '', '2026-13-45']) {
+    const r = await post('buyer', '/visit', { day, note: 'nope ' + day });
+    assert.strictEqual(r.status, 302, 'a bad date crashed rather than being refused');
+    const back = await get('buyer', '/visit');
+    assert.ok(!back.html.includes('nope ' + day),
+      'a visit was booked for ' + JSON.stringify(day));
+  }
+});
+
+test('buyer raises a question: the office can read it, the engineer cannot answer it', async () => {
+  const subject = 'Cross-role question ' + Date.now();
+
+  const r = await post('buyer', '/questions', { kind: 'query', subject });
+  assert.strictEqual(r.status, 302, 'the question form did not post');
+
+  const mine = await get('buyer', '/questions');
+  assert.ok(mine.html.includes(subject), 'the buyer cannot see their own question');
+  assert.match(mine.html, /Open/, 'the question is not shown as open');
+
+  /* The office queue is its own screen in a later pass. What has to be true
+     now is that the row is the office's to read and is attached to the right
+     villa - that is the whole of the cross-role claim, and the screen that
+     lists it is presentation on top of it. */
+  const { asUser } = require('../src/db');
+  const seenByOffice = await asUser({ id: 'u-office', role: 'office' }, c => c.query(
+    `SELECT q.subject, u.code FROM queries q JOIN units u ON u.id = q.unit_id
+      WHERE q.subject = $1`, [subject])).then(x => x.rows);
+  assert.strictEqual(seenByOffice.length, 1, 'the office cannot read the buyer\'s question');
+  assert.strictEqual(seenByOffice[0].code, 'B-14', 'the question lost its villa');
+
+  // And the thread is the record: the buyer can add to it and read it back.
+  const id = (/href="\/questions\/([^"]+)"/.exec(mine.html) || [])[1];
+  assert.ok(id, 'the question is not a link to its own thread');
+  const said = 'Adding to the thread ' + Date.now();
+  const reply = await post('buyer', '/questions/reply', { id: decodeURIComponent(id), body: said });
+  assert.strictEqual(reply.status, 302);
+  const thread = await get('buyer', '/questions/' + id);
+  assert.ok(thread.html.includes(said), 'the buyer\'s own message is not on the thread');
+});
+
+test('buyer signs an interior choice: the site reads what was chosen', async () => {
+  const open = await get('buyer', '/choices');
+  const m = /name="id" value="([^"]+)"[\s\S]*?<select class="fi" name="option"[^>]*>\s*<option value="([^"]+)"/
+    .exec(open.html);
+  if (!m) {
+    /* Every choice on this villa is already signed. That is a legitimate state
+       and not something to paper over with a write of our own - say so. */
+    assert.match(open.html, /All signed|No choices are open/,
+      'no choice is offered and the screen does not say why');
+    return;
+  }
+  const [, id, option] = m;
+
+  const r = await post('buyer', '/choices', { id, option });
+  assert.strictEqual(r.status, 302, 'the choice form did not post');
+
+  const after = await get('buyer', '/choices');
+  assert.ok(after.html.includes('you chose ' + option),
+    'the buyer cannot see the choice they signed');
+
+  /* The engineer builds what was chosen, so the row is theirs to read. An
+     unsigned preference is not a decision and the database enforces that: the
+     selection and the signature go in together or not at all. */
+  const { asUser } = require('../src/db');
+  const row = await asUser({ id: 'u-eng-ram', role: 'engineer' }, c => c.query(
+    'SELECT selected, signed_at, signed_by FROM choices WHERE id = $1', [id]))
+    .then(x => x.rows[0]);
+  assert.strictEqual(row.selected, option, 'the site does not see what the buyer chose');
+  assert.ok(row.signed_at && row.signed_by, 'a selection was stored without a signature');
+
+  // Signing a settled choice again is refused rather than silently overwriting.
+  const again = await post('buyer', '/choices', { id, option });
+  assert.strictEqual(again.status, 302);
+  const still = await asUser({ id: 'u-eng-ram', role: 'engineer' }, c => c.query(
+    'SELECT selected FROM choices WHERE id = $1', [id])).then(x => x.rows[0]);
+  assert.strictEqual(still.selected, option, 'a settled choice was reopened');
+});
+
+test('office records a sanction: it clears their worklist and shows on the buyer\'s loan screen', async () => {
+  /* The flow the brief names. The office types the figures off the letter and
+     the buyer, who never sees that screen, finds them on Loan. */
+  const { asUser } = require('../src/db');
+  const target = await asUser({ id: 'u-office', role: 'office' }, c => c.query(
+    `SELECT id, code FROM units
+      WHERE code = 'B-14' AND bank IS NOT NULL AND sanction_recorded_at IS NULL`))
+    .then(x => x.rows[0]);
+
+  if (!target) {
+    // Already recorded by an earlier run; then the buyer must be able to see it.
+    const loan = await get('buyer', '/loan');
+    assert.match(loan.html, /Your sanction is on file/,
+      'B-14 has a sanction on file and the buyer cannot see it');
+    return;
+  }
+
+  const before = await get('office', '/office/sanctions');
+  assert.ok(before.html.includes(target.code), 'B-14 is not on the office worklist to begin with');
+
+  const sanction = 30000000, own = 6000000, letter = 'XR/' + Date.now();
+  const r = await post('office', '/office/sanction',
+    { unit: target.id, sanction: String(sanction), own: String(own), letter });
+  assert.strictEqual(r.status, 302, 'the sanction form did not post');
+
+  const after = await get('office', '/office/sanctions');
+  assert.ok(!after.html.includes('value="' + target.id + '"'),
+    'the villa is still on the office worklist after its sanction was recorded');
+
+  const M = require('../src/money');
+  const loan = await get('buyer', '/loan');
+  assert.match(loan.html, /Your sanction is on file/, 'the buyer is not told the sanction is recorded');
+  assert.ok(loan.html.includes(M.money(sanction * 100)),
+    'the sanctioned figure is not on the buyer\'s loan screen');
+  assert.ok(loan.html.includes(M.money(own * 100)),
+    'the own contribution is not on the buyer\'s loan screen');
+});
+
+test('a buyer cannot write another villa\'s row, whatever the form says', async () => {
+  const { asUser } = require('../src/db');
+  const other = await asUser({ id: 'u-office', role: 'office' }, c => c.query(
+    `SELECT id FROM units WHERE code <> 'B-14' LIMIT 1`)).then(x => x.rows[0]);
+
+  /* The visit route reads the villa from the session, so there is no field to
+     forge - but the policy is what has to hold, so post at a choice on another
+     villa, which does carry an id. */
+  const theirChoice = await asUser({ id: 'u-office', role: 'office' }, c => c.query(
+    `SELECT id, options FROM choices WHERE unit_id = $1 AND selected IS NULL LIMIT 1`,
+    [other.id])).then(x => x.rows[0]);
+  if (!theirChoice) return; // nothing unsigned on another villa to try
+
+  const r = await post('buyer', '/choices', { id: theirChoice.id, option: theirChoice.options[0] });
+  assert.strictEqual(r.status, 302, 'the forged post crashed rather than being refused');
+
+  const still = await asUser({ id: 'u-office', role: 'office' }, c => c.query(
+    'SELECT selected FROM choices WHERE id = $1', [theirChoice.id])).then(x => x.rows[0]);
+  assert.strictEqual(still.selected, null,
+    'a buyer signed a choice on a villa that is not theirs');
+});
+
 test('a buyer cannot reach any engineer screen', async () => {
   for (const p of ['/engineer', '/engineer/villas', '/engineer/visits',
                    '/engineer/log', '/engineer/certs', '/engineer/snags',

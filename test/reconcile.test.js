@@ -107,20 +107,25 @@ test('every villa schedules to its own agreement value, to the paise', async () 
 
 /* The stage amounts a buyer screen renders, in schedule order.
 
-   Scoped to the stage rows on purpose. v21 renders the villa summary with the
-   same .amt class, so an unscoped match picks up the agreement value and the
-   ledger lines too and silently compares the wrong numbers. Anchor on the
-   .stage block and take the first .amt inside each. */
+   Scoped to the stage rows on purpose. The same `.amt` class carries the
+   agreement value and the ledger lines, so an unscoped match picks those up
+   too and silently compares the wrong numbers. Every stage row is a link to
+   its own screen, so the href is the anchor: take the first `.amt` after each
+   `/stage/` link. (It was `class="stage "` when the schedule lived on one
+   long villa page; the rows are shared `.wrow` cards now.) */
 const amountsOn = html =>
-  [...html.matchAll(/class="stage [^"]*"[\s\S]*?class="amt[^"]*">([^<]+)</g)].map(m => m[1]);
+  [...html.matchAll(/<a class="wrow[^"]*" href="\/stage\/[^"]*"[\s\S]*?class="amt[^"]*">([^<]+)</g)]
+    .map(m => m[1]);
 
 const paidSoFarOn = html =>
   (/Paid so far<\/p><\/span><span class="amt[^"]*">([^<]+)</.exec(html) || [])[1];
 
-async function buyerScreenOf(email) {
+/* The schedule is the Journey tab and the ledger is the Money tab since the
+   buyer got v21's five. They used to be two blocks of one page. */
+async function buyerScreenOf(email, path) {
   const cookie = await signIn(email);
-  const r = await fetch(BASE + '/', { headers: { cookie }, redirect: 'follow' });
-  assert.strictEqual(r.status, 200);
+  const r = await fetch(BASE + path, { headers: { cookie }, redirect: 'follow' });
+  assert.strictEqual(r.status, 200, path + ' did not open');
   return r.text();
 }
 
@@ -137,12 +142,10 @@ test('B-14: the screen, the ledger and the stored demands all agree', async () =
   const priced = M.schedule(u.agreement_value_paise, bps);
   const led = M.ledger({ agreementValuePaise: u.agreement_value_paise, stages });
 
-  const html = await buyerScreenOf('arjun@example.in');
+  assert.strictEqual(paidSoFarOn(await buyerScreenOf('arjun@example.in', '/money')),
+    M.money(led.paidPaise), 'the screen prints the ledger figure it was given');
 
-  assert.strictEqual(paidSoFarOn(html), M.money(led.paidPaise),
-    'the screen prints the ledger figure it was given');
-
-  const shown = amountsOn(html);
+  const shown = amountsOn(await buyerScreenOf('arjun@example.in', '/journey'));
   assert.strictEqual(shown.length, 10, 'ten stage rows');
   priced.forEach((p, i) => {
     assert.strictEqual(shown[i], M.money(p.totalPaise),
@@ -172,11 +175,10 @@ test('A-07: the awkward value reconciles too, and the last stage carries the pai
 
   const priced = M.schedule(u.agreement_value_paise, bps);
   const led = M.ledger({ agreementValuePaise: u.agreement_value_paise, stages });
-  const html = await buyerScreenOf('sharma@example.in');
+  assert.strictEqual(paidSoFarOn(await buyerScreenOf('sharma@example.in', '/money')),
+    M.money(led.paidPaise));
 
-  assert.strictEqual(paidSoFarOn(html), M.money(led.paidPaise));
-
-  const shown = amountsOn(html);
+  const shown = amountsOn(await buyerScreenOf('sharma@example.in', '/journey'));
   assert.strictEqual(shown.length, 10);
   priced.forEach((p, i) => {
     assert.strictEqual(shown[i], M.money(p.totalPaise), `A-07 stage ${i} disagrees`);

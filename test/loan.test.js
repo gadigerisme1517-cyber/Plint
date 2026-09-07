@@ -43,24 +43,48 @@ const get = (p, cookie) => fetch(BASE + p, { headers: { cookie }, redirect: 'man
 
 // ------------------------------------------------- the buyer side is a list
 
-test('the buyer sees the papers his bank will ask for, and there are fourteen', async () => {
+test('the buyer sees every paper his bank will ask for, from the database', async () => {
   const cookie = await signIn('arjun@example.in');
   const r = await get('/documents', cookie);
   assert.strictEqual(r.status, 200);
   const html = await r.text();
 
-  assert.match(html, /14 papers/, 'the count v21 states');
   assert.match(html, /What the bank will ask for/);
 
-  // Every paper on the list, both applicant types.
-  for (const label of ['PAN card', 'Aadhaar', 'Address proof', 'Last 3 salary slips',
-                       'Form 16', '6 months bank statement', 'Last 3 years ITR',
-                       'P&amp;L and balance sheet', 'GST returns, 12 months',
-                       'Business registration proof', '12 months bank statement']) {
-    assert.ok(html.includes(label), 'missing from the list: ' + label);
+  /* The count and the labels used to come from a constant in server.js: two
+     applicants invented on the spot and a hard-coded list of papers under
+     each, adding to the fourteen v21 draws. The office could tick a paper as
+     seen and nothing here moved, because there was nothing here to move.
+
+     So the expectation is read from the same rows the screen reads. If the
+     seed gives this buyer one applicant or three, the screen shows one or
+     three, and this test still says whether it showed them. */
+  const papers = await asUser(BUYER, c => c.query(
+    `SELECT d.label, d.seen_at, a.full_name
+       FROM loan_documents d JOIN loan_applicants a ON a.id = d.applicant_id
+       JOIN units u ON u.id = a.unit_id
+      WHERE u.code = 'B-14' ORDER BY a.seq, d.seq`)).then(x => x.rows);
+  assert.ok(papers.length > 0, 'the seed gives this buyer no papers to show');
+
+  const esc = t => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  for (const p of papers) {
+    assert.ok(html.includes(esc(p.label)), 'missing from the list: ' + p.label);
   }
-  const rows = (html.match(/class="drow2"/g) || []).length;
-  assert.strictEqual(rows, 14, 'fourteen rows, one per paper');
+  for (const name of new Set(papers.map(p => p.full_name))) {
+    assert.ok(html.includes(esc(name)), 'the applicant is not named: ' + name);
+  }
+  // The hero puts the figure and its unit in separate spans, so match the span.
+  const kpi = /<span class="kpin[^"]*">([^<]*)<\/span>\s*<span class="k">([^<]*)</.exec(html);
+  assert.ok(kpi, 'the screen has no hero count at all');
+  assert.strictEqual(kpi[1].trim(), String(papers.length),
+    'the count does not match the ' + papers.length + ' papers on file');
+  assert.match(kpi[2], /paper/, 'the count is not counting papers');
+
+  /* And the state of each one, which is the part a constant could never show:
+     the office marks a paper seen and this screen says so. */
+  const seen = papers.filter(p => p.seen_at).length;
+  assert.ok(html.includes(seen + ' of ' + papers.length + ' seen by the office'),
+    'the screen does not say how many the office has seen');
 });
 
 test('the list is read-only: nothing to upload, nothing to tick', async () => {
@@ -214,14 +238,21 @@ test('half a sanction cannot be written even by the owning role', async () => {
 });
 
 test('the buyer screen reflects whether his sanction is recorded', async () => {
+  /* On its own screen since the buyer got five tabs. It used to sit two thirds
+     of the way down one long villa page with the ledger and the schedule; the
+     figure that decides whether any money can move at all is worth a screen. */
   const cookie = await signIn('arjun@example.in');
-  const html = await (await fetch(BASE + '/', { headers: { cookie }, redirect: 'follow' })).text();
+  const html = await (await get('/loan', cookie)).text();
   const u = (await asUser(BUYER, c => c.query('SELECT * FROM units'))).rows[0];
 
   if (u.sanction_recorded_at) {
-    assert.match(html, /Sanction recorded/);
+    assert.match(html, /Your sanction is on file/);
+    assert.ok(html.includes(require('../src/money').money(u.sanction_paise)),
+      'the sanctioned figure is not on the screen');
+    assert.ok(html.includes(require('../src/money').money(u.own_contribution_paise)),
+      'the own contribution is not on the screen');
   } else {
-    assert.match(html, /Sanction not recorded/);
+    assert.match(html, /No sanction on file/);
     assert.match(html, /Bring your sanction letter to the sales office/);
   }
 });
