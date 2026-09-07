@@ -64,13 +64,29 @@ const run = (label, args) => {
   {
     const c = new Client(config.appDb());
     await c.connect();
+
+    /* Ask our own socket, not pg_stat_ssl.
+       Behind a pooler - Supabase's Supavisor, PgBouncer - pg_stat_ssl reports
+       the POOLER-to-Postgres hop, which is inside their network and commonly
+       unencrypted, while the hop that carries our credentials over the public
+       internet is the client-to-pooler one. Trusting pg_stat_ssl there reports
+       "NOT ENCRYPTED" for a connection that is in fact TLS 1.3, and this
+       process would refuse to serve for no reason. */
+    const sock = c.connection && c.connection.stream;
+    const clientTls = !!(sock && sock.encrypted);
+    const proto = clientTls && sock.getProtocol ? sock.getProtocol() : null;
+
     const r = await c.query(
       'SELECT ssl, version FROM pg_stat_ssl WHERE pid = pg_backend_pid()');
     await c.end();
 
-    const on = r.rows[0] && r.rows[0].ssl;
-    console.log('\n── database TLS\n  ' +
-      (on ? 'encrypted, ' + r.rows[0].version : 'NOT ENCRYPTED'));
+    const backendTls = !!(r.rows[0] && r.rows[0].ssl);
+    const on = clientTls || backendTls;
+
+    console.log('\n── database TLS');
+    console.log('  our connection: ' + (clientTls ? 'encrypted, ' + proto : 'NOT ENCRYPTED'));
+    console.log('  backend reports: ' + (backendTls ? 'encrypted, ' + r.rows[0].version
+      : 'not encrypted (expected behind a pooler)'));
 
     if (!on && process.env.PLINT_ALLOW_PLAINTEXT_DB !== '1') {
       process.stderr.write(

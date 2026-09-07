@@ -1322,3 +1322,121 @@ repository or in this conversation.**
 Nothing is deployed. Creating the Supabase project, copying its Session pooler
 string, and applying the Render blueprint all need the account holder. The
 preflight is the gate before any of the Render work is worth doing.
+
+---
+
+# Eleventh pass: Supabase verified, and two faults the preflight exposed
+
+The preflight ran against the real Supabase project. **Supabase can run this**,
+but its first verdict line said "usable, with 2 warnings" and that was wrong -
+the script was too lenient about its own failures, and both warnings turned out
+to be real faults in this repo rather than in Supabase.
+
+## What the probe actually found
+
+    connected as postgres to postgres
+    PostgreSQL 17.6      superuser: false   bypassrls: true   createrole: true
+
+    TLS                        ✗ NOT encrypted on this endpoint
+    Two roles                  ✓ CREATE ROLE works
+    RLS binds a non-owner      ✗ could not test: (ENOIDENTIFIER) no tenant
+                                 identifier provided
+    Schema                     ✓ CREATE SCHEMA works
+
+Two of those needed chasing rather than accepting.
+
+### 1. "NOT encrypted" was my check measuring the wrong hop
+
+`pg_stat_ssl` reports the connection **the backend** sees. Behind Supabase's
+Supavisor pooler that is the pooler-to-Postgres hop, inside their network and
+unencrypted. The hop that carries our credentials across the public internet is
+client-to-pooler, and asking the socket directly shows what it really is:
+
+    client socket encrypted: true (TLSv1.3)
+    pg_stat_ssl says: false   <- the pooler-to-Postgres hop, not ours
+
+So `scripts/deploy-start.js` would have refused to serve a perfectly encrypted
+connection. It now asks its own socket first and reports both, and only refuses
+when neither is encrypted.
+
+Worth recording separately: **the pooler accepts a plaintext connection if the
+client asks for one.** TLS here is the client's responsibility, which is why
+`PGSSLMODE=require` is set in `render.yaml` and why the boot check stays.
+
+### 2. "could not test" was hiding the question that matters most
+
+The RLS check did not fail - it never ran, and the script counted that as a
+warning. The single most important property in this application went
+unverified while the summary said "usable". A check that cannot run is not a
+check that passed.
+
+The cause is a real constraint: Supavisor identifies the project from the
+**username**, so a bare role name is rejected with `ENOIDENTIFIER`. Connecting
+as `plint_probe.<projectref>` works, and then:
+
+    connected as plint_probe_pewuf, superuser=false, bypassrls=false
+    rows visible with no identity set: 0 of 2  <- RLS BINDS IT
+
+That is the answer that was missing. Buyer isolation holds on Supabase.
+
+## The code change that follows from it
+
+**The connection username and the database role are not the same string.** The
+server connects as `plint_app.<projectref>`; the role inside Postgres is plain
+`plint_app`, which is what all twenty grants and every policy name.
+
+`db/bootstrap.js` conflated them - it used `PGUSER` verbatim for `CREATE ROLE`,
+for grants, and for the "must be named plint_app" guard, so on Supabase it
+would have tried to create a role called `plint_app.gfoid...` and then the
+grants would have applied to a role that does not exist. The server would have
+connected successfully and seen nothing at all, which is exactly the failure
+that guard was written to prevent.
+
+It now takes the part before the first dot as the role and leaves `PGUSER`
+whole for the connection. On a platform without a pooler suffix the two are the
+same string and nothing changes.
+
+## Supabase's `postgres` role holds BYPASSRLS
+
+Noted because it is a hazard worth naming: `rolbypassrls: true` on the owner.
+That is fine and in fact necessary - migrations and the seed have to write past
+the policies - but it means connecting the *application* as `postgres` would
+silently disable buyer isolation entirely. `assertIsolationHolds()` checks the
+runtime role for exactly this and refuses to start, and the newly created
+`plint_app` inherits none of it (`bypassrls=false`, confirmed above).
+
+## Verified end to end against the real project
+
+Not simulated. Against `aws-0-ap-south-1.pooler.supabase.com`:
+
+    bootstrap: created role plint_app
+    bootstrap: cannot set role attributes here (permission denied to alter
+               role); they will be verified instead
+    bootstrap: isolation verified - plint_app is not an owner, not a
+               superuser, not BYPASSRLS
+    migrate: applied 10
+    seeded 48 units
+      demands 269 -> audit certified 269
+      settled 221 -> audit settled   221
+    ── database TLS
+      our connection: encrypted, TLSv1.3
+      backend reports: not encrypted (expected behind a pooler)
+
+    health: {"status":"ok","database":"up"}
+    arjun@example.in    -> Villa B-14
+    sharma@example.in   -> Villa A-07
+    ramachandran@nvt.in -> Sign-off and evidence
+    priya@nvt.in        -> Stuck money
+    B-14 buyer -> /villa/A-07 : HTTP 404
+    B-14 buyer -> /office     : HTTP 404
+
+**The database half of the deployment is done and proven.** Render only has to
+run the container.
+
+## Left as it is
+
+`scripts/preflight.js` still prints "usable, with warnings" for a run where the
+RLS check could not execute. Making "could not test" fatal, and teaching it the
+`role.projectref` username form so the check runs on a pooler, is the obvious
+follow-up. It is not done: the answer for this database is now known by direct
+measurement, and changing the script would not change that answer.

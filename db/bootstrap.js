@@ -10,7 +10,14 @@
 const { Client } = require('pg');
 const config = require('../src/config');
 
-const APP_ROLE = process.env.PGUSER;
+/* The connection username and the database role are not always the same
+   string. Supabase's pooler identifies the project from the username, so the
+   server connects as `plint_app.<projectref>` while the role inside Postgres
+   is plain `plint_app` - which is what every grant and policy names.
+
+   Everything here that speaks SQL uses the role; the connection keeps PGUSER
+   whole. */
+const APP_ROLE = String(process.env.PGUSER || '').split('.')[0];
 
 async function ensureDatabase() {
   const name = process.env.PGDATABASE;
@@ -140,9 +147,10 @@ const quoteLiteral = s => "'" + String(s).replace(/'/g, "''") + "'";
 function assertRoleName(name) {
   if (name !== 'plint_app') {
     process.stderr.write(
-      `\nplint: PGUSER is "${name}", but the migrations grant to "plint_app".\n` +
-      '  The runtime role must be named plint_app, or it will connect\n' +
-      '  successfully and then see nothing at all.\n\n');
+      `\nplint: the database role resolves to "${name}", but the migrations\n` +
+      '  grant to "plint_app". PGUSER may carry a pooler suffix such as\n' +
+      '  plint_app.projectref, but the part before the first dot must be\n' +
+      '  plint_app, or the server will connect and then see nothing at all.\n\n');
     process.exit(1);
   }
 }

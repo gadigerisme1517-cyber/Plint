@@ -104,19 +104,40 @@ everything it made. If it reports `CANNOT run Plint safely`, we stop there.
 2. Connect the GitHub repository `gadigerisme1517-cyber/Plint`.
 3. Render reads `render.yaml`: one web service, free plan, no database.
 4. It prompts for **`DATABASE_URL`** — paste the Session pooler string from
-   step 2. This is the only value you type. `PGPASSWORD` and `PLINT_SECRET`
-   are `generateValue: true`, so Render mints them itself.
-5. **Apply**.
+   step 2. `PGPASSWORD` and `PLINT_SECRET` are `generateValue: true`, so
+   Render mints those itself.
+5. **Change `PGUSER`** from `plint_app` to **`plint_app.<your project ref>`** —
+   the same reference that appears in the pooler username, for example
+   `plint_app.abcdefghijklmnopqrst`.
+
+   Supabase's pooler works out which project you want from the *username*, and
+   rejects a bare role name with `no tenant identifier provided`. The role
+   inside Postgres is still plain `plint_app`, which is what all the grants
+   name; the server strips the suffix before it speaks SQL.
+6. **Apply**.
+
+### The database is already built
+
+Migrations and the seed have already been run against this Supabase project
+from a developer machine, and verified: 10 migrations, 48 villas, 269 demands
+reconciling to 269 audit rows. The first Render deploy will find the database
+populated, skip the seed, and go straight to serving.
 
 ### Watch the first deploy log for these
 
 ```
 bootstrap: isolation verified - plint_app is not an owner, not a superuser, not BYPASSRLS
-migrate: applied 10
-seeded 48 units
+migrate: already up to date
+── seed
+  skipped: 48 villas already present
 ── database TLS
-  encrypted, TLSv1.3
+  our connection: encrypted, TLSv1.3
+  backend reports: not encrypted (expected behind a pooler)
 ```
+
+That second TLS line is correct and not a problem. `pg_stat_ssl` reports the
+pooler's own hop to Postgres, inside Supabase's network. The line above it is
+the hop that carries your credentials across the internet, and it is TLS 1.3.
 
 If the isolation line or the TLS line is missing, the service refused to start.
 That is deliberate — it will not serve buyers' financial positions over a
