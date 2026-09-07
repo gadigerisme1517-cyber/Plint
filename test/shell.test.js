@@ -223,9 +223,11 @@ test('the worklists can stop being tables', async () => {
      full-width lines is 145px under every row of a six-row list, so the picker
      and the button share a line. The select carries an inline `flex:0 0 220px`
      from the markup, which only `!important` will beat. */
-  assert.match(narrow[1], /\.wrow \+ \.uprow \.mid select \{[^}]*flex:[^;]*!important/,
+  assert.match(narrow[1], /\.wrow \+ \.uprow \.mid \{[^}]*display:\s*contents\s*!important/,
+    'the span around the sentence and the picker is still a box, so the button cannot sit beside them');
+  assert.match(narrow[1], /\.wrow \+ \.uprow select \{[^}]*flex:[^;]*!important/,
     'the picker keeps its fixed 220px, so it cannot share a line with the button');
-  assert.match(narrow[1], /\.wrow \+ \.uprow \.mid \.s \{[^}]*flex:\s*1 1 100%/,
+  assert.match(narrow[1], /\.wrow \+ \.uprow \.s \{[^}]*flex:\s*1 1 100%/,
     'the sentence does not take its own line, so it will squeeze the picker');
 
   /* The narrow rule for the histogram must outrank the base rule rather than

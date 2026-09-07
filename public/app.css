@@ -405,10 +405,16 @@ body { padding: 0; margin: 0; background: var(--paper); }
        span that holds them, so centring it would float it against both. */
     flex-wrap: wrap;
   }
-  .wrow + .uprow .mid { flex: 1 1 auto; flex-wrap: wrap; }
-  .wrow + .uprow .mid .s { flex: 1 1 100%; }
-  .wrow + .uprow .mid select { flex: 1 1 auto !important; }
-  .wrow + .uprow > .wbtn { align-self: flex-end; flex: 0 0 auto; }
+  /* The sentence and the picker are wrapped in a span, and the button is
+     outside it, so as long as that span is a box of its own the sentence's
+     full-width line makes the span full-width too and the button is pushed
+     off. `display: contents` promotes all three to children of the form, so
+     they wrap against one another. The span carries `display:flex` inline
+     from the markup, which is why this needs `!important`. */
+  .wrow + .uprow .mid { display: contents !important; }
+  .wrow + .uprow .s { flex: 1 1 100%; }
+  .wrow + .uprow select { flex: 1 1 auto !important; width: auto; }
+  .wrow + .uprow .wbtn { flex: 0 0 auto; }
 
   /* ------------------------------------------------------ the hero summary
 
