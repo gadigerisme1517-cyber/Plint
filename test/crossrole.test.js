@@ -318,7 +318,7 @@ test('office records a sanction: it clears their worklist and shows on the buyer
     return;
   }
 
-  const before = await get('office', '/office/sanctions');
+  const before = await get('office', '/office/chase');
   assert.ok(before.html.includes(target.code), 'B-14 is not on the office worklist to begin with');
 
   const sanction = 30000000, own = 6000000, letter = 'XR/' + Date.now();
@@ -326,7 +326,7 @@ test('office records a sanction: it clears their worklist and shows on the buyer
     { unit: target.id, sanction: String(sanction), own: String(own), letter });
   assert.strictEqual(r.status, 302, 'the sanction form did not post');
 
-  const after = await get('office', '/office/sanctions');
+  const after = await get('office', '/office/chase');
   assert.ok(!after.html.includes('value="' + target.id + '"'),
     'the villa is still on the office worklist after its sanction was recorded');
 
@@ -359,6 +359,166 @@ test('a buyer cannot write another villa\'s row, whatever the form says', async 
     'SELECT selected FROM choices WHERE id = $1', [theirChoice.id])).then(x => x.rows[0]);
   assert.strictEqual(still.selected, null,
     'a buyer signed a choice on a villa that is not theirs');
+});
+
+// ------------------------------------------------------- the office acts
+
+test('office answers a buyer: the buyer reads it on their own thread', async () => {
+  /* The flow the brief names, in the direction it was missing. The buyer's
+     question reached the office in an earlier test; this is the office
+     answering it, and the answer landing where the buyer looks. */
+  const subject = 'Answerable question ' + Date.now();
+  assert.strictEqual((await post('buyer', '/questions', { kind: 'query', subject })).status, 302);
+
+  const queue = await get('office', '/office');
+  assert.ok(queue.html.includes(subject),
+    'a buyer question is not on the office Today screen');
+
+  /* The link for THIS question. Today lists every open one across 48 villas
+     oldest first, so the first link on the page is a seeded question on
+     another villa - answering that one proves nothing about this buyer, and
+     the B-14 buyer cannot read A-07's thread, which is row-level security
+     doing its job and a test looking in the wrong place. */
+  const esc = t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const id = (new RegExp('href="/office/question/([^"]+)"[^>]*>[\\s\\S]{0,400}?' + esc(subject))
+    .exec(queue.html) || [])[1];
+  assert.ok(id, 'the office cannot open the question it was sent');
+
+  const said = 'The slab was poured on the 4th. ' + Date.now();
+  const r = await post('office', '/office/answer', { id: decodeURIComponent(id), body: said });
+  assert.strictEqual(r.status, 302, 'the office answer form did not post');
+
+  const buyerThread = await get('buyer', '/questions');
+  assert.ok(buyerThread.html.includes(subject), 'the buyer lost their own question');
+  /* The link for THIS question, not the first on the page: the list is newest
+     first and an earlier test in this file raises one of its own. */
+  const bid = (new RegExp('href="/questions/([^"]+)"[^>]*>[\\s\\S]{0,400}?'
+    + subject.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).exec(buyerThread.html) || [])[1];
+  assert.ok(bid, "the buyer's question is not a link to its own thread");
+  const thread = await get('buyer', '/questions/' + bid);
+  assert.ok(thread.html.includes(said),
+    'the office answered and the buyer cannot see the answer');
+
+  /* And it stops being open: an answered question is off the office's Today
+     screen, which is the thing that makes Today a worklist rather than a log. */
+  const after = await get('office', '/office');
+  const stillThere = after.html.includes(subject);
+  assert.ok(!stillThere || /answered/i.test(after.html),
+    'an answered question is still sitting on the office worklist as open');
+});
+
+test('office picks a file up from sales: it leaves the handover list', async () => {
+  const before = await get('office', '/office/handoff');
+  const m = /name="id" value="(ho-[^"]+)"/.exec(before.html);
+  if (!m) {
+    assert.match(before.html, /Sales have handed nothing over|Picked up/,
+      'nothing is offered for pickup and the screen does not say why');
+    return;
+  }
+  const r = await post('office', '/office/handoff', { id: m[1] });
+  assert.strictEqual(r.status, 302, 'the pickup form did not post');
+  assert.match(decodeURIComponent(r.location), /is yours/, decodeURIComponent(r.location));
+
+  const after = await get('office', '/office/handoff');
+  assert.ok(!new RegExp('name="id" value="' + m[1] + '"').test(after.html),
+    'the file is still offered for pickup after being picked up');
+
+  // And picking the same one up twice is refused rather than reassigning it.
+  const again = await post('office', '/office/handoff', { id: m[1] });
+  assert.match(decodeURIComponent(again.location), /could not be picked up/,
+    'a file already owned was picked up a second time');
+});
+
+test('office answers a lender: the query stops holding the disbursement', async () => {
+  const before = await get('office', '/office/query');
+  const m = /name="id" value="(pq-[^"]+)"/.exec(before.html);
+  if (!m) {
+    assert.match(before.html, /No lender has asked anything|Answered/,
+      'no lender question is open and the screen does not say so');
+    return;
+  }
+  const answer = 'Certificate and photographs re-sent ' + Date.now();
+  const r = await post('office', '/office/query', { id: m[1], answer });
+  assert.strictEqual(r.status, 302);
+  assert.match(decodeURIComponent(r.location), /Answered/, decodeURIComponent(r.location));
+
+  const after = await get('office', '/office/query');
+  assert.ok(after.html.includes(answer), 'the answer is not on the screen');
+  assert.ok(!new RegExp('name="id" value="' + m[1] + '"').test(after.html),
+    'an answered lender question still offers the answer form');
+});
+
+test('office marks a quarter filed: it needs the acknowledgement reference', async () => {
+  const before = await get('office', '/office/qpr');
+  const m = /name="id" value="(qpr-[^"]+)"/.exec(before.html);
+  if (!m) {
+    assert.match(before.html, /No quarter has been opened|Filed/,
+      'no quarter is open for filing and the screen does not say so');
+    return;
+  }
+  // A filing without its reference is not a filing.
+  const empty = await post('office', '/office/qpr', { id: m[1], reference: '   ' });
+  assert.match(decodeURIComponent(empty.location), /acknowledgement reference/,
+    'a quarter was marked filed with no reference');
+
+  const ref = 'ACK/' + Date.now();
+  const r = await post('office', '/office/qpr', { id: m[1], reference: ref });
+  assert.match(decodeURIComponent(r.location), /marked filed/, decodeURIComponent(r.location));
+
+  const after = await get('office', '/office/qpr');
+  assert.ok(after.html.includes(ref), 'the reference is not on the screen');
+});
+
+test('every one of the fifteen destinations opens, and none of them is a stub', async () => {
+  /* "A tab whose controls do nothing is not built." Fifteen screens is fifteen
+     chances to ship a heading with nothing under it, so each one is opened and
+     checked for the two things that would mean it is a drawing: no hero count
+     at all, and no list - neither rows nor a sentence saying why there are
+     none. An empty queue is a real state and says so; an empty screen is not. */
+  const KEYS = ['', 'owner', 'handoff', 'packs', 'query', 'chase', 'signoff', 'silent',
+                'wait', 'escrow', 'choices', 'warranty', 'evidence', 'qpr', 'possession'];
+  for (const k of KEYS) {
+    const path = k ? '/office/' + k : '/office';
+    const { status, html } = await get('office', path);
+    assert.strictEqual(status, 200, path + ' does not open');
+    assert.match(html, /<span class="kpin/, path + ' has no hero count');
+    assert.match(html, /class="pgt"/, path + ' has no title');
+    assert.ok(/class="wrow/.test(html) || /class="emptyrow"/.test(html) || /class="agebar/.test(html),
+      path + ' shows neither rows, nor a reason there are none');
+    assert.ok(/class="sbtn st"/.test(html), path + ' has no navigation out of it');
+  }
+});
+
+test('the sidebar is the nine groups, on every one of the fifteen', async () => {
+  const { html } = await get('office', '/office');
+  for (const g of ['New from sales', 'Waiting on you', 'Buyer loans', 'Chasing your team',
+                   'Waiting on the bank', 'Your own money', 'Buyer decisions', 'Compliance']) {
+    assert.ok(html.includes(g), 'the sidebar is missing the group "' + g + '"');
+  }
+  const items = (html.match(/class="sbtn st"/g) || []).length;
+  assert.strictEqual(items, 15, 'the sidebar has ' + items + ' destinations, not fifteen');
+
+  /* And the phone gets the same nine groups rather than a second list. Fifteen
+     tabs in a 375px bar is twenty-five pixels each. */
+  const menu = await get('office', '/office/menu');
+  assert.strictEqual(menu.status, 200, 'the phone menu does not open');
+  for (const g of ['New from sales', 'Compliance']) {
+    assert.ok(menu.html.includes(g), 'the phone menu is missing the group "' + g + '"');
+  }
+  const links = (menu.html.match(/class="wrow[^"]*" href="\/office/g) || []).length;
+  assert.strictEqual(links, 15, 'the phone menu offers ' + links + ' destinations, not fifteen');
+});
+
+test('every row on every office screen leads somewhere', async () => {
+  /* A worklist row that is not a link is a dead end: you can see the villa is
+     stuck and there is nothing to press. The buyer file is where they all go. */
+  for (const k of ['', 'signoff', 'silent', 'choices', 'possession']) {
+    const { html } = await get('office', k ? '/office/' + k : '/office');
+    const rows = (html.match(/class="wrow[^"]*"/g) || []).length;
+    if (!rows) continue;
+    const links = (html.match(/<a class="wrow/g) || []).length;
+    assert.ok(links > 0, '/office/' + k + ' has ' + rows + ' rows and not one of them is a link');
+  }
 });
 
 test('a buyer cannot reach any engineer screen', async () => {

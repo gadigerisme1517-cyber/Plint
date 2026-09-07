@@ -150,7 +150,7 @@ test('nothing a signed-in person sees is in the cache list', () => {
   /* The specific paths that carry one buyer's money, and the prefixes they
      live under. If any of these is ever added to the shell, a cached copy
      survives sign-out on a shared phone. */
-  const forbidden = ['/', '/villa/B-14', '/office', '/office/sanctions', '/engineer',
+  const forbidden = ['/', '/villa/B-14', '/office', '/office/chase', '/engineer',
                      '/documents', '/doc/demand/us-B-14-brick.pdf',
                      '/evidence/' + 'a'.repeat(64), '/login', '/logout', '/health'];
   for (const p of forbidden) {

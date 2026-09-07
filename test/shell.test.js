@@ -40,7 +40,10 @@ const SCREENS = {
              '/bank', '/loan', '/agreement', '/choices', '/questions', '/documents'],
   engineer: ['/engineer', '/engineer/villas', '/engineer/visits', '/engineer/log',
              '/engineer/certs', '/engineer/snags'],
-  office:   ['/office', '/office/sanctions'],
+  office:   ['/office', '/office/owner', '/office/handoff', '/office/packs',
+             '/office/query', '/office/chase', '/office/signoff', '/office/silent',
+             '/office/wait', '/office/escrow', '/office/choices', '/office/warranty',
+             '/office/evidence', '/office/qpr', '/office/possession', '/office/menu'],
 };
 
 /* How many destinations each role has, and therefore what navigation it gets.
@@ -49,7 +52,7 @@ const SCREENS = {
    five fits a phone. Above five it becomes a menu button, which is the head
    office: fifteen destinations in nine groups are not a bar at any width. */
 const BAR_FITS = 5;
-const DESTINATIONS = { buyer: 5, engineer: 5, office: 2 };
+const DESTINATIONS = { buyer: 5, engineer: 5, office: 15 };
 
 const cookies = {};
 before(async () => {
@@ -160,24 +163,25 @@ test('each role gets the navigation its number of sections earns', async () => {
     const tabs = (h.match(/<nav class="tabbar"[\s\S]*?<\/nav>/) || [''])[0];
     const count = (tabs.match(/<a href=/g) || []).length;
 
-    if (DESTINATIONS[role] > 1) {
+    if (DESTINATIONS[role] > BAR_FITS) {
+      /* Fifteen tabs in 375px is twenty-five pixels each. Above the bar's five
+         a role gets a menu button and no bar at all - the head office, whose
+         fifteen destinations sit under nine headings that are what make the
+         list navigation rather than a list. */
+      assert.strictEqual(tabs, '',
+        role + ' has ' + DESTINATIONS[role] + ' destinations squeezed into a bar');
+      assert.match(h, /class="ab-menu"/,
+        role + ' has ' + DESTINATIONS[role] + ' destinations and no menu button');
+    } else if (DESTINATIONS[role] > 1) {
       assert.ok(tabs, role + ' has ' + DESTINATIONS[role] + ' sections and no tab bar');
       assert.strictEqual(count, DESTINATIONS[role],
         role + ' has ' + DESTINATIONS[role] + ' sections but ' + count + ' tabs');
       assert.match(tabs, /--tabs:/, role + ': the tab bar does not size its own columns');
+      assert.ok(!/class="ab-menu"/.test(h), role + ' rendered a menu button it does not need');
     } else {
       /* One section is not navigation. A bar with a single tab in it is
          furniture that never does anything. */
       assert.strictEqual(tabs, '', role + ' has one section and still gets a tab bar');
-    }
-    /* Above five destinations the bar becomes a menu. Nothing has crossed that
-       line yet; when the office grows to fifteen this assertion is what makes
-       forgetting the menu a failure rather than a squashed bar. */
-    if (DESTINATIONS[role] > BAR_FITS) {
-      assert.match(h, /class="ab-menu"/,
-        role + ' has ' + DESTINATIONS[role] + ' destinations and no menu button');
-    } else {
-      assert.ok(!/class="ab-menu"/.test(h), role + ' rendered a menu button it does not need');
     }
   }
 });
@@ -187,7 +191,14 @@ test('the current screen is marked in the navigation', async () => {
     if (DESTINATIONS[role] < 2) continue;
     for (const p of paths) {
       const h = await body(p, role);
+      /* The tab bar and the buyer's app-bar links use `aria-current`; the head
+         office's grouped sidebar marks the open destination the same way. A
+         screen behind a destination rather than being one - a buyer file, a
+         question thread, the phone menu - marks nothing, and says so by being
+         listed here. */
+      const behind = ['/office/menu'].includes(p);
       const marks = (h.match(/aria-current="page"/g) || []).length;
+      if (behind) continue;
       assert.ok(marks >= 1, role + ' ' + p + ' marks no destination as current');
     }
   }
@@ -334,6 +345,25 @@ test('the rules the phone layout depends on are rules, not prose', async () => {
   }
 });
 
+test('no screen prints a number it could not work out', async () => {
+  /* `M.money(undefined)` is "\u20B9NaN", and it renders as confidently as any
+     other figure. It happened: three screens read `gross_paise` off a demand
+     and the column is `total_paise`, so every settled demand on the buyer's
+     Money screen said \u20B9NaN. The office screen that joined the same column
+     failed loudly with a 500 and that is how it was found - the buyer's did
+     not fail at all, because JavaScript is happy to format a NaN.
+
+     This is the cheap guard: no screen in the application, for any role, may
+     contain NaN, undefined, null or [object Object] in its rendered text. */
+  for (const [role, p] of everyScreen()) {
+    const h = await body(p, role);
+    for (const bad of ['NaN', 'undefined', '[object Object]', '>null<']) {
+      assert.ok(!h.includes(bad),
+        role + ' ' + p + ' renders ' + JSON.stringify(bad) + ' to the reader');
+    }
+  }
+});
+
 // ------------------------------------------------------- responsive rules
 
 test('the sideways-scroll backstop does not cost a scrollbar', async () => {
@@ -414,7 +444,8 @@ test('rows are built in one place, not copied per screen', async () => {
      there, day counts written into the amount cell on one screen and the day
      cell on another. */
   const src = f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
-  for (const f of ['src/screens/engineer.js', 'src/server.js']) {
+  for (const f of ['src/screens/engineer.js', 'src/screens/buyer.js',
+                   'src/screens/office.js']) {
     const viaBuilder = (src(f).match(/\bwrow\(\{/g) || []).length;
     assert.ok(viaBuilder > 0, f + ' builds no rows through the shared builder');
 
@@ -534,7 +565,9 @@ test('the header is one bar, not four bands', async () => {
   // And the screen actually says which screen it is.
   for (const [role, p, name] of [['engineer', '/engineer', 'Me'],
                                  ['engineer', '/engineer/villas', 'Villas'],
-                                 ['office', '/office', 'Stuck money']]) {
+                                 ['office', '/office', 'Today'],
+                                 ['office', '/office/owner', 'Owner view'],
+                                 ['buyer', '/journey', 'Journey']]) {
     const h = await body(p, role);
     assert.ok(h.includes('<span class="ab-screen">' + name + '</span>'),
       role + ' ' + p + ' does not name itself in the bar');
@@ -796,7 +829,9 @@ test('nothing is laid out with a width the page cannot override', async () => {
   /* The ageing histogram shipped with `style="height:88px"` on each bar. An
      inline height beats every rule, so on a phone the sparkline became four
      slabs half the screen wide. Heights travel as a custom property now. */
-  const h = await body('/office', 'office');
+  // On Owner view since the office got v21's fifteen: how long things have
+  // been blocked is a position, and Today is a worklist.
+  const h = await body('/office/owner', 'office');
   const bars = h.match(/class="agebar[^"]*" style="([^"]*)"/g) || [];
   assert.ok(bars.length > 0, 'no ageing bars rendered');
   for (const b of bars) {

@@ -101,7 +101,7 @@ test('the list is read-only: nothing to upload, nothing to tick', async () => {
 
 test('a buyer cannot reach the office sanction screen', async () => {
   const cookie = await signIn('arjun@example.in');
-  assert.strictEqual((await get('/office/sanctions', cookie)).status, 404);
+  assert.strictEqual((await get('/office/chase', cookie)).status, 404);
   const r = await fetch(BASE + '/office/sanction', {
     method: 'POST', redirect: 'manual',
     headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' },
@@ -119,7 +119,7 @@ const unrecorded = () => asUser(OFFICE, c => c.query(
 
 test('the office lists the buyers with no sanction on file', async () => {
   const cookie = await signIn('priya@nvt.in');
-  const html = await (await get('/office/sanctions', cookie)).text();
+  const html = await (await get('/office/chase', cookie)).text();
 
   assert.match(html, /Sanction not recorded/);
   const n = (await asUser(OFFICE, c => c.query(

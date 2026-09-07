@@ -186,8 +186,14 @@ function destinations(sess) {
             ['/money', 'Money', 'money'],
             ['/more', 'More', 'more']];
   }
+  /* Fifteen, in v21's nine groups. The list is flat here because this is what
+     the app bar and the route table need; the groups live in the office module
+     with the screens they head, and the sidebar and the phone menu are both
+     drawn from that one structure. Fifteen is above `BAR_FITS`, which is what
+     gives this role a menu button where the other two keep v21's bar. */
   if (sess.role === 'office') {
-    return [['/office', 'Stuck money', 'money'], ['/office/sanctions', 'Sanctions', 'doc']];
+    return OFF.GROUPS.flatMap(([, items]) =>
+      items.map(([k, label]) => [OFF.href(k), label, 'doc']));
   }
   /* v21's five-slot bottom bar, and five fits: Me, Villas, Visits, Log, Certs.
      A menu button is for the head office, whose fifteen destinations cannot be
@@ -196,6 +202,11 @@ function destinations(sess) {
           ['/engineer/visits', 'Visits', 'doc'], ['/engineer/log', 'Log', 'doc'],
           ['/engineer/certs', 'Certs', 'tick']];
 }
+
+/* v21's bottom bar is `.nav five`: a shape that holds five and no more. The
+   buyer and the engineer have exactly five. Above it a role gets a menu button
+   instead, which is the head office and its fifteen. */
+const BAR_FITS = 5;
 
 const TABICON = {
   home:  'M4 11 12 4l8 7v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1Z',
@@ -220,6 +231,8 @@ function appbar(sess, current, inlineNav, screen) {
 <a class="ab-brand" href="/"><span class="ab-mark">${LOGO}</span><span class="ab-name">Plint</span></a>
 <span class="ab-ctx">NVT Eterna &middot; Phase 1</span>
 ${screen ? `<span class="ab-screen">${esc(screen)}</span>` : ''}
+${dests.length > BAR_FITS ? `<a class="ab-menu" href="/office/menu"
+ aria-label="All destinations" style="text-decoration:none">Menu</a>` : ''}
 ${inlineNav && dests.length > 1 ? `<nav class="ab-nav">${dests.map(([href, label]) =>
   `<a href="${href}"${current === href ? ' aria-current="page"' : ''}>${esc(label)}</a>`).join('')}</nav>` : ''}
 <div class="ab-g"></div>
@@ -233,7 +246,11 @@ ${sess ? `<span class="ab-who">${esc(sess.name)}</span>
    menu button: none of them has more than two sections. */
 function tabbar(sess, current) {
   const dests = destinations(sess);
-  if (dests.length < 2) return '';
+  /* One destination is not navigation, and above five it is not a bar. v21's
+     `.nav five` is a shape that holds five; the head office's fifteen become a
+     menu button in the app bar instead, and squeezing fifteen tabs into 375px
+     would give each of them 25 pixels. */
+  if (dests.length < 2 || dests.length > BAR_FITS) return '';
   return `<nav class="tabbar" style="--tabs:${dests.length}">
 ${dests.map(([href, label, icon]) => `<a href="${href}"${current === href ? ' aria-current="page"' : ''}>
 ${tabIcon(icon)}<span>${esc(label)}</span></a>`).join('')}
@@ -257,13 +274,22 @@ ${tabbar(sess, current)}${SW}</body></html>`;
 }
 
 /** Office and engineer: a sidebar on a desktop, the same destinations as tabs on a phone. */
-function desk(sess, tab, title, sub, main) {
+/**
+ * The shell all three roles share.
+ *
+ * `sidebar` is an optional pre-rendered list of destinations. Two roles have a
+ * flat five and get the default; the head office has fifteen under nine
+ * headings, and a flat list of fifteen is not navigation - the headings are
+ * what make it one. So that role hands in its own, drawn from the same
+ * structure its phone menu is drawn from.
+ */
+function desk(sess, tab, title, sub, main, sidebar) {
   const dests = destinations(sess);
   return `${HEAD}${appbar(sess, tab, false, title)}<div class="wrap">
 <div class="desk">
 <div class="side">
 <div class="logo">${LOGO}<span>Plint</span></div>
-${dests.map(([href, label]) => `<a class="sbtn st" href="${href}" aria-selected="${tab === href}"
+${sidebar || dests.map(([href, label]) => `<a class="sbtn st" href="${href}" aria-selected="${tab === href}"
  style="text-decoration:none;display:block">${esc(label)}</a>`).join('')}
 <div class="foot"><p class="s">Eterna Phase 1 &middot; 48 villas<br>Reads from your ERP. Writes nothing back.</p></div>
 </div>
@@ -435,6 +461,7 @@ function stageTotal(byProject, row) {
 const ROW = require('./screens/rows')({ esc });
 const ENG = require('./screens/engineer')({ esc, desk, M, asUser, schedules, stageTotal, LOGO });
 const BUY = require('./screens/buyer')({ esc, desk, M, asUser });
+const OFF = require('./screens/office')({ esc, desk, M, asUser, schedules, stageTotal });
 
 /** Certification. The only place a demand is created. */
 async function certify(sess, stageId) {
@@ -504,153 +531,6 @@ async function certify(sess, stageId) {
 }
 
 // --------------------------------------------------------- head office view
-async function officeScreen(sess, flash) {
-  const { rows, byProject, engineers } = await asUser(sess, async c => ({
-    rows: await c.query(
-      `SELECT u.id unit_id, u.code, u.buyer_name, u.bank, u.agreement_value_paise, u.project_id,
-              u.assigned_engineer_id,
-              t.name stage_name, t.pct_bp, t.seq, s.status,
-              b.holder, b.holder_role, b.reason, b.since,
-              (CURRENT_DATE - b.since) age
-         FROM blockers b
-         JOIN unit_stages s ON s.id = b.unit_stage_id
-         JOIN units u ON u.id = s.unit_id
-         JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
-        ORDER BY b.holder_role, (CURRENT_DATE - b.since) DESC`),
-    byProject: await schedules(c),
-    engineers: (await c.query(
-      `SELECT id, display_name, engineer_reg FROM users
-        WHERE role = 'engineer' ORDER BY display_name`)).rows,
-  }));
-
-  const groups = {};
-  let stuck = 0;
-  for (const x of rows.rows) {
-    x.value = stageTotal(byProject, x);
-    stuck += x.value;
-    (groups[x.holder_role] ||= []).push(x);
-  }
-  const order = ['engineer', 'lender', 'office', 'buyer'];
-  const label = { engineer: 'Waiting on the certifying engineer', lender: 'Waiting on the lender',
-                  office: 'Waiting on head office', buyer: 'Waiting on the buyer' };
-
-  const oldest = Math.max(...rows.rows.map(r => r.age));
-
-  /* Red, per v21 and per the standing rule: the stuck-money KPI, the oldest
-     ageing bars, and the dot on a late row. `.chip late` and `.days b.h` carry
-     the last of those; everything younger is warn or plain. */
-  const body = order.filter(k => groups[k]).map(k => {
-    const g = groups[k].sort((a, b) => b.age - a.age);
-    const sum = g.reduce((n, x) => n + x.value, 0);
-    return `<div class="tools"><span class="rescount s">${esc(label[k])} &middot;
-${g.length} villa${g.length === 1 ? '' : 's'} &middot; ${M.crore(sum)}</span><div class="g"></div></div>
-<div class="wl">
-<div class="whead"><span class="id">Villa</span><span class="mid">Stage and reason</span>
-<span class="stc">Status</span><span class="days">Age</span><span class="amt">Amount</span></div>
-${g.map(x => ROW.wrow({
-  code: x.code,
-  title: x.stage_name,
-  detail: esc(x.reason),
-  days: x.age + 'd',
-  daysAge: x.age,
-  chip: ROW.ageChip(x.age, ['Open', 'Ageing', 'Overdue']),
-  amount: M.crore(x.value),
-}) + `
-${k === 'engineer' ? `<form method="post" action="/office/assign" class="uprow reassign"
-  style="display:flex;gap:10px;align-items:center;padding:8px 26px 14px;border-bottom:1px solid var(--hair)">
-<input type="hidden" name="unit" value="${esc(x.unit_id)}">
-<span class="mid" style="display:flex;gap:10px;align-items:center">
-<span class="s">Sitting with ${esc(x.holder)}. Move it to</span>
-<select class="fi" name="engineer" style="margin:0;flex:0 0 220px;padding:7px 10px">
-${engineers.filter(e => e.id !== x.assigned_engineer_id).map(e =>
-  `<option value="${esc(e.id)}">${esc(e.display_name)}${e.engineer_reg ? '' : ' (cannot certify)'}</option>`).join('')}
-</select></span>
-<button class="wbtn st" type="submit" style="flex:0 0 120px">Reassign</button></form>` : ''}`).join('')}
-</div><div class="gap"></div>`;
-  }).join('');
-
-  // The ageing profile, oldest bucket in red. v21 reds the last buckets only.
-  const buckets = [[0, 9], [10, 20], [21, 34], [35, 9999]];
-  const counts = buckets.map(([lo, hi]) => rows.rows.filter(r => r.age >= lo && r.age <= hi).length);
-  const most = Math.max(1, ...counts);
-  const bars = `<div class="agebars">${counts.map((n, i) =>
-    /* The height goes out as a custom property, not as `height`, so a phone can
-       scale the whole histogram down. As an inline height it beat every rule
-       and rendered as four slabs half the screen wide. */
-    `<span class="agebar ${i >= 2 ? 'hot' : ''}" style="--h:${n ? Math.max(8, (n / most) * 88) : 2}px"
-      title="${['0 to 9 days', '10 to 20 days', '21 to 34 days', '35 days and over'][i]}: ${n}"></span>`).join('')}</div>`;
-
-  return desk(sess, '/office', 'Stuck money', '', `
-<div class="mhead"><div class="hstrip">
-<div class="g"><h1 class="pgt">Stuck money</h1>
-<p class="s" style="margin-top:2px">Across ${rows.rows.length} villas. The oldest has been sitting
-for ${oldest} days. Grouped by who is holding it up, not by stage.</p>
-${bars}</div>
-<div class="kpi"><span class="kpin hot">${M.crore(stuck)}</span><span class="k">stuck</span></div>
-<div class="kpi"><span class="kpin">${rows.rows.length}</span><span class="k">files</span></div>
-</div></div>
-<div class="mbody anim">${flash ? `<div class="tools"><span class="rescount s">${esc(flash)}</span><div class="g"></div></div>` : ''}${body}</div>`);
-}
-
-/* --------------------------------------------- head office: record a sanction
-   v21's "Sanction not recorded" tab. The builder collects no papers and talks
-   to no bank. The buyer arranges the loan himself and brings the letter in;
-   this is where it is written down, and nothing is disbursed until it is. */
-async function sanctionScreen(sess, flash) {
-  /* Days waiting comes from the blocker, which is the same "how long has this
-     been sitting" figure the rest of the office already trusts. There is no
-     booking date in this schema, so the column is labelled for what it is. */
-  const rows = await asUser(sess, c => c.query(
-    `SELECT u.id, u.code, u.buyer_name, u.bank, u.agreement_value_paise,
-            (SELECT max(CURRENT_DATE - b.since)
-               FROM blockers b JOIN unit_stages s2 ON s2.id = b.unit_stage_id
-              WHERE s2.unit_id = u.id) age
-       FROM units u
-      WHERE u.bank IS NOT NULL AND u.sanction_recorded_at IS NULL
-      ORDER BY u.code`)).then(r => r.rows);
-
-  const list = rows.map(x => ROW.wrow({
-  code: x.code,
-  title: x.buyer_name,
-  detail: esc(x.bank),
-  days: x.age == null ? '' : x.age + 'd',
-  daysAge: x.age,
-  chip: '<i class="chip ' + (x.age > 10 ? 'late' : 'wait') + '">no sanction</i>',
-  amount: M.money(x.agreement_value_paise),
-}) + `
-<form method="post" action="/office/sanction" class="uprow"
-  style="display:flex;gap:10px;align-items:center;padding:10px 26px 16px;border-bottom:1px solid var(--hair)">
-<input type="hidden" name="unit" value="${esc(x.id)}">
-<input class="fi n" name="sanction" inputmode="numeric" required
-  placeholder="Sanctioned amount, in rupees" style="margin:0;flex:1;min-width:0;padding:7px 10px">
-<input class="fi n" name="own" inputmode="numeric" required
-  placeholder="Own contribution, in rupees" style="margin:0;flex:1;min-width:0;padding:7px 10px">
-<input class="fi" name="letter" required maxlength="60"
-  placeholder="Sanction letter reference" style="margin:0;flex:1;min-width:0;padding:7px 10px">
-<button class="wbtn solid st" type="submit" style="flex:0 0 150px">Record sanction</button>
-</form>`).join('');
-
-  return desk(sess, '/office/sanctions', 'Sanction not recorded', '', `
-<div class="mhead"><div class="hstrip">
-<div class="g"><h1 class="pgt">Sanction not recorded</h1>
-<p class="s" style="margin-top:2px">Buyers with no sanction letter on file yet. Nothing can be
-disbursed against a stage until this is marked.</p></div>
-<div class="kpi"><span class="kpin">${rows.length}</span><span class="k">files</span></div>
-</div></div>
-<div class="mbody anim">
-${flash ? `<div class="tools"><span class="rescount s">${esc(flash)}</span><div class="g"></div></div>` : ''}
-<div class="tools"><span class="rescount s">${rows.length} buyer${rows.length === 1 ? '' : 's'}
-without a recorded sanction</span><div class="g"></div></div>
-<div class="wl">
-${rows.length ? `<div class="whead"><span class="id">Villa</span><span class="mid">Buyer and lender</span>
-<span class="stc">Status</span><span class="days">Waiting</span><span class="amt">Agreement</span></div>` : ''}
-${list || '<div class="emptyrow"><p class="b ink">Every buyer with a lender has a sanction on file.</p></div>'}
-</div>
-<p class="b note">Plint does not collect loan papers and does not talk to any bank. The buyer
-arranges his loan himself. When he brings the sanction letter to the office, it is recorded here,
-and only then can a verified stage release money against it. Amounts are entered in rupees.</p>
-</div>`);
-}
 
 // ------------------------------------------------------------------ documents
 async function docContext(sess, stageId) {
@@ -999,8 +879,130 @@ const server = http.createServer(async (req, res) => {
       return res.end();
     }
 
-    if (p === '/office' && sess.role === 'office')
-      return html(200, await officeScreen(sess, url.searchParams.get('m')));
+    /* -------------------------------------------------------- the head office
+
+       Fifteen destinations in nine groups, in src/screens/office.js, plus the
+       buyer file every row on every one of them links to. `/office` is Today;
+       the rest are `/office/<key>`. One read serves the sidebar's fifteen
+       counts and the rows the asked-for screen needs - the counts are on every
+       page in the role, so they are one query rather than fifteen. */
+    if (sess.role === 'office' && req.method === 'GET' && p.startsWith('/office')) {
+      const msg = url.searchParams.get('m');
+      const key = p === '/office' ? 'today'
+        : p.startsWith('/office/') ? p.slice(8) : null;
+
+      if (key && OFF.KEYS.has(key)) {
+        const d = await OFF.load(sess, key);
+        return html(200, OFF.SCREENS[key](sess, d, msg));
+      }
+
+      /* The phone's way in. A drawer would need script; this is the same nine
+         groups as a screen, and it is drawn from the structure the sidebar is
+         drawn from rather than a second copy that would drift from it. */
+      if (p === '/office/menu') {
+        const n = await asUser(sess, c => OFF.counts(c));
+        return html(200, OFF.menu(sess, n, msg));
+      }
+
+      if (p.startsWith('/office/buyer/')) {
+        const n = await asUser(sess, c => OFF.counts(c));
+        const out = await OFF.buyerFile(sess, decodeURIComponent(p.slice(14)), n);
+        return out ? html(200, out) : html(404, page('Not found', sess,
+          '<div class="blk"><h1 class="h1">No such villa.</h1></div>'));
+      }
+
+      if (p.startsWith('/office/question/')) {
+        const n = await asUser(sess, c => OFF.counts(c));
+        const out = await OFF.questionThread(sess, decodeURIComponent(p.slice(17)), n, msg);
+        return out ? html(200, out) : html(404, page('Not found', sess,
+          '<div class="blk"><h1 class="h1">No such question.</h1></div>'));
+      }
+    }
+
+    /* --------------------------------------------------- the head office writes
+
+       None of these touches money. Picking a file up, answering a lender,
+       answering a buyer, closing a claim and marking a quarter filed are all
+       the same kind of row: a record that somebody in this office dealt with
+       something, with their name on it. The two that do touch money -
+       recording a sanction and reassigning work - go through SECURITY DEFINER
+       functions, further down, because `units` has no UPDATE policy at all. */
+
+    if (p === '/office/handoff' && req.method === 'POST' && sess.role === 'office') {
+      const f = form(await body(req));
+      const back = m => { res.writeHead(302, { location: '/office/handoff?m=' + encodeURIComponent(m) }); res.end(); };
+      const r = await asUser(sess, async c => (await c.query(
+        `UPDATE handoffs SET picked_up_at = now(), picked_up_by = $2
+          WHERE id = $1 AND picked_up_at IS NULL
+          RETURNING (SELECT code FROM units WHERE id = unit_id) code`,
+        [f.id, sess.id])).rows[0]);
+      return back(r
+        ? r.code + ' is yours. It is off the sales handover list and on your own.'
+        : 'That file could not be picked up. Somebody may already have it.');
+    }
+
+    if (p === '/office/query' && req.method === 'POST' && sess.role === 'office') {
+      const f = form(await body(req));
+      const back = m => { res.writeHead(302, { location: '/office/query?m=' + encodeURIComponent(m) }); res.end(); };
+      const answer = (f.answer || '').trim().slice(0, 300);
+      if (!answer) return back('An empty answer does not move a disbursement.');
+      const r = await asUser(sess, async c => (await c.query(
+        `UPDATE pack_queries SET answered_at = now(), answer = $2, answered_by = $3
+          WHERE id = $1 AND answered_at IS NULL RETURNING id`,
+        [f.id, answer, sess.id])).rows[0]);
+      return back(r ? 'Answered. The lender has what it asked for.'
+                    : 'That question could not be answered. It may already be closed.');
+    }
+
+    if (p === '/office/qpr' && req.method === 'POST' && sess.role === 'office') {
+      const f = form(await body(req));
+      const back = m => { res.writeHead(302, { location: '/office/qpr?m=' + encodeURIComponent(m) }); res.end(); };
+      const ref = (f.reference || '').trim().slice(0, 60);
+      if (!ref) return back('A filing is the acknowledgement reference. Without it there is no filing.');
+      const r = await asUser(sess, async c => (await c.query(
+        `UPDATE qpr_filings SET filed_at = now(), filed_by = $2, reference = $3
+          WHERE id = $1 AND filed_at IS NULL RETURNING quarter`,
+        [f.id, sess.id, ref])).rows[0]);
+      return back(r ? r.quarter + ' marked filed as ' + ref + '.'
+                    : 'That quarter could not be marked filed.');
+    }
+
+    /* Answering a buyer. The message goes on the same thread the buyer reads,
+       and the query moves from open to answered - which is what takes it off
+       this office's Today screen and tells the buyer somebody replied. */
+    if (p === '/office/answer' && req.method === 'POST' && sess.role === 'office') {
+      const f = form(await body(req));
+      const to = '/office/question/' + encodeURIComponent(f.id || '');
+      const back = m => { res.writeHead(302, { location: to + '?m=' + encodeURIComponent(m) }); res.end(); };
+      const text = (f.body || '').trim().slice(0, 400);
+      if (!text) return back('An empty message says nothing.');
+      const ok = await asUser(sess, async c => {
+        /* `author_id = current_user_id() AND author_role = current_role_name()`
+           is in the policy, so this cannot be signed as anybody else. */
+        const r = await c.query(
+          `INSERT INTO query_messages (id, query_id, author_id, author_role, body)
+           SELECT $1, q.id, $3, 'office', $4 FROM queries q WHERE q.id = $2 RETURNING id`,
+          ['qm-' + crypto.randomUUID(), f.id, sess.id, text]);
+        if (r.rowCount !== 1) return false;
+        await c.query(
+          `UPDATE queries SET status = 'answered' WHERE id = $1 AND status = 'open'`, [f.id]);
+        return true;
+      });
+      return back(ok ? 'Sent. The buyer sees it on their own thread.'
+                     : 'That message could not be sent.');
+    }
+
+    if (p === '/office/close' && req.method === 'POST' && sess.role === 'office') {
+      const f = form(await body(req));
+      const to = '/office/question/' + encodeURIComponent(f.id || '');
+      const r = await asUser(sess, async c => (await c.query(
+        `UPDATE queries SET status = 'closed', closed_at = now()
+          WHERE id = $1 AND status <> 'closed' RETURNING subject`, [f.id])).rows[0]);
+      res.writeHead(302, { location: to + '?m=' + encodeURIComponent(
+        r ? 'Closed. The buyer can still read the thread.'
+          : 'That could not be closed.') });
+      return res.end();
+    }
 
     /* Reassigning a villa. The write goes through assign_engineer(), which is
        SECURITY DEFINER because units has no UPDATE policy - the same route
@@ -1014,18 +1016,19 @@ const server = http.createServer(async (req, res) => {
           `SELECT u.code, e.display_name FROM units u
              JOIN users e ON e.id = u.assigned_engineer_id WHERE u.id = $1`, [f.unit])).rows[0];
       }).catch(() => null);
-      res.writeHead(302, { location: '/office?m=' + encodeURIComponent(
+      /* Back to the screen the control was on. Both places that offer it -
+         stages waiting on a certificate, and villas that have gone quiet -
+         send the reassignment here, so the caller says where it came from. */
+      const from = ['signoff', 'silent'].includes(f.from) ? f.from : 'signoff';
+      res.writeHead(302, { location: '/office/' + from + '?m=' + encodeURIComponent(
         r ? `${r.code} reassigned to ${r.display_name}. It is on their list now and off the last one's.`
           : 'That villa could not be reassigned.') });
       return res.end();
     }
 
-    if (p === '/office/sanctions' && sess.role === 'office')
-      return html(200, await sanctionScreen(sess, url.searchParams.get('m')));
-
     if (p === '/office/sanction' && req.method === 'POST' && sess.role === 'office') {
       const f = form(await body(req));
-      const back = m => { res.writeHead(302, { location: '/office/sanctions?m=' + encodeURIComponent(m) }); res.end(); };
+      const back = m => { res.writeHead(302, { location: '/office/chase?m=' + encodeURIComponent(m) }); res.end(); };
 
       // Entered in rupees at the desk, stored in paise like everything else.
       const paise = v => {

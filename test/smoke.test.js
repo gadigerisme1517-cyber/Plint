@@ -88,7 +88,10 @@ const get = (p, cookie) => fetch(BASE + p, { headers: cookie ? { cookie } : {}, 
 
   console.log('\nhead office');
   const o = await (await get('/office', office)).text();
-  const rows = (o.match(/class="wrow[ "]/g) || []).length;
+  /* Scoped to the blocker rows. Today carries a "waiting on you" block above
+     them built from the same card, so an unscoped count of `.wrow` counts the
+     shortcuts to the other destinations as villas. */
+  const rows = (o.match(/href="\/office\/buyer\//g) || []).length;
   ok(rows === 48, 'the worklist shows all 48 villas (' + rows + ')');
   ok(/Waiting on the certifying engineer/.test(o) && /Waiting on the lender/.test(o),
      'grouped by who is holding each one up');

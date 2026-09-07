@@ -230,7 +230,7 @@ ${dem ? `<div class="blk"><p class="k">What was raised</p></div>
   detail: 'Raised ' + M.longDate(dem.raised_at) + ' &middot; due ' + M.longDate(dem.due_at)
     + (dem.paid_at ? ' &middot; paid ' + M.longDate(dem.paid_at) : ''),
   chip: dem.paid_at ? '<i class="chip ok">Paid</i>' : '<i class="chip late">Unpaid</i>',
-  amount: M.money(dem.gross_paise),
+  amount: M.money(dem.total_paise),
   action: '<a class="wbtn st" href="/doc/demand/' + esc(s.id) + '.pdf" style="text-decoration:none">Letter</a>',
 })}</div><div class="gap"></div>` : ''}
 <div class="blk"><p class="k">Photographs from site</p></div>
@@ -377,7 +377,7 @@ ${flash(msg)}
           : late ? '<i class="chip late">Overdue</i>' : '<i class="chip wait">Due</i>',
         days: x.paid_at ? '' : days(x.raised_at) + 'd',
         daysAge: x.paid_at ? null : days(x.raised_at),
-        amount: M.money(x.paid_at ? x.gross_paise : M.payableNow(x)),
+        amount: M.money(x.paid_at ? x.total_paise : M.payableNow(x)),
         action: '<a class="wbtn st" href="/doc/demand/' + esc(x.unit_stage_id)
           + '.pdf" style="text-decoration:none">Letter</a>',
       });
@@ -766,9 +766,15 @@ ${flash(msg)}
 
   /** The messages on one thread, read separately because only one screen wants them. */
   async function threadOf(sess, id) {
+    /* LEFT JOIN, and a fallback to the side that wrote it, because `users` is
+       behind row-level security: a buyer may read only their own row. An inner
+       join here does not error, it silently returns nothing - so the buyer
+       would have seen their own messages on the thread and never one of the
+       office's replies. The table holds password hashes, so widening the
+       policy to put a name on a message is not the trade. */
     return asUser(sess, async c => (await c.query(
-      `SELECT m.*, w.display_name author_name
-         FROM query_messages m JOIN users w ON w.id = m.author_id
+      `SELECT m.*, coalesce(w.display_name, initcap(m.author_role)) author_name
+         FROM query_messages m LEFT JOIN users w ON w.id = m.author_id
         WHERE m.query_id = $1 ORDER BY m.sent_at`, [id])).rows);
   }
 
