@@ -1063,6 +1063,12 @@ test('the owner dashboard answers the three questions it exists for', async () =
 
   /* And every segment carries its own figure, so nothing on the screen is only
      a colour. A legend without numbers is a decoration. */
+  /* And a column chart has to be measured against its own plot area. As a
+     flex item beside its number and its label the bar's percentage height was
+     capped to the space they left, so 15, 17 and 16 all drew at exactly 90px
+     - three identical bars for three different counts. */
+  assert.match(h, /<span class="well"><i /, 'the chart columns have no plot area to be measured in');
+
   const keys = (h.match(/class="mixk"/g) || []).length;
   assert.ok(keys >= 6, 'the charts have ' + keys + ' labelled segments between them');
   assert.match(h, /class="mixk">\s*<i[^>]*><\/i>[^<]*<b>/,

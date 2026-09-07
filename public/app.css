@@ -260,8 +260,16 @@ body { padding: 0; margin: 0; background: var(--paper); }
 .col .cn.hot  { color: var(--hot); }
 .col .cn.warn { color: var(--warn); }
 .col .cn.ok   { color: var(--ok); }
+/* The plot area. The bar is measured against this and nothing else - as a
+   flex item beside the number and the label its percentage was capped to the
+   space they left over, so three different counts drew three identical bars. */
+.col .well {
+  flex: 1 1 auto; width: 100%; min-height: 0;
+  display: flex; align-items: flex-end; justify-content: center;
+}
 .col i {
   display: block; width: 100%; max-width: 54px; height: var(--h, 4%);
+  flex: 0 0 auto;
   border-radius: 6px; background: var(--brand);
 }
 .col i.ok   { background: var(--ok); }

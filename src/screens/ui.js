@@ -168,9 +168,15 @@ ${t.sub ? `<p class="s">${esc(t.sub)}</p>` : ''}`;
    */
   function bars(cap, cols) {
     const most = Math.max(1, ...cols.map(c => c.n));
+    /* The bar sits in a well of its own rather than being a flex item beside
+       the number and the label. As a flex item its percentage height resolved
+       against the column and was then capped to whatever space the other two
+       had left - so 15, 17 and 16 all came out at exactly 90px and the chart
+       showed three equal bars for three different numbers. */
     const body = cols.map(c => `<div class="col">
 <span class="cn${toneClass(c.tone)}">${c.n}</span>
-<i class="${c.tone || 'rest'}" style="--h:${Math.max(3, c.n / most * 100).toFixed(1)}%"></i>
+<span class="well"><i class="${c.tone || 'rest'}"
+ style="--h:${Math.max(2, c.n / most * 100).toFixed(1)}%"></i></span>
 <span class="cl">${esc(c.label)}</span></div>`).join('');
     return `<div class="chart">
 <p class="cap">${esc(cap)}</p>
