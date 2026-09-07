@@ -248,8 +248,11 @@ body { padding: 0; margin: 0; background: var(--paper); }
        of nothing between the last card of one section and the next heading. */
     padding-top: 0 !important;
     padding-bottom: 0 !important;
-    margin-bottom: 0 !important;
   }
+  /* Only the list gives up its bottom margin - the last card already carries
+     one. The toolbar has nothing below it but the next heading. */
+  .wl { margin-bottom: 0 !important; }
+  .tools { margin-bottom: 20px !important; }
   /* Which leaves the spacer as the one thing separating two sections. */
   .mbody .gap { height: 20px; }
 

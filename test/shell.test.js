@@ -300,7 +300,15 @@ test('one gutter, and everything on a phone starts on it', async () => {
   const panel = /\.wl, \.tools \{([^}]*)\}/.exec(narrow);
   assert.ok(panel, 'the list panel is never stripped down on a phone');
   assert.match(panel[1], /padding-bottom:\s*0/, 'the stripped panel still pads its own bottom');
-  assert.match(panel[1], /margin-bottom:\s*0/, 'the stripped panel still adds a bottom margin');
+  assert.match(narrow, /\.wl \{[^}]*margin-bottom:\s*0/, 'the list still adds a bottom margin');
+  /* But not the toolbar: it has no card of its own below it to space it from
+     the next heading, and zeroing it put the Close-a-snag button hard against
+     the "Office is chasing you" label. */
+  // Anchored to the line start: `.wl, .tools {` also contains ".tools {".
+  const tools = /\n\s*\.tools \{([^}]*)\}/.exec(narrow);
+  assert.ok(tools && /margin-bottom:\s*(\d+)px/.test(tools[1]) &&
+    Number(/margin-bottom:\s*(\d+)px/.exec(tools[1])[1]) >= 16,
+    'the toolbar has no room under it, so its button will touch the next heading');
   const gap = /\.mbody \.gap \{([^}]*)\}/.exec(narrow);
   assert.ok(gap, 'the section spacer keeps its desktop height on a phone');
   const px = Number(/height:\s*(\d+)px/.exec(gap[1])[1]);
