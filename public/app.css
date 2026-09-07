@@ -613,7 +613,12 @@ body { padding: 0; margin: 0; background: var(--paper); }
      before any shrinking was considered - the button ended up on a third line
      at its correct width, which looked like the rule had done nothing. */
   .uprow.reassign .mid select { flex: 1 1 0% !important; width: auto !important; }
-  .uprow.reassign .wbtn { flex: 0 0 auto !important; }
+  /* And it stays against the right edge when it wraps to a line of its own.
+     On the office's reassign row the picker grows to fill, so the margin
+     resolves to nothing; on the buyer's visit form, where two full-width
+     fields push the button down, it is what stops it sitting alone on the
+     left of an empty line. */
+  .uprow.reassign .wbtn { flex: 0 0 auto !important; margin-left: auto; }
 
   /* v21's two-column tile grid, used by the site log. `1fr` has an automatic
      minimum of min-content, so a tile whose label will not break forces its
