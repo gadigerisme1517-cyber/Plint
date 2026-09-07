@@ -7,7 +7,7 @@ engineer certified it, and that a demand for money followed from that
 certificate. Its value is the evidence trail, not the screens.
 
 `npm test` builds a scratch database, migrates it, seeds it, runs every suite,
-and drops it. **173 assertions across fifteen suites, green from nothing.**
+and drops it. **174 assertions across fifteen suites, green from nothing.**
 
 Every one of them has been checked by mutation — break the behaviour, confirm a
 test fails. `npm run audit`: 36 mutations, 34 killed, 2 demonstrated

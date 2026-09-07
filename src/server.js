@@ -69,8 +69,7 @@ const BUILD = crypto.createHash('sha256')
   .digest('hex').slice(0, 12);
 
 {
-  const a = ASSETS['/sw.js'];
-  const templated = a.bytes.toString('utf8');
+  const templated = ASSETS['/sw.js'].bytes.toString('utf8');
   /* Anchored on the declaration, not on the token appearing anywhere: the
      comment above it mentions __BUILD__ too, so a looser check passed happily
      while VERSION had been hardcoded back to a constant. */
@@ -78,8 +77,30 @@ const BUILD = crypto.createHash('sha256')
     throw new Error("public/sw.js must declare: const VERSION = 'plint-shell-__BUILD__'; " +
                     'without it the shell cache name never changes between deploys');
   }
-  a.bytes = Buffer.from(templated.split('__BUILD__').join(BUILD), 'utf8');
-  a.etag = '"' + crypto.createHash('sha256').update(a.bytes).digest('hex').slice(0, 16) + '"';
+  // Every text asset may carry the placeholder, not just the worker.
+  for (const a of Object.values(ASSETS)) {
+    if (/^(text|application)\//.test(a.type) === false) continue;
+    const s = a.bytes.toString('utf8');
+    if (!s.includes('__BUILD__')) continue;
+    a.bytes = Buffer.from(s.split('__BUILD__').join(BUILD), 'utf8');
+    a.etag = '"' + crypto.createHash('sha256').update(a.bytes).digest('hex').slice(0, 16) + '"';
+  }
+}
+
+/* The stylesheets are also served at a URL that contains the build hash, and
+   that is the URL every page links.
+
+   `no-cache` plus an ETag keeps a browser honest from here on, but it cannot
+   reach a browser that already holds a copy: for about an hour these files
+   went out as `public, max-age=604800` with no version in the URL, and a
+   browser told that is right to keep them for a week and never ask again. That
+   is not hypothetical - it stranded a browser on the deployed URL, which then
+   rendered the new markup with the old stylesheet.
+   A content-addressed URL is the only fix that reaches everyone, because the
+   page asks for a different file rather than asking about the same one. */
+const CSS = { plint: '/plint.' + BUILD + '.css', app: '/app.' + BUILD + '.css' };
+for (const [name, url] of Object.entries(CSS)) {
+  ASSETS[url] = { ...ASSETS['/' + name + '.css'], cache: IMMUTABLE };
 }
 
 /* If-None-Match is a WEAK comparison and a list, not a string equality.
@@ -146,8 +167,8 @@ const HEAD = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/plint.css">
-<link rel="stylesheet" href="/app.css"></head><body>`;
+<link rel="stylesheet" href="${CSS.plint}">
+<link rel="stylesheet" href="${CSS.app}"></head><body>`;
 
 /* Where each role can actually go. One list, rendered three ways: the sidebar
    on a desktop office screen, links in the app bar for the buyer, and the
@@ -1016,3 +1037,5 @@ if (require.main === module) start();
 module.exports = server;
 module.exports.start = start;
 module.exports.BUILD = BUILD;   // the shell hash, so a test can prove it moves
+module.exports.ASSET_ROUTES = Object.keys(ASSETS);  // every URL served as a static file
+module.exports.CSS = CSS;       // the content-addressed stylesheet URLs the pages link

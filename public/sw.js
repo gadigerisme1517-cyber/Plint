@@ -30,8 +30,8 @@ const VERSION = 'plint-shell-__BUILD__';
    so that adding a route can never silently make it cacheable. */
 const SHELL = [
   '/offline',
-  '/plint.css',
-  '/app.css',
+  '/plint.__BUILD__.css',
+  '/app.__BUILD__.css',
   '/manifest.webmanifest',
   '/icons/icon-192.png',
   '/icons/icon-512.png',

@@ -1838,3 +1838,28 @@ stylesheet.
 size: it is the difference between a design file and an application.
 
 173 assertions, fifteen suites, green from a clean database.
+
+## The stylesheets are addressed by content now
+
+`no-cache` plus a correct ETag keeps a browser honest from the moment it sees
+those headers. It cannot reach a browser that already holds a copy.
+
+For about an hour these files went out as `public, max-age=604800` with no
+version in their URL. A browser told that is entitled to keep them for a week
+and never ask again, and one did: the deployed URL served the new markup to a
+browser still holding the old `app.css`, which drew the app bar as stacked
+underlined links and clipped the amount again. Nothing sent from the server
+could fix it, because no request was going to be made.
+
+Both stylesheets are now served at `/plint.<BUILD>.css` and `/app.<BUILD>.css`,
+and that is the URL every page, and the worker's shell list, and `offline.html`
+link. The bare paths still answer, `no-cache`, for any client holding old HTML.
+A content-addressed URL is the only fix that reaches a client that has stopped
+asking, because the page requests a different file rather than asking about the
+same one - and it lets the versioned URL be cached for a week honestly.
+
+Templating is no longer specific to the worker: any text asset containing
+`__BUILD__` is substituted at boot, which is how `offline.html` gets the same
+treatment without a build step.
+
+174 assertions, fifteen suites, green from a clean database.

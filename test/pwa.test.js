@@ -100,9 +100,11 @@ test('the offline page is reachable and explains itself', async () => {
 
 // ------------------------------------------------ what must never be cached
 
-/** The shell list the worker precaches, read out of the worker itself. */
+/** The shell list the worker precaches, as the browser receives it - so with
+    `__BUILD__` already substituted, which is what the server actually serves. */
 function shellList() {
-  const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'sw.js'), 'utf8');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'sw.js'), 'utf8')
+    .split('__BUILD__').join(server.BUILD);
   const block = /const SHELL = \[([\s\S]*?)\];/.exec(src);
   assert.ok(block, 'could not find the SHELL list in sw.js');
   return [...block[1].matchAll(/'([^']+)'/g)].map(m => m[1]);
@@ -139,16 +141,43 @@ test('nothing a signed-in person sees is in the cache list', () => {
 });
 
 test('the worker cache list and the server static list agree', async () => {
-  /* Two lists in two files that have to match: anything the worker precaches
-     must be something the server actually serves as a static file. They drift
-     silently otherwise, and install fails on a file that moved. */
-  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'server.js'), 'utf8');
-  const block = /const STATIC = \{([\s\S]*?)\n\};/.exec(src);
-  assert.ok(block, 'could not find the STATIC map in server.js');
-  const served = new Set([...block[1].matchAll(/'(\/[^']*)':/g)].map(m => m[1]));
-
+  /* Two lists that have to match: anything the worker precaches must be
+     something the server actually serves as a static file. They drift silently
+     otherwise, and `addAll` fails the whole install on one file that moved. */
+  const served = new Set(server.ASSET_ROUTES);
   for (const p of shellList()) {
-    assert.ok(served.has(p), p + ' is precached by sw.js but is not in the server static map');
+    assert.ok(served.has(p), p + ' is precached by sw.js but the server serves no such route');
+  }
+});
+
+test('the stylesheets are addressed by content, and pages link that address', async () => {
+  /* `no-cache` keeps a browser honest from the moment it sees it. It cannot
+     reach a browser that already holds a copy: these files went out for about
+     an hour as `public, max-age=604800` with no version in the URL, and a
+     browser told that is entitled to keep them for a week without asking. It
+     stranded a real browser on the deployed URL, which then drew the new
+     markup with the old stylesheet. A URL that changes with the bytes is the
+     only fix that reaches a client that is not going to ask again. */
+  assert.match(server.CSS.plint, /^\/plint\.[0-9a-f]{12}\.css$/);
+  assert.match(server.CSS.app, /^\/app\.[0-9a-f]{12}\.css$/);
+  assert.ok(server.CSS.plint.includes(server.BUILD), 'the stylesheet URL is not the build hash');
+
+  for (const url of Object.values(server.CSS)) {
+    const r = await get(url);
+    assert.strictEqual(r.status, 200, url + ' is linked but not served');
+    assert.match(r.headers.get('content-type'), /text\/css/);
+    // Safe to hold for ever: the URL changes when the bytes do.
+    assert.match(r.headers.get('cache-control'), /max-age=604800/,
+      url + ' is content-addressed but still asks to be revalidated');
+  }
+
+  // Every page must link the versioned URL, not the bare one.
+  for (const p of ['/', '/offline']) {
+    const html = await (await get(p)).text();
+    assert.ok(html.includes(server.CSS.plint), p + ' does not link the versioned plint.css');
+    assert.ok(html.includes(server.CSS.app), p + ' does not link the versioned app.css');
+    assert.ok(!/href="\/plint\.css"/.test(html), p + ' still links the unversioned plint.css');
+    assert.ok(!/href="\/app\.css"/.test(html), p + ' still links the unversioned app.css');
   }
 });
 
