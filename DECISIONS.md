@@ -1900,3 +1900,70 @@ Worth noticing how this was found. `document.scrollWidth === clientWidth` was
 true the whole time - the guard was making the symptom I was testing for
 impossible to observe. It only surfaced from measuring the box against the
 viewport instead, which is the check that would have caught it on day one.
+
+# Fifteenth pass onward: building the product, not the demo
+
+## Pass 1 — the shared state
+
+The requirement that changes everything is "every action writes to the database
+and every other role sees it". So the first pass adds no screen at all. It adds
+the rows the screens will have to agree on, because a tab whose controls write
+to a JavaScript object is the thing being replaced, and building the UI first
+would mean building it twice.
+
+Migrations **011** (the buyer's journey) and **012** (site and office
+operations) add sixteen tables: the lender panel and its APF codes, loan
+applicants and the papers each is asked for, agreements, interior choices,
+possession, visits, queries and their message threads, snags, the site log,
+sales handoffs, lender queries against a pack, escrow movements, the quarterly
+RERA filing, notifications - plus `units.assigned_engineer_id`, which is what
+makes "reassign this villa" a real act rather than editing a name.
+
+Two SECURITY DEFINER functions, for the same reason `record_sanction` is one:
+`units` has a SELECT policy and no UPDATE policy, and that is not mine to widen
+for a new screen. `choose_lender` records which bank the buyer picked and
+refuses once a sanction is on file, because changing the bank then would orphan
+the letter recorded against it. `assign_engineer` moves a villa and writes an
+audit row naming who it came from and who it went to.
+
+**The money layer is not in either file.** No stage, no demand, no credit, no
+audit trigger, no policy on units, unit_stages, demands or evidence.
+
+## The seed must not shift by one number
+
+`db/seed.js` draws the whole project from three seeded generators and its own
+comment records the trap: taking one extra number from `r` shifts every bank,
+channel partner and pack state after it and silently rewrites the project. So
+the new data lives in `db/seed-state.js` with its own streams, and the proof
+that the discipline held is arithmetic - 48 units, 269 demands, 269 audit rows,
+221 settled, identical before and after.
+
+## A policy leak the tests caught, fixed at source
+
+`nt_write ON notifications FOR ALL USING (role IN ('engineer','office'))`.
+
+RLS policies are permissive and **OR together**, and `FOR ALL` includes SELECT.
+So that write policy added its own USING clause to every read, and the site
+could read the head office's notification feed - defeating the `for_role`
+column the table exists around. `a notification reaches one role and stays
+there` failed on the first run.
+
+Split into per-command INSERT and UPDATE policies. Neither migration had been
+deployed anywhere, so this is fixed in 012 rather than shipped as a leak plus a
+013 that repairs it; the dev database was dropped and rebuilt. Forward-only
+still applies to anything that has ever run on a real database.
+
+## And a test that was checking the wrong thing
+
+`nobody has a DELETE grant on any of it` queried `role_table_grants` with
+`grantee <> current_user` - which excludes the application role, the only
+grantee the claim is about. It passed while a `GRANT DELETE ON snags` sat in
+place. It now asks `has_table_privilege(current_user, ...)` directly, of every
+table in the schema rather than only the new ones, and the mutation kills it.
+
+Five mutations run against real PostgreSQL rather than against the file:
+restoring the `FOR ALL` notification policy, opening loan files to the site,
+dropping the authorship check on snags, granting DELETE, and letting a buyer
+read every villa's choices. All five now fail a test.
+
+188 assertions, sixteen suites, green from a clean database.

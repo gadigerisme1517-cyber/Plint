@@ -84,6 +84,11 @@ async function main() {
     ['u-buyer-b14', 'arjun@example.in',      'buyer',    'Arjun Nair',       null, null],
     ['u-eng-ram',   'ramachandran@nvt.in',   'engineer', 'S. Ramachandran',  'B.E. Civil, M.I.E.', 'KAR/CE/2014/8842'],
     ['u-office',    'priya@nvt.in',          'office',   'Priya Menon',      null, null],
+    // v21 names three people on site. Only one of them may sign a certificate:
+    // Suresh marks work done and is not a qualified engineer, which is the
+    // distinction the whole certification rule exists to hold.
+    ['u-eng-suresh','suresh@nvt.in',         'engineer', 'Suresh Kumar',     'Site supervisor', null],
+    ['u-eng-venkat','venkatesh@nvt.in',      'engineer', 'A. Venkatesh',     'B.E. Civil', 'KAR/CE/2019/3311'],
   ];
   for (const [id, email, role, name, qual, reg] of users) {
     await c.query(`INSERT INTO users VALUES ($1,$2,$3,$4,$5,$6,$7)`,
@@ -250,6 +255,11 @@ async function main() {
     await c.query(`INSERT INTO blockers VALUES ($1,$2,$3,$4,$5)`,
       [sid, holder, role, reason, new Date(Date.now() - v.silent * 86400000)]);
   }
+
+  // Everything migrations 011 and 012 added. Separate file, separate random
+  // streams: see its header for why it must not touch the generators above.
+  await require('./seed-state').seedState(c, villas,
+    ['u-eng-ram', 'u-eng-suresh', 'u-eng-venkat']);
 
   const n = await c.query('SELECT count(*) FROM units');
   await c.query('COMMIT');
