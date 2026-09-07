@@ -165,6 +165,15 @@ body { padding: 0; margin: 0; background: var(--paper); }
     font-size: 12.5px;
   }
 }
+/* Below that the bar cannot hold both names. The head office's screens have
+   long titles - "Sanction not recorded" - and at 375px the bar was clipping
+   the screen name AND the signed-in name at once: "Sanction not record..."
+   beside "Priya Men...". Two truncated labels tell you less than one whole
+   one, and which screen you are on is the one you need. Who is signed in is
+   still one tap away on the sign-out control beside it. */
+@media (max-width: 480px) {
+  .ab-who { display: none; }
+}
 
 /* ------------------------------------------- 4. `wide` is a desktop rendering
 
@@ -503,15 +512,20 @@ body { padding: 0; margin: 0; background: var(--paper); }
      three to children of the form so they wrap against one another. And these
      selectors have to outrank the four rules above, which are `!important`;
      `.uprow .mid .fi` in particular is three classes, so the picker needs
-     `.mid` in its selector to beat it even though `.mid` no longer draws. */
-  .wrow + .uprow .mid { display: contents !important; }
-  .wrow + .uprow .mid .s { flex: 1 1 100% !important; }
+     `.mid` in its selector to beat it even though `.mid` no longer draws.
+
+     Hooked on a class rather than on `.wrow + .uprow`, because the sanction
+     form sits under a row too and it is three text fields that do want the
+     full width - matching by position took its Record button down to 137px
+     under three full-width boxes. */
+  .uprow.reassign .mid { display: contents !important; }
+  .uprow.reassign .mid .s { flex: 1 1 100% !important; }
   /* Basis 0, not auto. With `auto` the picker's flex base is its own content
      width, that base plus the button exceeded the line, and the two wrapped
      before any shrinking was considered - the button ended up on a third line
      at its correct width, which looked like the rule had done nothing. */
-  .wrow + .uprow .mid select { flex: 1 1 0% !important; width: auto !important; }
-  .wrow + .uprow .wbtn { flex: 0 0 auto !important; }
+  .uprow.reassign .mid select { flex: 1 1 0% !important; width: auto !important; }
+  .uprow.reassign .wbtn { flex: 0 0 auto !important; }
 
   /* v21's two-column tile grid, used by the site log. `1fr` has an automatic
      minimum of min-content, so a tile whose label will not break forces its

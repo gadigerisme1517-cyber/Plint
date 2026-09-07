@@ -598,7 +598,7 @@ ${g.map(x => ROW.wrow({
   chip: ROW.ageChip(x.age, ['Open', 'Ageing', 'Overdue']),
   amount: M.crore(x.value),
 }) + `
-${k === 'engineer' ? `<form method="post" action="/office/assign" class="uprow"
+${k === 'engineer' ? `<form method="post" action="/office/assign" class="uprow reassign"
   style="display:flex;gap:10px;align-items:center;padding:8px 26px 14px;border-bottom:1px solid var(--hair)">
 <input type="hidden" name="unit" value="${esc(x.unit_id)}">
 <span class="mid" style="display:flex;gap:10px;align-items:center">

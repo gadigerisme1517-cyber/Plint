@@ -114,6 +114,11 @@ test('every screen carries the app bar, signed in or not', async () => {
 test('a signed-in person always has a way out, and is told who they are', async () => {
   for (const [role, p] of everyScreen()) {
     const h = await body(p, role);
+    /* Rendered on every screen, but hidden under 480px: the head office's
+       titles are long enough that the bar was clipping the screen name and
+       the signed-in name at once. Two half-labels tell you less than one
+       whole one. It is in the markup, so it returns the moment there is room
+       and a screen reader has it at every width. */
     assert.match(h, /class="ab-who"/, role + ' ' + p + ' does not say who is signed in');
     assert.match(h, /class="ab-out" href="\/logout"/, role + ' ' + p + ' has no sign out');
   }
@@ -223,19 +228,24 @@ test('the worklists can stop being tables', async () => {
      full-width lines is 145px under every row of a six-row list, so the picker
      and the button share a line. The select carries an inline `flex:0 0 220px`
      from the markup, which only `!important` will beat. */
-  assert.match(narrow[1], /\.wrow \+ \.uprow \.mid \{[^}]*display:\s*contents\s*!important/,
+  assert.match(narrow[1], /\.uprow\.reassign \.mid \{[^}]*display:\s*contents\s*!important/,
     'the span around the sentence and the picker is still a box, so the button cannot sit beside them');
   /* Basis 0: with `auto` the picker's flex base is its content width, that
      base plus the button overflowed the line, and the two wrapped before any
      shrinking was considered. */
-  assert.match(narrow[1], /\.wrow \+ \.uprow \.mid select\s+\{[^}]*flex:\s*1 1 0%\s*!important/,
+  assert.match(narrow[1], /\.uprow\.reassign \.mid select\s+\{[^}]*flex:\s*1 1 0%\s*!important/,
     'the picker will wrap the button onto a line of its own unless its flex base is zero');
-  assert.match(narrow[1], /\.wrow \+ \.uprow \.mid \.s\s+\{[^}]*flex:\s*1 1 100%/,
+  assert.match(narrow[1], /\.uprow\.reassign \.mid \.s\s+\{[^}]*flex:\s*1 1 100%/,
     'the sentence does not take its own line, so it will squeeze the picker');
+  /* Hooked on a class, not on position. The sanction form is a `.wrow + .uprow`
+     too, and it is three text fields that do want the full width - matching by
+     position took its Record button to 137px under three full-width boxes. */
+  assert.ok(!/\.wrow \+ \.uprow \.wbtn/.test(narrow[1]),
+    'the reassign rules still match any form under a row, including the sanction form');
   /* And after the four `!important` rules that stack every other .uprow field
      full width - equal importance, so this one wins on specificity, and the
      picker needs `.mid` in its selector to outrank `.uprow .mid .fi`. */
-  assert.ok(narrow[1].indexOf('.uprow .mid .fi') < narrow[1].indexOf('.wrow + .uprow .mid select'),
+  assert.ok(narrow[1].indexOf('.uprow .mid .fi') < narrow[1].indexOf('.uprow.reassign .mid select'),
     'the reassign rules come before the ones that stack every field full width');
 
   /* The narrow rule for the histogram must outrank the base rule rather than
