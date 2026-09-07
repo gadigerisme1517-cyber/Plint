@@ -368,7 +368,13 @@ body { padding: 0; margin: 0; background: var(--paper); }
    the notes below is what establishes that. A browser too old for `clip` gets
    no backstop and needs none. */
 html { overflow-x: clip; }
-.wrow .mid p, .item .mid p, .lede .cap { overflow-wrap: anywhere; }
+/* Only the detail line. `.mid p` also matches the heading, and `anywhere`
+   breaks inside words rather than between them - so a squeezed title column
+   rendered "Blockw / ork" and "Plasteri / ng". Headings wrap at spaces like
+   any other heading; the detail line may break a long unbroken string, which
+   is what it is there for: certificate hashes, GPS pairs, bank names. */
+.wrow .mid p.s, .item .mid p.s, .lede .cap { overflow-wrap: anywhere; }
+.wrow .mid .rt, .item .mid .h2 { overflow-wrap: normal; }
 img, svg, table { max-width: 100%; }
 
 /* ------------------------------------------------------------- 7. installed

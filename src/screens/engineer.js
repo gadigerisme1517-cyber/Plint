@@ -347,7 +347,7 @@ ${pend.length ? pend.map(x => {
 <span class="mid"><p class="rt">${esc(x.stage_name)}</p>
 <p class="s">${esc(x.buyer_name)} &middot; marked by ${esc(x.marked_by)} on ${M.longDate(x.marked_at)}</p></span>
 <span class="stc"><i class="chip ${thin ? 'warn' : 'wait'}">${
-    thin ? x.shots + ' photograph' + (x.shots === 1 ? '' : 's') : 'evidence ready'}</i></span>
+    thin ? x.shots + ' photo' + (x.shots === 1 ? '' : 's') : 'ready'}</i></span>
 <span class="amt n">${M.money(stageTotal(d.byProject, x))}</span>
 <span class="actc">${thin ? '<span class="s">Too few photographs</span>'
     : `<a class="wbtn solid st" href="/engineer/cert/${esc(x.id)}" style="text-decoration:none">Review</a>`}</span>
