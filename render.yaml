@@ -29,11 +29,10 @@ services:
       - key: DATABASE_URL
         sync: false
 
-      # The runtime role. Created by bootstrap, owns nothing, and is therefore
-      # bound by row-level security. Since migration 010 dropped FORCE, that is
-      # the entire isolation boundary, and the server asserts it at every boot.
-      - key: PGUSER
-        value: plint_app
+      # The runtime role's password. The username is NOT set here: it is
+      # derived from DATABASE_URL, keeping whatever pooler suffix the owner
+      # carries, because getting that by hand wrong produces an app that
+      # connects and then sees nothing.
       - key: PGPASSWORD
         generateValue: true
 

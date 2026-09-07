@@ -32,7 +32,7 @@ if (fs.existsSync(envFile)) process.loadEnvFile(envFile);
    set for us.
 
    Anything set explicitly wins, so a deployment can override any single part. */
-if (process.env.DATABASE_URL && !process.env.PGHOST) {
+if (process.env.DATABASE_URL) {
   try {
     const u = new URL(process.env.DATABASE_URL);
     const set = (k, v) => { if (v && !process.env[k]) process.env[k] = v; };
@@ -41,6 +41,19 @@ if (process.env.DATABASE_URL && !process.env.PGHOST) {
     set('PGDATABASE', decodeURIComponent(u.pathname.replace(/^\//, '')));
     set('PGADMINUSER', decodeURIComponent(u.username));
     set('PGADMINPASSWORD', decodeURIComponent(u.password));
+
+    /* The runtime username, derived rather than typed.
+       Poolers identify the project from the username - Supabase's is
+       `postgres.<projectref>` - and a bare role name is rejected outright. The
+       runtime role is always `plint_app`, so it needs the same suffix the
+       owner carries. Getting this wrong by hand produces an app that connects
+       and then sees nothing, or does not connect at all, so it is worked out
+       from the string that already encodes it. */
+    if (!process.env.PGUSER) {
+      const admin = process.env.PGADMINUSER || '';
+      const dot = admin.indexOf('.');
+      process.env.PGUSER = dot > -1 ? 'plint_app' + admin.slice(dot) : 'plint_app';
+    }
   } catch {
     process.stderr.write('\nplint: DATABASE_URL is set but is not a URL.\n\n');
     process.exit(1);

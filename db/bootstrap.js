@@ -4,8 +4,14 @@
    migrations: the database itself, and the runtime role with its password.
 
    Idempotent. Safe to run against a populated cluster: it creates what is
-   missing and, if the role already exists, re-applies the password from the
-   environment so a rotated secret takes effect. It never drops anything.
+   missing and never drops anything.
+
+   It does NOT re-apply the runtime password on every boot. Doing so is a no-op
+   in Postgres when the password has not changed, but behind a connection
+   pooler it invalidates the cached credential on every deploy and the server
+   then fails to authenticate for a minute or two afterwards. The password is
+   set only when the current one does not work, and the boot then waits for it
+   to take effect before anything is served.
    ========================================================================= */
 const { Client } = require('pg');
 const config = require('../src/config');
@@ -49,18 +55,73 @@ async function ensureDatabase() {
   } finally { await c.end(); }
 }
 
+/** Can the server actually log in with the credentials it has been given? */
+async function appCanConnect() {
+  const c = new Client(config.appDb());
+  try {
+    await c.connect();
+    await c.end();
+    return true;
+  } catch (e) {
+    try { await c.end(); } catch {}
+    return e.message;
+  }
+}
+
+/* Wait for a password change to become effective.
+
+   Supabase's pooler caches the credentials it authenticates clients against.
+   For up to a minute or two after ALTER ROLE ... PASSWORD it keeps rejecting
+   the new password, and the server sees
+   `password authentication failed for user "plint_app"` on a password that is
+   already correct in Postgres. Booting into that window is a crash loop.
+
+   So the deploy waits for its own credential to work rather than assuming it
+   does the instant the ALTER returns. */
+async function waitForAppLogin(seconds = 150) {
+  const started = Date.now();
+  let last = null;
+  for (let attempt = 1; (Date.now() - started) / 1000 < seconds; attempt++) {
+    const ok = await appCanConnect();
+    if (ok === true) {
+      const waited = Math.round((Date.now() - started) / 1000);
+      console.log('bootstrap: runtime credential works' + (waited ? ' after ' + waited + 's' : ''));
+      return true;
+    }
+    last = ok;
+    console.log('bootstrap: waiting for the runtime credential (attempt ' + attempt + '): ' +
+                String(last).split('\n')[0]);
+    await new Promise(r => setTimeout(r, 10000));
+  }
+  fail('the runtime role cannot log in after waiting ' + seconds + 's. Last error: ' + last);
+}
+
 async function ensureAppRole() {
   const c = new Client(config.adminDb());
   await c.connect();
   try {
     const pw = config.required('PGPASSWORD', 'The runtime role password.');
     const r = await c.query('SELECT 1 FROM pg_roles WHERE rolname = $1', [APP_ROLE]);
+
     if (!r.rows.length) {
       await c.query(`CREATE ROLE ${quoteIdent(APP_ROLE)} LOGIN PASSWORD ${quoteLiteral(pw)}`);
       console.log('bootstrap: created role ' + APP_ROLE);
     } else {
-      await c.query(`ALTER ROLE ${quoteIdent(APP_ROLE)} LOGIN PASSWORD ${quoteLiteral(pw)}`);
-      console.log('bootstrap: role ' + APP_ROLE + ' already present, password re-applied');
+      /* Only set the password if the current one does not work.
+
+         Re-applying it on every boot was the bug: it is a no-op in Postgres
+         when the password is unchanged, but behind a pooler it invalidates the
+         cached credential every single deploy and opens the failure window
+         above for no reason at all. A password that already works is left
+         alone. */
+      const works = await appCanConnect();
+      if (works === true) {
+        console.log('bootstrap: role ' + APP_ROLE + ' present, its password already works');
+      } else {
+        console.log('bootstrap: role ' + APP_ROLE + ' present but cannot log in (' +
+                    String(works).split('\n')[0] + '); setting its password');
+        await c.query(`ALTER ROLE ${quoteIdent(APP_ROLE)} LOGIN PASSWORD ${quoteLiteral(pw)}`);
+      }
     }
     /* Clearing SUPERUSER requires being one, which a managed database will not
        give us. So try to set the attributes, and if the platform refuses, fall
@@ -161,6 +222,8 @@ async function bootstrap() {
   assertRoleName(APP_ROLE);
   await ensureDatabase();
   await ensureAppRole();
+  // Do not hand a running server a credential that does not work yet.
+  await waitForAppLogin();
   await assertIsolationHolds();
 }
 
@@ -169,4 +232,7 @@ if (require.main === module) {
     .catch(e => { console.error('bootstrap failed:', e.message); process.exit(1); });
 }
 
-module.exports = { bootstrap, ensureDatabase, ensureAppRole, assertIsolationHolds, quoteIdent };
+module.exports = {
+  bootstrap, ensureDatabase, ensureAppRole, assertIsolationHolds,
+  appCanConnect, waitForAppLogin, quoteIdent,
+};
