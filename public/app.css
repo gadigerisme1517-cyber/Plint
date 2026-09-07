@@ -170,7 +170,13 @@ body { padding: 0; margin: 0; background: var(--paper); }
   margin-top: 16px; padding-top: 14px;
   border-top: 1px solid var(--hair);
 }
+/* The caps wrap when a label is long and the values then sit at different
+   heights - "On this office" took two lines and dropped its 61 below the 29d
+   and the 48 beside it, so three figures meant to be read together were on
+   three different baselines. Two lines' worth of room for every cap, whether
+   it uses it or not. */
 .summary .part { flex: 1 1 0; min-width: 0; }
+.summary .part .cap { min-height: 28px; }
 .summary .part .v {
   font: 600 19px/24px 'Instrument Sans', system-ui, sans-serif;
   font-variant-numeric: tabular-nums; color: var(--ink); margin-top: 2px;
