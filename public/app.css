@@ -148,37 +148,146 @@ body { padding: 0; margin: 0; background: var(--paper); }
      size wide. v21's flat 64px overflows the gutter under about 400px. */
   .phone.wide .lede .mega { font-size: min(64px, calc((100vw - 80px) / 5)); line-height: 1; }
 }
-
 /* ------------------------------------ 5. the worklists stop being tables
 
    `.wrow` is a flex row with fixed columns - id 58px, days 84px, amount 108px,
-   action 118px - plus a `.whead` of column labels. Below about 720px there is
-   no room for five columns, and squeezing them is how a table starts scrolling
-   sideways. Each row becomes a card instead: identity and status on the top
-   line, the description across the full width, the numbers and the action
-   along the bottom. */
+   action 118px - plus a `.whead` of column labels. There is no room for five
+   columns on a phone, and squeezing them is how a table starts scrolling
+   sideways.
+
+   The first version of this stacked each row into a bordered three-line block.
+   It did not scroll and it did not look like v21 either. v21's phone lists are
+   flat rows on the page, hairline separated, with the villa and the stage on
+   ONE line and the status pill on that same line - `.item`, not a card. Cards
+   are v21's `.vcard`, and it uses them only where a row carries actions.
+
+   So there are two shapes, and the markup says which: a plain `.wrow` is a list
+   row, `.wrow.card` is a card. Every metric below is v21's own, read off
+   plint.css - `.item` at 17px/26px over a `--hair-2` rule, `.vcard` at 16px
+   padding, 12px radius, 12px apart. */
 @media (max-width: 720px) {
   .whead { display: none; }
 
+  /* The list is the page, not a panel floating on it. */
+  .wl { border: 0 !important; border-radius: 0; background: none; box-shadow: none; }
+
   .wrow {
     display: grid !important;
-    grid-template-columns: auto 1fr auto;
-    align-items: center;
-    gap: 6px 10px;
-    padding: 14px 0 !important;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    column-gap: 10px;
+    row-gap: 4px;
+    padding: 15px 26px !important;
+    border-top: 0 !important;
+    border-bottom: 1px solid var(--hair-2);
   }
-  .wrow > * { flex: none !important; }
-  .wrow .id   { grid-column: 1; grid-row: 1; }
-  .wrow .stc  { grid-column: 3; grid-row: 1; justify-self: end; text-align: right; }
-  .wrow .mid  { grid-column: 1 / -1; grid-row: 2; min-width: 0; }
-  .wrow .days { grid-column: 1; grid-row: 3; text-align: left; white-space: nowrap; }
-  .wrow .days b { display: inline; }
-  .wrow .amt  { grid-column: 2; grid-row: 3; text-align: left; white-space: nowrap; }
-  .wrow .actc { grid-column: 3; grid-row: 3; justify-self: end; text-align: right; }
+  .wrow > * { flex: none !important; min-width: 0; }
 
-  /* The header strip and its KPIs stack rather than compete for one line. */
-  .hstrip { flex-wrap: wrap; gap: 12px; }
+  /* `.mid` wraps the title and the meta line together, which on a phone traps
+     both in one narrow column - "J. Kulkarni · marked by Suresh Kumar on 31
+     Aug 2026" came out five lines deep beside a chip. `display: contents`
+     drops the wrapper so its two children take their own places in the grid,
+     which is how v21 gets the meta across the full width. */
+  .wrow .mid { display: contents; }
+
+  /* Line one: the villa, what it is, and where it stands. v21 writes this as
+     one heading - "A-06 · Blockwork" - with the chip on the same line. */
+  .wrow .id  { grid-area: 1 / 1; white-space: nowrap; font-weight: 500; }
+  .wrow .id:not(:empty)::after { content: '·'; color: var(--ink-3); margin-left: 6px; }
+  .wrow .mid .rt { grid-area: 1 / 2; }
+  .wrow .stc { grid-area: 1 / 3; justify-self: end; text-align: right; }
+
+  /* Line two: the meta, across everything, so it reads as a sentence. */
+  .wrow .mid p.s { grid-area: 2 / 1 / 3 / 4; margin-top: 2px; }
+
+  /* Line three: the numbers. Read by comparing them down a column, so they are
+     right-aligned to the edge of the row, tabular, and never break mid-value.
+     The amount spans past the status column: stopping it short of the edge
+     left it floating in the middle of the row. */
+  .wrow .days   { grid-area: 3 / 1; white-space: nowrap; color: var(--ink-2); }
+  .wrow .days b { display: inline; }
+  .wrow .amt    { grid-area: 3 / 2 / 4 / 4; text-align: right; white-space: nowrap;
+                  font-variant-numeric: tabular-nums; }
+
+  /* Line four: anything you can press, on its own line so a thumb-sized
+     control is never squeezed against an amount. This is v21's `.vact`. */
+  .wrow .actc:not(.s) {
+    grid-area: 4 / 1 / 5 / 4;
+    display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end;
+    margin-top: 6px;
+  }
+  /* A status line rather than a control - "Too few photographs". */
+  .wrow .actc.s { grid-area: 4 / 1 / 5 / 4; justify-self: end; text-align: right; }
+  /* But when the whole row is a link, a word saying "Open" is furniture. */
+  a.wrow .actc.s { display: none; }
+  .wrow .actc:not(.s) form { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* v21's `.vcard`, for the rows that carry actions. */
+  .wrow.card {
+    margin: 0 26px 12px;
+    padding: 16px !important;
+    border: 1px solid var(--hair);
+    border-radius: 12px;
+    background: var(--paper);
+  }
+  /* A form belongs to the row above it, so the rule that separates one row
+     from the next has to fall below the form and not above it. Otherwise the
+     reassign control reads as the top of the following villa, which is the
+     one villa it will not act on. */
+  .wrow:has(+ .uprow) { border-bottom: 0 !important; }
+  .wrow + .uprow { border-bottom: 1px solid var(--hair-2); padding-bottom: 16px !important; }
+
+  /* A form that belongs to the card above it reads as part of that card, not
+     as three loose boxes underneath. `:has()` closes the join where the browser
+     supports it; where it does not, the panel simply butts against a rounded
+     card, which still reads as one thing. */
+  .wrow.card:has(+ .uprow) { border-radius: 12px 12px 0 0; margin-bottom: 0; }
+  .wrow.card + .uprow {
+    margin: 0 26px 12px;
+    padding: 4px 16px 16px !important;
+    border: 1px solid var(--hair) !important;
+    border-top: 0 !important;
+    border-radius: 0 0 12px 12px;
+    background: var(--paper);
+  }
+
+  /* The header stacks, and the count is the headline v21 makes it rather than
+     a footnote beside the title. */
+  .hstrip { flex-wrap: wrap; gap: 10px; }
+  .hstrip .g { flex: 1 1 100%; }
+  .kpi { flex-direction: column; align-items: flex-start; gap: 0; }
+  .kpin { font-size: 40px; line-height: 46px; }
   .mhead, .mbody, .tools { padding-left: 18px !important; padding-right: 18px !important; }
+
+  /* ------------------------------------------------ 5b. tap targets
+
+     Forty-four pixels, on everything you can press. v21's own `.wbtn` is about
+     thirty-one and its `.tab` about thirty-four, which is fine for a mouse on
+     a design file and too small for a thumb. This is a deliberate divergence
+     from v21's metrics, and the only one in this file. */
+  .wbtn, .sortb, .act, .lgb, .ib, .dest,
+  .uprow .fi, .uprow select, .fld input, .fld textarea,
+  input[type="text"], input[type="email"], input[type="password"], select {
+    min-height: 44px;
+  }
+  /* The back arrow is an icon with nothing around it - about 20px of target. */
+  .ib { min-width: 44px; display: inline-flex; align-items: center; justify-content: center; }
+  .wbtn, .sortb {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 12px 16px; font-size: 13.5px; border-radius: 9px;
+  }
+  .uprow .fi, .uprow select { padding: 11px 12px !important; font-size: 15px; }
+  .tabs { gap: 20px; }
+  .tab { padding: 14px 0; min-height: 44px; font-size: 14px; }
+  /* A row that is itself a link has to be reachable, not just visible. */
+  a.wrow { min-height: 44px; }
+
+  /* ---------------------------------------- 5c. filters and sort controls
+     Full width and stacked, rather than a desktop row squeezed onto a phone. */
+  .tools { flex-wrap: wrap; gap: 10px; background: none; border: 0; }
+  .tools .g { display: none; }
+  .tools .wbtn, .tools .sortb, .tools a.wbtn { flex: 1 1 auto; }
+  .tools .rescount { flex: 1 1 100%; }
 
   /* The evidence and sanction forms carry inline flex bases - 200px for the
      file input, 150px for the GPS pair, 140px for the button - which at 375px

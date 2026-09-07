@@ -158,10 +158,11 @@ ${chased.length ? `<div class="blk"><p class="k">Office is chasing you</p></div>
       return `<a class="wrow" href="/engineer/villa/${esc(v.code)}" style="text-decoration:none;color:inherit">
 <span class="id">${esc(v.code)}</span>
 <span class="mid"><p class="rt">${esc(v.next_stage || 'All stages done')}</p>
-<p class="s">${esc(v.buyer_name)} &middot; ${esc(v.bank || 'self funded')}</p></span>
+<p class="s">${esc(v.buyer_name)} &middot; ${esc(v.bank || 'self funded')} &middot; ${
+  since === null ? 'no photograph yet' : 'last photograph ' + since + ' days ago'}</p></span>
 <span class="stc"><i class="chip ${behind ? 'late' : 'wait'}">${
-  since === null ? 'no photograph' : 'last photo ' + since + 'd'}</i></span>
-<span class="amt n">${esc(v.code.split('-')[0])} block</span>
+  since === null ? 'no photo' : since + 'd'}</i></span>
+
 <span class="s actc">Update</span></a>`;
     }).join('');
 
@@ -176,7 +177,7 @@ without a photograph.</p></div>
 <div class="mbody anim">${flash(msg)}
 <div class="wl">${d.mine.length ? `<div class="whead"><span class="id">Villa</span>
 <span class="mid">Next stage and buyer</span><span class="stc">Evidence</span>
-<span class="amt">Block</span><span class="actc">Action</span></div>${rows}`
+<span class="amt"></span><span class="actc">Action</span></div>${rows}`
   : '<div class="emptyrow"><p class="b ink">No villas are assigned to you.</p></div>'}</div>
 </div>`);
   }
@@ -188,10 +189,14 @@ without a photograph.</p></div>
       const mine = v.engineer_id === sess.id;
       const when = M.longDate(v.slot_at) + ', ' +
         new Date(v.slot_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
-      return `<div class="wrow">
+      /* Name on the title line, when and why underneath - v21's `.vhead` puts
+         the person first and the slot on its own line. Both on one line made
+         the title wrap four deep on a phone. */
+      return `<div class="wrow card">
 <span class="id">${esc(v.code)}</span>
-<span class="mid"><p class="rt">${esc(v.buyer_name)} &middot; ${esc(when)}</p>
-<p class="s">${esc(v.note || 'No note.')}${mine ? '' : ' &middot; named to another engineer'}</p></span>
+<span class="mid"><p class="rt">${esc(v.buyer_name)}</p>
+<p class="s">${esc(when)} &middot; ${esc(v.note || 'No note.')}${
+  mine ? '' : ' &middot; named to another engineer'}</p></span>
 <span class="stc"><i class="chip ${v.status === 'confirmed' ? 'ok' : v.status === 'reassign' ? 'warn' : 'wait'}">${
   v.status === 'confirmed' ? 'Accepted' : v.status === 'reassign' ? 'Reassign asked' : 'Not answered'}</i></span>
 <span class="amt n">${days(v.requested_at)}d ago</span>
@@ -225,7 +230,7 @@ you answer on the spot.</p></div>
   function snags(sess, d, msg) {
     const open = d.snags.filter(s => s.status === 'open');
     const done = d.snags.filter(s => s.status === 'fixed');
-    const row = s => `<div class="wrow">
+    const row = s => `<div class="wrow card">
 <span class="id">${esc(s.code)}</span>
 <span class="mid"><p class="rt">${esc(s.title)}</p>
 <p class="s">Raised by ${esc(s.raiser)} &middot; ${M.longDate(s.raised_at)}</p></span>
@@ -278,7 +283,7 @@ ${done.length ? `<div class="gap"></div><div class="blk"><p class="k">Fixed, wai
 <div class="wl">${quick.map(q => `<form method="post" action="/engineer/log" class="wrow">
 <input type="hidden" name="kind" value="${esc(kind)}">
 <input type="hidden" name="title" value="${esc(q)}">
-<span class="id">&nbsp;</span>
+<span class="id"></span>
 <span class="mid"><p class="rt">${esc(q)}</p><p class="s">One tap. Recorded against you, now.</p></span>
 <span class="stc"></span><span class="amt"></span>
 <span class="actc"><button class="wbtn solid st" type="submit">Add</button></span></form>`).join('')}</div>
@@ -390,7 +395,7 @@ ${line('Amount this releases', M.money(stageTotal(d.byProject, x)))}
 <div class="gap"></div>
 <div class="blk"><p class="k">The photographs this certificate covers</p></div>
 <div class="wl">${shots.map(s => `<div class="wrow">
-<span class="id">&nbsp;</span>
+<span class="id"></span>
 <span class="mid"><p class="rt">${esc(s.caption)}</p>
 <p class="s">${M.longDate(s.taken_at)} &middot; ${esc(s.gps)} &middot; ${esc(s.sha256.slice(0, 16))}…</p></span>
 <span class="stc"><i class="chip ok">hash locked</i></span>

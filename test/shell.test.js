@@ -232,6 +232,62 @@ test('the worklists can stop being tables', async () => {
     'but the specific selector is what this test is really holding');
 });
 
+test('everything you can press is at least 44px on a phone', async () => {
+  const css = await (await get('/app.css')).text();
+  const narrow = /@media \(max-width: 720px\) \{([\s\S]*?)\n\}/.exec(css)[1];
+
+  /* v21's own `.wbtn` is about 31px and its `.tab` about 34. That is fine for
+     a mouse on a design file and too small for a thumb, so this is the one
+     place the phone layer deliberately departs from v21's metrics. */
+  const rule = /([^{}]*)\{[^}]*min-height:\s*44px/.exec(narrow);
+  assert.ok(rule, 'nothing in the phone layer sets a 44px minimum');
+  for (const sel of ['.wbtn', '.sortb', '.lgb', '.ib', 'select']) {
+    assert.ok(rule[1].includes(sel), sel + ' is not covered by the 44px minimum');
+  }
+  assert.match(narrow, /\.tab \{[^}]*min-height:\s*44px/, 'the villa detail tabs are still 34px');
+  assert.match(narrow, /a\.wrow \{[^}]*min-height:\s*44px/, 'a row that is a link has no minimum height');
+});
+
+test('amounts are right-aligned, tabular, and never break mid-value', async () => {
+  const css = await (await get('/app.css')).text();
+  const narrow = /@media \(max-width: 720px\) \{([\s\S]*?)\n\}/.exec(css)[1];
+  const amt = /\.wrow \.amt\s+\{([^}]*)\}/.exec(narrow);
+  assert.ok(amt, 'no phone rule for the amount cell');
+  assert.match(amt[1], /text-align:\s*right/, 'amounts are not right-aligned');
+  assert.match(amt[1], /white-space:\s*nowrap/, 'an amount may break mid-value');
+  assert.match(amt[1], /tabular-nums/, 'amounts do not line up digit for digit down the column');
+  // Spanning to the row edge, rather than stopping short in the middle of it.
+  assert.match(amt[1], /grid-area:\s*3 \/ 2 \/ 4 \/ 4/, 'the amount stops short of the right edge');
+});
+
+test('the phone list is v21\'s, not a table in disguise', async () => {
+  const css = await (await get('/app.css')).text();
+  const narrow = /@media \(max-width: 720px\) \{([\s\S]*?)\n\}/.exec(css)[1];
+  // The list is the page: no panel border around it.
+  assert.match(narrow, /\.wl \{[^}]*border:\s*0/, 'the worklist is still a bordered panel on a phone');
+  // The wrapper is dropped so the meta line can use the full width.
+  assert.match(narrow, /\.wrow \.mid \{[^}]*display:\s*contents/,
+    'the row wrapper still traps the meta line in one column');
+  // v21's .vcard metrics, for the rows that carry actions.
+  const card = /\.wrow\.card \{([^}]*)\}/.exec(narrow);
+  assert.ok(card, 'there is no card variant for rows with actions');
+  assert.match(card[1], /padding:\s*16px/, 'the card is not v21\'s 16px padding');
+  assert.match(card[1], /border-radius:\s*12px/, 'the card is not v21\'s 12px radius');
+  assert.match(card[1], /margin:\s*0 26px 12px/, 'the cards are not v21\'s 12px apart');
+});
+
+test('the app bar is opaque and content passes under it, not through it', async () => {
+  const css = await (await get('/app.css')).text();
+  const bar = /\.appbar \{([^}]*)\}/.exec(css);
+  assert.ok(bar, 'no app bar rule');
+  assert.match(bar[1], /position:\s*sticky/, 'the app bar is not sticky, so it scrolls away');
+  assert.match(bar[1], /background:\s*var\(--paper\)/, 'the app bar is not painted, so content shows through it');
+  assert.match(bar[1], /z-index:\s*\d+/, 'the app bar has no stacking order');
+  // Sticky keeps the bar in flow, so nothing can start underneath it.
+  assert.ok(!/\.appbar \{[^}]*position:\s*fixed/.test(css),
+    'a fixed bar would sit on top of the first row of content');
+});
+
 test('nothing is laid out with a width the page cannot override', async () => {
   /* The ageing histogram shipped with `style="height:88px"` on each bar. An
      inline height beats every rule, so on a phone the sparkline became four

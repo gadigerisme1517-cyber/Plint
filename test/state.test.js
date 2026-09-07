@@ -183,19 +183,49 @@ test('the site cannot open a loan file', async () => {
   }
 });
 
+/* A write that must be refused, attempted for real and then always rolled
+   back.
+
+   `asUser` commits when the callback returns, so a straight `assert.rejects`
+   around an INSERT leaves the row behind on the day the policy is wrong - and
+   that is exactly the day this test runs. It happened: a mutation run that
+   made the policy permissive left a snag titled "Forged" in the development
+   database, raised in the head office's name, and it sat on the engineer's
+   screen until it was spotted by eye. The test caught the mutation and still
+   made a mess. Throwing a sentinel forces the ROLLBACK either way. */
+const ROLLBACK = Symbol('rollback');
+async function mustBeRefused(who, sql, params) {
+  let allowed = false;
+  let refusal = null;
+  await asUser(who, async c => {
+    try { await c.query(sql, params); allowed = true; }
+    catch (e) { refusal = e.message; }
+    throw ROLLBACK;
+  }).catch(e => { if (e !== ROLLBACK) throw e; });
+  return { allowed, refusal };
+}
+
 test('a buyer cannot write a snag as somebody else', async () => {
-  await assert.rejects(
-    () => asUser(AS.buyer, c => c.query(
-      `INSERT INTO snags VALUES ('snag-forged','unit-B-14','Forged','u-office','office',now(),'open',null,null,null)`)),
-    /row-level security|violates/i,
-    'a buyer signed a snag in the office\'s name');
+  const r = await mustBeRefused(AS.buyer,
+    `INSERT INTO snags VALUES ('snag-forged','unit-B-14','Forged','u-office','office',now(),'open',null,null,null)`);
+  assert.ok(!r.allowed, 'a buyer signed a snag in the office\'s name');
+  assert.match(r.refusal, /row-level security|violates/i);
 });
 
 test('a buyer cannot raise a query against a villa that is not his', async () => {
-  await assert.rejects(
-    () => asUser(AS.buyer, c => c.query(
-      `INSERT INTO queries VALUES ('q-forged','unit-A-04','query','Nosy','u-buyer-b14',now(),'open',null)`)),
-    /row-level security|violates/i);
+  const r = await mustBeRefused(AS.buyer,
+    `INSERT INTO queries VALUES ('q-forged','unit-A-04','query','Nosy','u-buyer-b14',now(),'open',null)`);
+  assert.ok(!r.allowed, 'a buyer raised a query on a neighbour\'s villa');
+  assert.match(r.refusal, /row-level security|violates/i);
+});
+
+test('nothing a refused write attempted is left in the database', async () => {
+  /* The point of the rollback above. If this ever finds a row, the suite is
+     writing the very thing it exists to forbid. */
+  const left = await asUser(AS.office, c => c.query(
+    `SELECT id FROM snags WHERE id = 'snag-forged'
+      UNION ALL SELECT id FROM queries WHERE id = 'q-forged'`).then(r => r.rows));
+  assert.deepStrictEqual(left, [], 'a refused write was committed: ' + JSON.stringify(left));
 });
 
 test('the runtime role cannot delete any of it', async () => {
