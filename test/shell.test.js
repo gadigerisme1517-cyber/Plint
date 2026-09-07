@@ -485,39 +485,68 @@ test('everything you can press is at least 44px on a phone', async () => {
   }
   assert.match(narrow, /\.tab \{[^}]*min-height:\s*44px/, 'the villa detail tabs are still 34px');
   assert.match(narrow, /a\.wrow \{[^}]*min-height:\s*44px/, 'a row that is a link has no minimum height');
+
+  /* Exactly one control is allowed under 44: the button inside a list row.
+     It sits in a card beside a line of text, and at 44 it was the tallest
+     thing on a 120px card and read as the point of the row. 38 is still well
+     over the 24px WCAG asks for. Every other pressable thing keeps 44, and
+     this counts them so a second exception cannot arrive unannounced. */
+  const under = [];
+  const re = /([^{}]*)\{[^}]*min-height:\s*(\d+)px/g;
+  let m;
+  while ((m = re.exec(narrow))) {
+    const px = Number(m[2]);
+    // The capture runs back to the previous rule, so it picks up any comment
+    // sitting above this one. The selector is what follows the last of them.
+    const sel = m[1].replace(/\/\*[\s\S]*?\*\//g, '').trim().replace(/\s+/g, ' ');
+    if (px < 44) under.push(sel + ' = ' + px + 'px');
+  }
+  assert.strictEqual(under.length, 1,
+    'expected one control under 44px, found ' + under.length + ': ' + under.join('; '));
+  assert.match(under[0], /^\.wrow \.actc.*\.wbtn = 3[89]px$/,
+    'the one control allowed under 44px is not the button inside a list row: ' + under[0]);
 });
 
-test('amounts are right-aligned, tabular, and never break mid-value', async () => {
+test('the money leads its line, tabular, and never breaks mid-value', async () => {
   const css = await (await get('/app.css')).text();
   const narrow = /@media \(max-width: 720px\) \{([\s\S]*?)\n\}/.exec(css)[1];
   const amt = /\.wrow \.amt\s+\{([^}]*)\}/.exec(narrow);
   assert.ok(amt, 'no phone rule for the amount cell');
-  assert.match(amt[1], /text-align:\s*right/, 'amounts are not right-aligned');
   assert.match(amt[1], /white-space:\s*nowrap/, 'an amount may break mid-value');
   assert.match(amt[1], /tabular-nums/, 'amounts do not line up digit for digit down the column');
 
-  /* Status, day count and amount all sit in the same right-hand column, one
-     under the other. The day count used to get a line of its own across the
-     row, right-aligned against nothing. */
-  assert.match(amt[1], /justify-self:\s*end/, 'the amount is not aligned to the right edge');
-  /* The amount and the control that acts on it share a line of their own,
-     below the detail. The detail had been sharing that line and was left 162px
-     of a 393px screen, folding a one-line sentence into two. */
+  /* The money starts at the card's left edge, on the same line the title and
+     the detail start from, and it is the boldest thing on the row. It had been
+     right-aligned inside the first column - 169px into a 375px card, lined up
+     with nothing above or below it - at 400 weight and 13px, smaller and
+     lighter than every other word on the row. It is the figure the row is
+     about, so it is not the quietest thing on it. */
+  assert.match(amt[1], /justify-self:\s*start/, 'the amount floats in the middle of the row again');
+  assert.match(amt[1], /text-align:\s*left/, 'the amount is not aligned with the lines above it');
+  const weight = /font:\s*(\d+)/.exec(amt[1]);
+  assert.ok(weight && Number(weight[1]) >= 600,
+    'the amount is lighter than 600, which is lighter than the title above it');
   assert.match(amt[1], /grid-area:\s*3 \/ 1/, 'the amount is not on the action line');
+
   const act = /\.wrow \.actc:not\(\.s\):not\(\.wide\) \{([^}]*)\}/.exec(narrow);
   assert.ok(act, 'a single control has no compact placement');
-  assert.match(act[1], /grid-area:\s*3 \/ 3/, 'a single control is not beside the amount');
+  assert.match(act[1], /grid-area:\s*3 \/ 2 \/ 4 \/ 4/,
+    'a single control does not take the right of the amount\'s line');
+  assert.match(act[1], /justify-content:\s*flex-end/, 'the control is not against the right edge');
 
   /* A status word is a third thing that can land on that line, and it must not
      land on top of the amount - spanning the full width printed "Too few
-     photographs" straight through "₹33,60,000". */
+     photographs" straight through "33,60,000". */
   const status = /\.wrow \.actc\.s \{([^}]*)\}/.exec(narrow);
   assert.ok(status, 'no placement for a status word');
   assert.match(status[1], /grid-area:\s*3 \/ 2/, 'a status word overlaps the amount');
 
-  /* The detail gets the width of the card. */
-  assert.match(narrow, /\.wrow \.mid p\.s \{[^}]*grid-area:\s*2 \/ 1 \/ 3 \/ 4/,
-    'the detail sentence does not span the card');
+  /* The detail stops short of the status column. Run it to the far edge and
+     the sentence sits directly under the pill and directly over the button,
+     reading as though it were crowding both; a sentence this long then takes
+     two lines inside its own width, which is what it should have taken. */
+  assert.match(narrow, /\.wrow \.mid p\.s \{[^}]*grid-area:\s*2 \/ 1 \/ 3 \/ 3/,
+    'the detail runs the full width of the card, under the pill and over the button');
   assert.match(narrow, /\.wrow \.actc\.wide \{[^}]*grid-area:\s*4 \//,
     'two or more controls must still take their own line, they will not fit beside an amount');
 });
