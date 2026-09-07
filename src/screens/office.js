@@ -47,7 +47,7 @@ module.exports = function officeScreens(ctx) {
   const GROUPS = [
     ['', [
       ['today',      'Today'],
-      ['owner',      'Owner view'],
+      ['owner',      'Owner dashboard'],
     ]],
     ['New from sales', [
       ['handoff',    'Waiting for pickup'],
@@ -110,7 +110,7 @@ module.exports = function officeScreens(ctx) {
   /** v21's own headline and subtitle for each screen, kept as it wrote them. */
   const HEAD = {
     today:      ['Today', 'What is on this office now'],
-    owner:      ['Owner view', 'The position, not the worklist'],
+    owner:      ['Owner dashboard', 'The position, not the worklist'],
     handoff:    ['New from sales', 'Buyers who have paid a token and have no owner yet'],
     packs:      ['Ready to send', 'Stage verified. Pack generated. Not yet with the lender'],
     query:      ['Lender questions', 'Open queries holding a disbursement'],
@@ -294,7 +294,13 @@ ${body}
         money: (await c.query(
           `SELECT coalesce(sum(total_paise) FILTER (WHERE paid_at IS NOT NULL), 0)  collected,
                   coalesce(sum(total_paise) FILTER (WHERE paid_at IS NULL), 0)      outstanding,
-                  count(*) FILTER (WHERE paid_at IS NULL)                           unpaid
+                  count(*) FILTER (WHERE paid_at IS NULL)                           unpaid,
+                  /* Past its due date and still unpaid. An owner reads "money
+                     demanded" and "money late" as two different problems, and
+                     one of them is the one that needs a phone call. */
+                  coalesce(sum(total_paise) FILTER (
+                    WHERE paid_at IS NULL AND due_at < now()), 0)                   overdue,
+                  count(*) FILTER (WHERE paid_at IS NULL AND due_at < now())        overdue_n
              FROM demands`)).rows[0],
         escrow: (await c.query(
           `SELECT coalesce(sum(amount_paise) FILTER (WHERE direction = 'in'), 0)  inn,
@@ -561,51 +567,113 @@ ${stuckByHolder(b) || `<div class="blk"><p class="k">Stuck money</p></div>
 </div>`);
   }
 
+  /* THE OWNER'S DASHBOARD.
+
+     Not a worklist and not a page of totals in a column. The person opening
+     this wants three answers before they read a word: is the money coming in,
+     is the work moving, and what is stuck. It had one figure and two lists,
+     which answered none of them - "so empty", which it was.
+
+     Every piece here is the shared furniture: the summary, the tiles, and the
+     two charts. Nothing on this screen is drawn for this screen. */
   function owner(sess, d, msg) {
     const { n } = d;
     const r = d.rows;
+
+    const collected  = Number(r.money.collected);
+    const unpaid     = Number(r.money.outstanding);
+    const overdue    = Number(r.money.overdue);
+    const dueLater   = Math.max(0, unpaid - overdue);
     const escrowHeld = Number(r.escrow.inn) - Number(r.escrow.out);
-    const byStatus = Object.fromEntries(r.stages.map(s => [s.status, s.n]));
-    const done = (byStatus.paid || 0);
-    const total = r.stages.reduce((a, s) => a + s.n, 0);
+    const book       = Number(r.villas.value);
+    const notAsked   = Math.max(0, book - collected - unpaid);
 
-    const money = [
-      ['Collected', M.money(Number(r.money.collected))],
-      ['Demanded, unpaid', M.money(Number(r.money.outstanding))],
-      ['Held in escrow', M.money(escrowHeld)],
-      ['Agreement value, all villas', M.money(Number(r.villas.value))],
-    ].map(([k, v]) => wrow({ title: k, amount: v })).join('');
+    const byStatus = Object.fromEntries(r.stages.map(x => [x.status, x.n]));
+    const paid      = byStatus.paid || 0;
+    const demanded  = byStatus.demanded || 0;
+    const certified = (byStatus.certified || 0) + (byStatus.marked || 0);
+    const pending   = byStatus.pending || 0;
+    const allStages = paid + demanded + certified + pending || 1;
 
-    const book = [
-      ['Villas', String(r.villas.n)],
-      ['Sanction recorded', r.villas.sanctioned + ' of ' + (r.villas.n - r.villas.self_funded)],
-      ['Self funded', String(r.villas.self_funded)],
-      ['Stages paid', done + ' of ' + total],
-    ].map(([k, v]) => wrow({ title: k, amount: v })).join('');
-
-    const buckets = [[0, 9], [10, AGE.overdue - 1], [AGE.overdue, 34], [35, 9999]];
     const ages = r.ageing.map(x => Number(x.age));
-    const cts = buckets.map(([lo, hi]) => ages.filter(a => a >= lo && a <= hi).length);
-    const most = Math.max(1, ...cts);
-    const bars = `<div class="agebars">${cts.map((c, i) =>
-      `<span class="agebar ${i >= 2 ? 'hot' : ''}" style="--h:${Math.max(2, c / most * 88)}px"
- title="${buckets[i][0]} to ${buckets[i][1] === 9999 ? 'more' : buckets[i][1]} days: ${c}"></span>`).join('')}</div>`;
+    const blocked = ages.length;
+    const oldest = blocked ? Math.max(...ages) : 0;
+
+    /* v21's four buckets, on this application's own thresholds rather than on
+       numbers typed into a chart: anything past `overdue` is red, because that
+       is what red means on every other screen in the product. */
+    const buckets = [
+      ['Under 10d', 0, AGE.ageing - 1, null],
+      [AGE.ageing + ' to ' + (AGE.overdue - 1) + 'd', AGE.ageing, AGE.overdue - 1, 'warn'],
+      [AGE.overdue + ' to 34d', AGE.overdue, 34, 'hot'],
+      ['35d and over', 35, 99999, 'hot'],
+    ];
+
+    const facts = (label, rows) =>
+      `<div class="blk"><p class="k">${esc(label)}</p></div><div class="wl">${
+        rows.map(([k, v]) => wrow({ title: k, amount: v })).join('')}</div>`;
 
     return screen(sess, 'owner', n, `
-${hero(M.crore(Number(r.money.collected)), 'collected', 'Owner view',
+${UI.head('Owner dashboard',
   'The position, not the worklist. ' + r.villas.n + ' villas, '
-  + M.crore(Number(r.money.outstanding)) + ' demanded and unpaid, '
-  + M.crore(escrowHeld) + ' held in escrow.' , false)}
+  + M.crore(book) + ' of agreements.',
+  UI.summary({
+    cap: 'Collected',
+    figure: M.crore(collected),
+    tone: 'ok',
+    note: M.crore(overdue) + ' of what has been demanded is past its due date, and '
+      + M.crore(escrowHeld) + ' is held in escrow against work not yet built.',
+    parts: [
+      { cap: 'Overdue', value: M.crore(overdue), tone: overdue > 0 ? 'hot' : null },
+      { cap: 'Demanded', value: M.crore(unpaid) },
+      { cap: 'In escrow', value: M.crore(escrowHeld) },
+    ],
+    bar: {
+      pct: Math.round(collected / (book || 1) * 100),
+      left: Math.round(collected / (book || 1) * 100) + '% of the book collected',
+      right: M.crore(collected) + ' of ' + M.crore(book),
+    },
+  }) + UI.stats([
+    { n: M.crore(overdue), label: 'Late', sub: r.money.overdue_n + ' demands past due',
+      href: href('wait'), tone: overdue > 0 ? 'hot' : null },
+    { n: blocked, label: 'Blocked', sub: 'stages not moving',
+      href: href('signoff'), tone: UI.countTone(blocked, true) },
+    { n: oldest + 'd', label: 'Oldest', sub: 'the longest wait',
+      href: href('signoff'), tone: UI.ageTone(oldest) },
+    { n: n.chase, label: 'No sanction', sub: 'nothing can be disbursed',
+      href: href('chase'), tone: UI.countTone(n.chase, true) },
+  ]))}
 <div class="mbody anim">
 ${flash(msg)}
-<div class="blk"><p class="k">Money</p></div>
-<div class="wl">${money}</div>
+${UI.mix('Where the money is', [
+  { label: 'Collected', value: M.crore(collected), n: collected, tone: 'ok' },
+  { label: 'Overdue', value: M.crore(overdue), n: overdue, tone: 'hot' },
+  { label: 'Demanded, in date', value: M.crore(dueLater), n: dueLater, tone: 'warn' },
+  { label: 'Not yet asked for', value: M.crore(notAsked), n: notAsked },
+])}
+${UI.mix('Where the work is', [
+  { label: 'Paid', value: String(paid), n: paid, tone: 'ok' },
+  { label: 'Demanded', value: String(demanded), n: demanded, tone: 'warn' },
+  { label: 'Built, not billed', value: String(certified), n: certified },
+  { label: 'Not started', value: String(pending), n: pending, tone: 'rest' },
+])}
+${UI.bars('How long things have been blocked', buckets.map(([label, lo, hi, tone]) => ({
+  label, tone, n: ages.filter(a => a >= lo && a <= hi).length,
+})))}
+${facts('Money', [
+  ['Collected', M.money(collected)],
+  ['Demanded, unpaid', M.money(unpaid)],
+  ['Of that, overdue', M.money(overdue)],
+  ['Held in escrow', M.money(escrowHeld)],
+  ['Agreement value, all villas', M.money(book)],
+])}
 <div class="gap"></div>
-<div class="blk"><p class="k">The book</p></div>
-<div class="wl">${book}</div>
-<div class="gap"></div>
-<div class="blk"><p class="k">How long things have been blocked</p></div>
-<div class="blk">${bars}</div>
+${facts('The book', [
+  ['Villas', String(r.villas.n)],
+  ['Sanction recorded', r.villas.sanctioned + ' of ' + (r.villas.n - r.villas.self_funded)],
+  ['Self funded', String(r.villas.self_funded)],
+  ['Stages paid', paid + ' of ' + allStages],
+])}
 </div>`);
   }
 

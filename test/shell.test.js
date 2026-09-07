@@ -459,7 +459,7 @@ test('the office menu names every destination and counts it', async () => {
                    'Waiting on the bank', 'Your own money', 'Buyer decisions', 'Compliance']) {
     assert.ok(panel.includes(g), 'the menu is missing the group "' + g + '"');
   }
-  for (const label of ['Today', 'Owner view', 'Waiting for pickup', 'Ready to send',
+  for (const label of ['Today', 'Owner dashboard', 'Waiting for pickup', 'Ready to send',
                        'Lender asked a question', 'Sanction not recorded', 'Sign-off and evidence',
                        'Site gone quiet', 'Sent, not yet paid', 'Escrow drawdown',
                        'Choices not made', 'Warranty claims', 'Evidence certificates',
@@ -763,7 +763,7 @@ test('the header is one bar, not four bands', async () => {
   for (const [role, p, name] of [['engineer', '/engineer', 'Me'],
                                  ['engineer', '/engineer/villas', 'Villas'],
                                  ['office', '/office', 'Today'],
-                                 ['office', '/office/owner', 'Owner view'],
+                                 ['office', '/office/owner', 'Owner dashboard'],
                                  ['buyer', '/journey', 'Journey']]) {
     const h = await body(p, role);
     assert.ok(h.includes('<span class="ab-screen">' + name + '</span>'),
@@ -1033,14 +1033,38 @@ test('the app bar is opaque, full width, and content passes under it', async () 
 test('nothing is laid out with a width the page cannot override', async () => {
   /* The ageing histogram shipped with `style="height:88px"` on each bar. An
      inline height beats every rule, so on a phone the sparkline became four
-     slabs half the screen wide. Heights travel as a custom property now. */
-  // On Owner view since the office got v21's fifteen: how long things have
-  // been blocked is a position, and Today is a worklist.
+     slabs half the screen wide. Heights travel as a custom property now, and
+     the chart lives in the shared layer rather than in this one screen. */
   const h = await body('/office/owner', 'office');
-  const bars = h.match(/class="agebar[^"]*" style="([^"]*)"/g) || [];
-  assert.ok(bars.length > 0, 'no ageing bars rendered');
+  const bars = h.match(/<i class="[^"]*" style="([^"]*)"><\/i>/g) || [];
+  assert.ok(bars.length > 0, 'no chart columns rendered');
   for (const b of bars) {
-    assert.ok(!/style="[^"]*height:/.test(b), 'an ageing bar still carries an inline height: ' + b);
-    assert.match(b, /--h:/, 'an ageing bar does not pass its height as a property: ' + b);
+    assert.ok(!/style="[^"]*height:/.test(b), 'a column still carries an inline height: ' + b);
+    assert.match(b, /--h:|--pct:/, 'a column does not pass its size as a property: ' + b);
   }
+});
+
+test('the owner dashboard answers the three questions it exists for', async () => {
+  /* "Looks so empty." It was: one figure and two lists of totals in a column,
+     which answers none of what somebody opening it wants to know. Is the money
+     coming in, is the work moving, and what is stuck. */
+  const h = await body('/office/owner', 'office');
+
+  assert.match(h, /<p class="fig ok">/, 'no headline figure for what has been collected');
+  const tiles = (h.match(/class="stat"/g) || []).length;
+  assert.strictEqual(tiles, 4, 'the owner sees ' + tiles + ' tiles, not four');
+
+  // Money, work, and how long things have been blocked - three charts.
+  const charts = (h.match(/<div class="chart">/g) || []).length;
+  assert.strictEqual(charts, 3, 'the owner gets ' + charts + ' charts, not three');
+  assert.match(h, /Where the money is/, 'nothing shows how the money divides');
+  assert.match(h, /Where the work is/, 'nothing shows how the work divides');
+  assert.match(h, /How long things have been blocked/, 'nothing shows what is stuck and for how long');
+
+  /* And every segment carries its own figure, so nothing on the screen is only
+     a colour. A legend without numbers is a decoration. */
+  const keys = (h.match(/class="mixk"/g) || []).length;
+  assert.ok(keys >= 6, 'the charts have ' + keys + ' labelled segments between them');
+  assert.match(h, /class="mixk">\s*<i[^>]*><\/i>[^<]*<b>/,
+    'a chart segment has no figure beside it');
 });

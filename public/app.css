@@ -201,6 +201,78 @@ body { padding: 0; margin: 0; background: var(--paper); }
 }
 .summary .progline span:first-child { color: var(--ink-2); font-weight: 500; }
 
+/* ------------------------------------------------------------- the charts
+
+   Two shapes, both of them cards like everything else on the screen.
+
+   `.mixbar` is how one total divides - the money mostly in, a tenth of it
+   late, the rest not asked for yet. That is one shape rather than four rows in
+   a column, and every segment carries its own figure in the legend so nothing
+   is only a colour.
+
+   `.cols` is a count per bucket. The ageing histogram it replaces was four
+   bare rectangles: no axis, no counts, no labels, and the tallest one clipped
+   by its own container. A reader could see that one bucket was bigger than
+   another and nothing else, which is a decoration rather than a chart. */
+
+.chart {
+  background: var(--paper); border: 1px solid var(--hair); border-radius: 12px;
+  padding: 15px 16px 16px; margin-bottom: 12px;
+}
+.chart .cap {
+  font: 500 11.5px/14px 'Instrument Sans', system-ui, sans-serif;
+  letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3);
+  margin-bottom: 12px;
+}
+
+.mixbar {
+  display: flex; height: 12px; border-radius: 999px; overflow: hidden;
+  background: var(--hair-2);
+}
+.mixbar i { display: block; width: var(--pct, 0%); background: var(--brand); }
+.mixbar i.ok   { background: var(--ok); }
+.mixbar i.hot  { background: var(--hot); }
+.mixbar i.warn { background: var(--warn); }
+.mixbar i.rest { background: var(--hair); }
+
+.mixkey { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 12px; }
+.mixk {
+  display: inline-flex; align-items: center; gap: 7px;
+  font: 400 12.5px/18px 'Instrument Sans', system-ui, sans-serif; color: var(--ink-2);
+}
+.mixk i { width: 9px; height: 9px; border-radius: 3px; background: var(--brand); flex: 0 0 9px; }
+.mixk i.ok   { background: var(--ok); }
+.mixk i.hot  { background: var(--hot); }
+.mixk i.warn { background: var(--warn); }
+.mixk i.rest { background: var(--hair); }
+.mixk b { font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* The column chart. The height travels as a custom property rather than an
+   inline `height:`, for the same reason the old histogram's did: an inline
+   height beats every rule and there is then no way to size it for a phone. */
+.cols { display: flex; align-items: flex-end; gap: 10px; height: 132px; }
+.col  { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column;
+        align-items: center; justify-content: flex-end; height: 100%; gap: 6px; }
+.col .cn {
+  font: 600 14px/16px 'Instrument Sans', system-ui, sans-serif;
+  font-variant-numeric: tabular-nums; color: var(--ink);
+}
+.col .cn.hot  { color: var(--hot); }
+.col .cn.warn { color: var(--warn); }
+.col .cn.ok   { color: var(--ok); }
+.col i {
+  display: block; width: 100%; max-width: 54px; height: var(--h, 4%);
+  border-radius: 6px; background: var(--brand);
+}
+.col i.ok   { background: var(--ok); }
+.col i.hot  { background: var(--hot); }
+.col i.warn { background: var(--warn); }
+.col i.rest { background: #C7D2E4; }
+.col .cl {
+  font: 400 11.5px/14px 'Instrument Sans', system-ui, sans-serif;
+  color: var(--ink-3); text-align: center; overflow-wrap: anywhere;
+}
+
 /* ------------------------------------------------------------- the tiles
 
    Four numbers big enough to read without stopping. Every tile is a link,

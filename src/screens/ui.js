@@ -129,6 +129,54 @@ ${t.sub ? `<p class="s">${esc(t.sub)}</p>` : ''}`;
     return `<div class="stats">${body}</div>`;
   }
 
+  // ----------------------------------------------------------------- charts
+
+  /**
+   * How one total divides, as a single bar with a legend under it.
+   *
+   * An owner does not want four figures in a column; they want to see that the
+   * money is mostly in, that a tenth of it is late, and that the rest has not
+   * been asked for yet - which is one shape, not four rows. Every segment
+   * carries its own figure in the legend, so nothing is only a colour.
+   *
+   * @param {string} cap
+   * @param {{label,value,n,tone}[]} parts  `n` is the share, any unit
+   */
+  function mix(cap, parts) {
+    const live = parts.filter(p => p && p.n > 0);
+    const total = live.reduce((a, p) => a + p.n, 0) || 1;
+    const bar = live.map(p =>
+      `<i class="${p.tone || 'rest'}" style="--pct:${(p.n / total * 100).toFixed(2)}%"></i>`).join('');
+    const key = live.map(p => `<span class="mixk">
+<i class="${p.tone || 'rest'}"></i>${esc(p.label)} <b>${p.value}</b></span>`).join('');
+    return `<div class="chart">
+<p class="cap">${esc(cap)}</p>
+<div class="mixbar">${bar}</div>
+<div class="mixkey">${key}</div></div>`;
+  }
+
+  /**
+   * A count per bucket, as columns with their figures on them.
+   *
+   * The ageing histogram was four bare rectangles: no axis, no counts, no
+   * labels, and the tallest one clipped. A reader could see that one bucket
+   * was bigger than another and nothing else, which is not a chart, it is a
+   * decoration. Every column now says how many and of what.
+   *
+   * @param {string} cap
+   * @param {{label,n,tone}[]} cols
+   */
+  function bars(cap, cols) {
+    const most = Math.max(1, ...cols.map(c => c.n));
+    const body = cols.map(c => `<div class="col">
+<span class="cn${toneClass(c.tone)}">${c.n}</span>
+<i class="${c.tone || 'rest'}" style="--h:${Math.max(3, c.n / most * 100).toFixed(1)}%"></i>
+<span class="cl">${esc(c.label)}</span></div>`).join('');
+    return `<div class="chart">
+<p class="cap">${esc(cap)}</p>
+<div class="cols">${body}</div></div>`;
+  }
+
   // --------------------------------------------------------------- sections
 
   /**
@@ -142,5 +190,5 @@ ${t.sub ? `<p class="s">${esc(t.sub)}</p>` : ''}`;
   const flash = m => m
     ? `<div class="tools"><span class="rescount s">${esc(m)}</span><div class="g"></div></div>` : '';
 
-  return { head, summary, stats, section, flash, ageTone, countTone, AGE };
+  return { head, summary, stats, mix, bars, section, flash, ageTone, countTone, AGE };
 };
