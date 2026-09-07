@@ -506,7 +506,11 @@ body { padding: 0; margin: 0; background: var(--paper); }
      `.mid` in its selector to beat it even though `.mid` no longer draws. */
   .wrow + .uprow .mid { display: contents !important; }
   .wrow + .uprow .mid .s { flex: 1 1 100% !important; }
-  .wrow + .uprow .mid select { flex: 1 1 auto !important; width: auto !important; }
+  /* Basis 0, not auto. With `auto` the picker's flex base is its own content
+     width, that base plus the button exceeded the line, and the two wrapped
+     before any shrinking was considered - the button ended up on a third line
+     at its correct width, which looked like the rule had done nothing. */
+  .wrow + .uprow .mid select { flex: 1 1 0% !important; width: auto !important; }
   .wrow + .uprow .wbtn { flex: 0 0 auto !important; }
 
   /* v21's two-column tile grid, used by the site log. `1fr` has an automatic

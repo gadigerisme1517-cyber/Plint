@@ -225,8 +225,11 @@ test('the worklists can stop being tables', async () => {
      from the markup, which only `!important` will beat. */
   assert.match(narrow[1], /\.wrow \+ \.uprow \.mid \{[^}]*display:\s*contents\s*!important/,
     'the span around the sentence and the picker is still a box, so the button cannot sit beside them');
-  assert.match(narrow[1], /\.wrow \+ \.uprow \.mid select\s+\{[^}]*flex:[^;]*!important/,
-    'the picker keeps its fixed 220px, so it cannot share a line with the button');
+  /* Basis 0: with `auto` the picker's flex base is its content width, that
+     base plus the button overflowed the line, and the two wrapped before any
+     shrinking was considered. */
+  assert.match(narrow[1], /\.wrow \+ \.uprow \.mid select\s+\{[^}]*flex:\s*1 1 0%\s*!important/,
+    'the picker will wrap the button onto a line of its own unless its flex base is zero');
   assert.match(narrow[1], /\.wrow \+ \.uprow \.mid \.s\s+\{[^}]*flex:\s*1 1 100%/,
     'the sentence does not take its own line, so it will squeeze the picker');
   /* And after the four `!important` rules that stack every other .uprow field
