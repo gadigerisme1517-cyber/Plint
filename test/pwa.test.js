@@ -98,6 +98,31 @@ test('the offline page is reachable and explains itself', async () => {
   assert.match(html, /needs the network/i);
 });
 
+test('the offline page belongs to all three roles', async () => {
+  const html = await (await get('/offline')).text();
+  const words = html.replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]*>/g, ' ');
+
+  /* The worker hands this page to whoever loses signal. It was written for a
+     buyer - "your villa, your demands or your photographs", "one buyer's
+     position" - which is the buyer's screen described to an engineer standing
+     on a site road with no bars. */
+  for (const role of ['buyer', 'engineer', 'office', 'villa owner']) {
+    assert.ok(!new RegExp('\\b' + role + '\\b', 'i').test(words),
+      'the offline page addresses one role by name: "' + role + '"');
+  }
+
+  /* And it must say something at the top on a phone. The bar carried its
+     label in `.ab-ctx`, which the phone layer hides in favour of
+     `.ab-screen`, so at 375px it was an empty strip with a logo in it. */
+  assert.match(html, /class="ab-screen">[^<]+</,
+    'the offline app bar has no label the phone layer will show');
+
+  // Same install head as every other screen, or iOS opens it in Safari chrome.
+  assert.match(html, /name="apple-mobile-web-app-capable" content="yes"/,
+    'the offline page is not an installed-app screen on iOS');
+  assert.match(html, /viewport-fit=cover/, 'the offline page ignores the notch');
+});
+
 // ------------------------------------------------ what must never be cached
 
 /** The shell list the worker precaches, as the browser receives it - so with

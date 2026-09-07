@@ -2,39 +2,51 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Plint — offline</title>
 <meta name="theme-color" content="#0A2540">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Plint">
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/plint.__BUILD__.css">
 <link rel="stylesheet" href="/app.__BUILD__.css">
 </head>
 <body>
+<!-- The worker returns this page to whoever loses signal, so it belongs to all
+     three roles. `.ab-screen` rather than `.ab-ctx` carries "No connection":
+     the phone layer hides `.ab-ctx` and shows `.ab-screen`, so a bar built the
+     other way round was an empty strip with a logo in it at 375px, which is
+     what an engineer standing on a site with no bars would have seen. -->
 <header class="appbar">
   <a class="ab-brand" href="/"><span class="ab-mark"><svg width="22" height="22" viewBox="0 0 32 32" fill="none" aria-label="Plint">
     <path d="M14.2 3h4.6a8.6 8.6 0 0 1 0 17.2h-4.6V29H8.4v-8.4l5.8-5.8V3Z" fill="var(--brand)"/>
     <path d="M14.2 8.6V15h4.6a3.2 3.2 0 0 0 0-6.4h-4.6Z" fill="#FFF"/>
     <rect x="5.4" y="8.6" width="6.4" height="6.4" rx="1.6" fill="var(--brand)"/></svg></span>
     <span class="ab-name">Plint</span></a>
-  <span class="ab-ctx">No connection</span>
+  <span class="ab-ctx">NVT Eterna &middot; Phase 1</span>
+  <span class="ab-screen">No connection</span>
   <div class="ab-g"></div>
 </header>
 <div class="wrap">
   <div class="stagearea"><div class="phone wide solo">
     <div class="scroll anim">
+      <!-- Written for whoever is holding the phone. It used to say "your villa,
+           your demands or your photographs" and "one buyer's position", which
+           is the buyer's screen described to an engineer on a site road. -->
       <div class="offline-note">
         <p class="k">Offline</p>
         <h1 class="h1" style="margin-top:8px">This screen needs the network.</h1>
-        <p class="b" style="margin-top:14px">Plint keeps nothing about your villa,
-        your demands or your photographs on this device. Every figure is read
-        from the server when you ask for it, so there is nothing to show until
-        the connection is back.</p>
+        <p class="b" style="margin-top:14px">Plint keeps no villa, no demand and
+        no photograph on this device. Every figure is read from the server when
+        you ask for it, so there is nothing to show until the connection is
+        back.</p>
         <p class="s" style="margin-top:16px">That is deliberate. A cached copy of
-        one buyer's position would still be on this phone after the next person
-        signs in.</p>
+        what one person was looking at would still be on this phone after the
+        next person signs in, and these phones get handed around.</p>
         <div style="margin-top:22px">
           <button class="wbtn solid st" onclick="location.reload()">Try again</button>
         </div>

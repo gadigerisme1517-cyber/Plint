@@ -224,7 +224,44 @@ test('every role can install the app, not only the buyer', async () => {
     assert.match(h, /name="theme-color"/, role + ' ' + p + ': no theme colour');
     assert.match(h, /serviceWorker/, role + ' ' + p + ': the worker is never registered');
     assert.match(h, /viewport-fit=cover/, role + ' ' + p + ': no safe-area opt-in for a notch');
+    /* iOS reads this, not the manifest, when someone adds to the home screen.
+       Without it the buyer's villa page opens in Safari's chrome. */
+    assert.match(h, /name="apple-mobile-web-app-capable" content="yes"/,
+      role + ' ' + p + ': iOS will not install this as a standalone app');
+    assert.match(h, /navigator\.serviceWorker\.register\('\/sw\.js'\)/,
+      role + ' ' + p + ': the worker is named but never registered');
   }
+});
+
+test('the install belongs to the application, not to one role', async () => {
+  /* `start_url` decides what an installed icon opens. Anything narrower than
+     "/" - "/engineer", say - installs one role's app on everybody's phone;
+     "/" lands on the redirect that reads the session and sends each role to
+     its own home, which is the only reason one install serves three. */
+  const man = JSON.parse(await (await get('/manifest.webmanifest')).text());
+  assert.strictEqual(man.start_url, '/', 'start_url is one role\'s screen');
+  assert.strictEqual(man.scope, '/', 'the scope does not cover every role');
+  assert.strictEqual(man.display, 'standalone', 'the app does not ask to be installed');
+
+  for (const role of Object.keys(ROLES)) {
+    const r = await get('/', role);
+    assert.strictEqual(r.status, 302, role + ': start_url does not redirect a signed-in person');
+    const to = r.headers.get('location');
+    assert.ok(to && to !== '/', role + ': start_url redirects nowhere');
+    assert.strictEqual((await get(to, role)).status, 200,
+      role + ': the installed app would open on ' + to + ', which does not load');
+  }
+
+  /* And all three must ask for the same shell, or an install made by one role
+     precaches a stylesheet the other two never request. */
+  const sheets = new Set();
+  for (const [role, p] of everyScreen()) {
+    const m = (await body(p, role)).match(/\/app\.[a-f0-9]+\.css/);
+    assert.ok(m, role + ' ' + p + ': links no content-addressed stylesheet');
+    sheets.add(m[0]);
+  }
+  assert.strictEqual(sheets.size, 1,
+    'the three roles link different shells: ' + [...sheets].join(', '));
 });
 
 // ------------------------------------------------------- responsive rules
