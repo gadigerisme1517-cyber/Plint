@@ -198,7 +198,7 @@ without a photograph.</p></div>
 <p class="s">${esc(when)} &middot; ${esc(v.note || 'No note.')}${
   mine ? '' : ' &middot; named to another engineer'}</p></span>
 <span class="stc"><i class="chip ${v.status === 'confirmed' ? 'ok' : v.status === 'reassign' ? 'warn' : 'wait'}">${
-  v.status === 'confirmed' ? 'Accepted' : v.status === 'reassign' ? 'Reassign asked' : 'Not answered'}</i></span>
+  v.status === 'confirmed' ? 'Accepted' : v.status === 'reassign' ? 'Reassign' : 'New'}</i></span>
 <span class="amt n">${days(v.requested_at)}d ago</span>
 <span class="actc">
 ${v.status === 'confirmed'
