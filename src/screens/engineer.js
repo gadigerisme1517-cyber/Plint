@@ -20,6 +20,10 @@
 module.exports = function engineerScreens(ctx) {
   const { esc, desk, M, asUser, schedules, stageTotal, LOGO } = ctx;
 
+  /* One list row, built in one place. See src/screens/rows.js for why the
+     villa code has to be inside the heading rather than beside it. */
+  const { wrow, whead, empty } = require('./rows')({ esc });
+
   /* v21's six kinds of log entry, with the quick entries it offers under each.
      Two taps, which is the point: a site person will not type a paragraph, and
      an empty log six months later is what loses the argument. */
@@ -127,25 +131,25 @@ ${flash(msg)}
 ${open.length ? `<div class="tools"><a class="wbtn st" href="/engineer/snags"
   style="text-decoration:none">Close ${open.length} snag${open.length === 1 ? '' : 's'}</a><div class="g"></div></div>` : ''}
 ${chased.length ? `<div class="blk"><p class="k">Office is chasing you</p></div>
-<div class="wl">${chased.map(v => `<a class="wrow" href="/engineer/villa/${esc(v.code)}"
-  style="text-decoration:none;color:inherit">
-<span class="id">${esc(v.code)}</span>
-<span class="mid"><p class="rt">${esc(v.next_stage || 'All stages done')}</p>
-<p class="s">${esc(v.buyer_name)} &middot; ${esc(v.blocker_reason || '')}</p></span>
-<span class="stc"><i class="chip late">Chased</i></span>
-<span class="amt n">${v.last_shot ? days(v.last_shot) + 'd' : 'no photo'}</span>
-<span class="s actc">Open</span></a>`).join('')}</div><div class="gap"></div>` : ''}
+<div class="wl">${chased.map(v => wrow({
+  href: '/engineer/villa/' + encodeURIComponent(v.code),
+  code: v.code,
+  title: v.next_stage || 'All stages done',
+  detail: esc(v.buyer_name) + ' &middot; ' + esc(v.blocker_reason || ''),
+  days: v.last_shot ? days(v.last_shot) + 'd' : 'no photo',
+  chip: '<i class="chip late">Chased</i>',
+})).join('')}</div><div class="gap"></div>` : ''}
 
 <div class="blk"><p class="k">Waiting on your signature</p></div>
-<div class="wl">${pending.length ? pending.slice(0, 8).map(x => `<a class="wrow"
-  href="/engineer/cert/${esc(x.id)}" style="text-decoration:none;color:inherit">
-<span class="id">${esc(x.code)}</span>
-<span class="mid"><p class="rt">${esc(x.stage_name)}</p>
-<p class="s">${esc(x.buyer_name)} &middot; ${x.shots} photograph${x.shots === 1 ? '' : 's'}</p></span>
-<span class="stc">${chip(days(x.marked_at), 10)}</span>
-<span class="amt n">${M.money(stageTotal(d.byProject, x))}</span>
-<span class="s actc">Review</span></a>`).join('')
-  : '<div class="emptyrow"><p class="b ink">Nothing waiting on your signature.</p></div>'}</div>
+<div class="wl">${pending.length ? pending.slice(0, 8).map(x => wrow({
+  href: '/engineer/cert/' + encodeURIComponent(x.id),
+  code: x.code,
+  title: x.stage_name,
+  detail: esc(x.buyer_name) + ' &middot; ' + x.shots + ' photograph' + (x.shots === 1 ? '' : 's'),
+  days: days(x.marked_at) + 'd',
+  amount: M.money(stageTotal(d.byProject, x)),
+})).join('')
+  : empty('Nothing waiting on your signature.')}</div>
 </div>`);
   }
 
@@ -155,15 +159,15 @@ ${chased.length ? `<div class="blk"><p class="k">Office is chasing you</p></div>
     const rows = d.mine.map(v => {
       const since = v.last_shot ? days(v.last_shot) : null;
       const behind = since === null || since > 20;
-      return `<a class="wrow" href="/engineer/villa/${esc(v.code)}" style="text-decoration:none;color:inherit">
-<span class="id">${esc(v.code)}</span>
-<span class="mid"><p class="rt">${esc(v.next_stage || 'All stages done')}</p>
-<p class="s">${esc(v.buyer_name)} &middot; ${esc(v.bank || 'self funded')} &middot; ${
-  since === null ? 'no photograph yet' : 'last photograph ' + since + ' days ago'}</p></span>
-<span class="stc"><i class="chip ${behind ? 'late' : 'wait'}">${
-  since === null ? 'no photo' : since + 'd'}</i></span>
-
-<span class="s actc">Update</span></a>`;
+      return wrow({
+        href: '/engineer/villa/' + encodeURIComponent(v.code),
+        code: v.code,
+        title: v.next_stage || 'All stages done',
+        detail: esc(v.buyer_name) + ' &middot; ' + esc(v.bank || 'self funded'),
+        days: since === null ? 'no photo' : since + 'd',
+        chip: '<i class="chip ' + (behind ? 'late' : 'wait') + '">'
+              + (since === null ? 'never' : 'last photo') + '</i>',
+      });
     }).join('');
 
     const behind = d.mine.filter(v => !v.last_shot || days(v.last_shot) > 20).length;
@@ -192,15 +196,17 @@ without a photograph.</p></div>
       /* Name on the title line, when and why underneath - v21's `.vhead` puts
          the person first and the slot on its own line. Both on one line made
          the title wrap four deep on a phone. */
-      return `<div class="wrow card">
-<span class="id">${esc(v.code)}</span>
-<span class="mid"><p class="rt">${esc(v.buyer_name)}</p>
-<p class="s">${esc(when)} &middot; ${esc(v.note || 'No note.')}${
-  mine ? '' : ' &middot; named to another engineer'}</p></span>
-<span class="stc"><i class="chip ${v.status === 'confirmed' ? 'ok' : v.status === 'reassign' ? 'warn' : 'wait'}">${
-  v.status === 'confirmed' ? 'Accepted' : v.status === 'reassign' ? 'Reassign' : 'New'}</i></span>
-<span class="amt n">${days(v.requested_at)}d ago</span>
-<span class="actc">
+      return wrow({
+        code: v.code,
+        title: v.buyer_name,
+        detail: esc(when) + ' &middot; ' + esc(v.note || 'No note.')
+                + (mine ? '' : ' &middot; named to another engineer'),
+        days: days(v.requested_at) + 'd ago',
+        chip: '<i class="chip ' + (v.status === 'confirmed' ? 'ok'
+              : v.status === 'reassign' ? 'warn' : 'wait') + '">'
+              + (v.status === 'confirmed' ? 'Accepted'
+              : v.status === 'reassign' ? 'Reassign' : 'New') + '</i>',
+        action: `
 ${v.status === 'confirmed'
   ? `<form method="post" action="/engineer/visit"><input type="hidden" name="id" value="${esc(v.id)}">
 <input type="hidden" name="do" value="declined">
@@ -208,8 +214,8 @@ ${v.status === 'confirmed'
   : `<form method="post" action="/engineer/visit" style="display:flex;gap:6px;flex-wrap:wrap">
 <input type="hidden" name="id" value="${esc(v.id)}">
 <button class="wbtn solid st" type="submit" name="do" value="confirmed">Accept</button>
-<button class="wbtn st" type="submit" name="do" value="reassign">Ask to reassign</button></form>`}
-</span></div>`;
+<button class="wbtn st" type="submit" name="do" value="reassign">Ask to reassign</button></form>`}`,
+      });
     }).join('');
 
     return desk(sess, '/engineer/visits', 'Visits', '', `
@@ -230,13 +236,13 @@ you answer on the spot.</p></div>
   function snags(sess, d, msg) {
     const open = d.snags.filter(s => s.status === 'open');
     const done = d.snags.filter(s => s.status === 'fixed');
-    const row = s => `<div class="wrow card">
-<span class="id">${esc(s.code)}</span>
-<span class="mid"><p class="rt">${esc(s.title)}</p>
-<p class="s">Raised by ${esc(s.raiser)} &middot; ${M.longDate(s.raised_at)}</p></span>
-<span class="stc">${s.status === 'fixed' ? '<i class="chip ok">Sent</i>' : chip(days(s.raised_at))}</span>
-<span class="amt n">${s.status === 'fixed' ? 'fixed' : 'open'}</span>
-<span class="actc"></span></div>
+    const row = s => wrow({
+      code: s.code,
+      title: s.title,
+      detail: 'Raised by ' + esc(s.raiser) + ' &middot; ' + M.longDate(s.raised_at),
+      days: days(s.raised_at) + 'd',
+      chip: s.status === 'fixed' ? '<i class="chip ok">Sent</i>' : chip(days(s.raised_at)),
+    }) + `
 ${s.status === 'open' ? `<form method="post" action="/engineer/snag" enctype="multipart/form-data" class="uprow"
   style="display:flex;gap:10px;align-items:center;padding:10px 26px 16px;border-bottom:1px solid var(--hair)">
 <input type="hidden" name="id" value="${esc(s.id)}">
@@ -283,9 +289,7 @@ ${done.length ? `<div class="gap"></div><div class="blk"><p class="k">Fixed, wai
 <div class="wl">${quick.map(q => `<form method="post" action="/engineer/log" class="wrow">
 <input type="hidden" name="kind" value="${esc(kind)}">
 <input type="hidden" name="title" value="${esc(q)}">
-<span class="id"></span>
 <span class="mid"><p class="rt">${esc(q)}</p><p class="s">One tap. Recorded against you, now.</p></span>
-<span class="stc"></span><span class="amt"></span>
 <span class="actc"><button class="wbtn solid st" type="submit">Add</button></span></form>`).join('')}</div>
 <div class="gap"></div>
 <div class="blk"><p class="k">Or write it</p></div>
@@ -315,14 +319,13 @@ ${Object.entries(LOG_KINDS).map(([k, [label, detail]]) => `<a class="lgb st"
 <span class="s">${esc(detail)}</span></a>`).join('')}</div></div>
 <div class="gap"></div>
 <div class="blk"><p class="k">Recent</p></div>
-<div class="wl">${d.log.length ? d.log.map(e => `<div class="wrow">
-<span class="id">${esc((LOG_KINDS[e.kind] || ['Entry'])[0].split(' ')[0])}</span>
-<span class="mid"><p class="rt">${esc(e.title)}</p>
-<p class="s">${esc(e.detail || '')}${e.detail ? ' &middot; ' : ''}${esc(e.logger)}</p></span>
-<span class="stc"><i class="chip wait">${esc(e.kind)}</i></span>
-<span class="amt n">${days(e.logged_at)}d</span>
-<span class="actc"></span></div>`).join('')
-  : '<div class="emptyrow"><p class="b ink">Nothing logged yet.</p></div>'}</div>
+<div class="wl">${d.log.length ? d.log.map(e => wrow({
+  title: e.title,
+  detail: esc(e.detail || '') + (e.detail ? ' &middot; ' : '') + esc(e.logger),
+  days: days(e.logged_at) + 'd',
+  chip: '<i class="chip wait">' + esc(e.kind) + '</i>',
+})).join('')
+  : empty('Nothing logged yet.')}</div>
 </div>`);
   }
 
@@ -342,16 +345,20 @@ ${Object.entries(LOG_KINDS).map(([k, [label, detail]]) => `<a class="lgb st"
 <span class="amt">Amount</span><span class="actc">Action</span></div>` : ''}
 ${pend.length ? pend.map(x => {
   const thin = x.shots < 2;
-  return `<div class="wrow">
-<span class="id">${esc(x.code)}</span>
-<span class="mid"><p class="rt">${esc(x.stage_name)}</p>
-<p class="s">${esc(x.buyer_name)} &middot; marked by ${esc(x.marked_by)} on ${M.longDate(x.marked_at)}</p></span>
-<span class="stc"><i class="chip ${thin ? 'warn' : 'wait'}">${
-    thin ? x.shots + ' photo' + (x.shots === 1 ? '' : 's') : 'ready'}</i></span>
-<span class="amt n">${M.money(stageTotal(d.byProject, x))}</span>
-<span class="actc">${thin ? '<span class="s">Too few photographs</span>'
-    : `<a class="wbtn solid st" href="/engineer/cert/${esc(x.id)}" style="text-decoration:none">Review</a>`}</span>
-</div>`; }).join('')
+  return wrow({
+    code: x.code,
+    title: x.stage_name,
+    detail: esc(x.buyer_name) + ' &middot; marked by ' + esc(x.marked_by)
+            + ' on ' + M.longDate(x.marked_at),
+    days: days(x.marked_at) + 'd',
+    chip: '<i class="chip ' + (thin ? 'warn' : 'wait') + '">'
+          + (thin ? x.shots + ' photo' + (x.shots === 1 ? '' : 's') : 'ready') + '</i>',
+    amount: M.money(stageTotal(d.byProject, x)),
+    action: thin ? 'Too few photographs'
+          : '<a class="wbtn solid st" href="/engineer/cert/' + encodeURIComponent(x.id)
+            + '" style="text-decoration:none">Review</a>',
+    actionIsText: thin,
+  }); }).join('')
   : '<div class="emptyrow"><p class="b ink">Nothing waiting. Every stage you verified has been certified.</p></div>'}
 </div></div>`);
   }

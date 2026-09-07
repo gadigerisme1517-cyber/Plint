@@ -474,6 +474,7 @@ function stageTotal(byProject, row) {
    helpers it needs rather than requiring this file back, because this file
    requires it. certify() below stays here: it is the only path that prices a
    stage and raises a demand, which is not a screen concern. */
+const ROW = require('./screens/rows')({ esc });
 const ENG = require('./screens/engineer')({ esc, desk, M, asUser, schedules, stageTotal, LOGO });
 
 /** Certification. The only place a demand is created. */
@@ -587,13 +588,15 @@ ${g.length} villa${g.length === 1 ? '' : 's'} &middot; ${M.crore(sum)}</span><di
 <div class="wl">
 <div class="whead"><span class="id">Villa</span><span class="mid">Stage and reason</span>
 <span class="stc">Status</span><span class="days">Age</span><span class="amt">Amount</span></div>
-${g.map(x => `<div class="wrow">
-<span class="id">${esc(x.code)}</span>
-<span class="mid"><p class="rt">${esc(x.stage_name)}</p><p class="s">${esc(x.reason)}</p></span>
-<span class="stc"><i class="chip ${x.age >= 21 ? 'late' : x.age >= 10 ? 'warn' : 'wait'}">${
-  x.age >= 21 ? 'Overdue' : x.age >= 10 ? 'Ageing' : 'Open'}</i></span>
-<span class="days"><b class="${x.age >= 21 ? 'h' : ''}">${x.age}</b>d</span>
-<span class="amt n">${M.crore(x.value)}</span></div>
+${g.map(x => ROW.wrow({
+  code: x.code,
+  title: x.stage_name,
+  detail: esc(x.reason),
+  days: '<b class="' + (x.age >= 21 ? 'h' : '') + '">' + x.age + '</b>d',
+  chip: '<i class="chip ' + (x.age >= 21 ? 'late' : x.age >= 10 ? 'warn' : 'wait') + '">'
+        + (x.age >= 21 ? 'Overdue' : x.age >= 10 ? 'Ageing' : 'Open') + '</i>',
+  amount: M.crore(x.value),
+}) + `
 ${k === 'engineer' ? `<form method="post" action="/office/assign" class="uprow"
   style="display:flex;gap:10px;align-items:center;padding:8px 26px 14px;border-bottom:1px solid var(--hair)">
 <input type="hidden" name="unit" value="${esc(x.unit_id)}">
@@ -647,14 +650,14 @@ async function sanctionScreen(sess, flash) {
       WHERE u.bank IS NOT NULL AND u.sanction_recorded_at IS NULL
       ORDER BY u.code`)).then(r => r.rows);
 
-  const list = rows.map(x => `<div class="wrow">
-<span class="id">${esc(x.code)}</span>
-<span class="mid"><p class="rt">${esc(x.buyer_name)}</p>
-<p class="s">${esc(x.bank)} &middot; agreement ${M.money(x.agreement_value_paise)}</p></span>
-<span class="stc"><i class="chip ${x.age > 10 ? 'late' : 'wait'}">no sanction</i></span>
-<span class="days"><b class="${x.age > 10 ? 'h' : ''}">${x.age == null ? '—' : x.age}</b>d</span>
-<span class="amt n">${M.money(x.agreement_value_paise)}</span>
-</div>
+  const list = rows.map(x => ROW.wrow({
+  code: x.code,
+  title: x.buyer_name,
+  detail: esc(x.bank),
+  days: '<b class="' + (x.age > 10 ? 'h' : '') + '">' + (x.age == null ? '—' : x.age) + '</b>d',
+  chip: '<i class="chip ' + (x.age > 10 ? 'late' : 'wait') + '">no sanction</i>',
+  amount: M.money(x.agreement_value_paise),
+}) + `
 <form method="post" action="/office/sanction" class="uprow"
   style="display:flex;gap:10px;align-items:center;padding:10px 26px 16px;border-bottom:1px solid var(--hair)">
 <input type="hidden" name="unit" value="${esc(x.id)}">

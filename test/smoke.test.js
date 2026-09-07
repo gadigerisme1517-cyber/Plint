@@ -40,7 +40,7 @@ const get = (p, cookie) => fetch(BASE + p, { headers: cookie ? { cookie } : {}, 
 
   console.log('\nengineer');
   const e1 = await (await get('/engineer/certs', eng)).text();
-  const waiting = (e1.match(/class="wrow"/g) || []).length;
+  const waiting = (e1.match(/class="wrow[ "]/g) || []).length;
   ok(waiting > 0, waiting + ' stages waiting on a certificate');
 
   /* The certificate is signed on its own screen now, so the walk is: the list
@@ -85,7 +85,7 @@ const get = (p, cookie) => fetch(BASE + p, { headers: cookie ? { cookie } : {}, 
 
   console.log('\nhead office');
   const o = await (await get('/office', office)).text();
-  const rows = (o.match(/class="wrow"/g) || []).length;
+  const rows = (o.match(/class="wrow[ "]/g) || []).length;
   ok(rows === 48, 'the worklist shows all 48 villas (' + rows + ')');
   ok(/Waiting on the certifying engineer/.test(o) && /Waiting on the lender/.test(o),
      'grouped by who is holding each one up');

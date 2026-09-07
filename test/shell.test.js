@@ -15,6 +15,8 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert');
 
+const fs = require('node:fs');
+const path = require('node:path');
 const { pool } = require('../src/db');
 const PORT = 3242, BASE = 'http://127.0.0.1:' + PORT;
 const server = require('../src/server');
@@ -232,6 +234,77 @@ test('the worklists can stop being tables', async () => {
     'but the specific selector is what this test is really holding');
 });
 
+test('the villa and the stage are one run of text, not two cells', async () => {
+  /* Same font size and weight was not enough. They were separate grid cells
+     with a 10px gap and a separator drawn between them, and their baselines
+     sat 3px apart - so it read as two labels with a dot floating in the space.
+     One run of text is the only thing that fixes that, and it has to come from
+     the markup. */
+  for (const [role, p] of [['engineer', '/engineer'], ['office', '/office']]) {
+    const h = await body(p, role);
+    const codes = h.match(/<p class="rt"><span class="rcode">[^<]+<\/span>[^<]/g) || [];
+    assert.ok(codes.length > 0,
+      role + ' ' + p + ': no row puts the villa code inside its heading');
+    // And the row says so, so the stylesheet can drop the standalone cell.
+    assert.match(h, /class="wrow hascode"/, role + ' ' + p + ': rows do not declare they carry a code');
+  }
+});
+
+test('rows are built in one place, not copied per screen', async () => {
+  /* Fifteen hand-written copies drifted: the code inline here and in a column
+     there, day counts written into the amount cell on one screen and the day
+     cell on another. */
+  const src = f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+  for (const f of ['src/screens/engineer.js', 'src/server.js']) {
+    const viaBuilder = (src(f).match(/\bwrow\(\{/g) || []).length;
+    assert.ok(viaBuilder > 0, f + ' builds no rows through the shared builder');
+
+    /* A few rows are a different shape: the villa detail puts a radio button,
+       a stage code or a status chip in the first cell rather than a villa
+       code, and the builder does not model those. What must never be written
+       by hand again is a row carrying a villa code - that is the one that has
+       to put the code inside its heading rather than beside it. */
+    const handCoded = src(f).match(/class="id">\$\{esc\((?:x|v|s|u)\.code\)/g) || [];
+    assert.deepStrictEqual(handCoded, [],
+      f + ' still writes ' + handCoded.length + ' villa-code rows by hand');
+  }
+});
+
+test('one gutter, and everything on a phone starts on it', async () => {
+  const css = await (await get('/app.css')).text();
+  assert.match(css, /--gutter:\s*18px/, 'there is no single gutter to line up against');
+
+  const narrow = /@media \(max-width: 720px\) \{([\s\S]*?)\n\}/.exec(css)[1];
+  /* Applied at exactly one level. It was stacking three deep - `.mbody` padded
+     it, `.wl` is a bordered card that padded it again, and the row added a
+     margin - so cards sat at 54..321 while the label above them sat at
+     18..357 and the button between them at 36..339. */
+  assert.match(narrow, /\.mhead, \.mbody \{[^}]*padding-left:\s*var\(--gutter\)/,
+    'the gutter is not applied to the one container that owns it');
+  const cleared = /\.wl, \.tools, \.blk, \.mbody \.lede \{([^}]*)\}/.exec(narrow);
+  assert.ok(cleared, 'the nested containers never give up their own padding');
+  assert.match(cleared[1], /padding-left:\s*0/, 'a nested container still adds to the gutter');
+  assert.match(cleared[1], /margin-left:\s*0/, 'a nested container still adds a margin');
+
+  // And nothing may re-pad them afterwards, which is what happened once.
+  const dupes = (narrow.match(/\.tools \{[^}]*padding-left:\s*18px/g) || []).length;
+  assert.strictEqual(dupes, 0, 'a later rule pads .tools again, so its contents will not line up');
+});
+
+test('the day count sits with the status pill, on the heading line', async () => {
+  const css = await (await get('/app.css')).text();
+  const narrow = /@media \(max-width: 720px\) \{([\s\S]*?)\n\}/.exec(css)[1];
+  const days = /\.wrow \.days \{([^}]*)\}/.exec(narrow);
+  const stc = /\.wrow \.stc\s+\{([^}]*)\}/.exec(narrow);
+  assert.ok(days && stc, 'no phone rules for the day count and the status pill');
+  // Row 1 for both: the day count used to be centred against a two-line
+  // description on a line of its own.
+  assert.match(days[1], /grid-area:\s*1 \//, 'the day count is not on the heading line');
+  assert.match(stc[1], /grid-area:\s*1 \//, 'the status pill is not on the heading line');
+  assert.match(days[1], /justify-self:\s*end/, 'the day count is not aligned right');
+  assert.match(stc[1], /justify-self:\s*end/, 'the status pill is not aligned right');
+});
+
 test('everything you can press is at least 44px on a phone', async () => {
   const css = await (await get('/app.css')).text();
   const narrow = /@media \(max-width: 720px\) \{([\s\S]*?)\n\}/.exec(css)[1];
@@ -260,13 +333,9 @@ test('amounts are right-aligned, tabular, and never break mid-value', async () =
   /* Status, day count and amount all sit in the same right-hand column, one
      under the other. The day count used to get a line of its own across the
      row, right-aligned against nothing. */
-  const days = /\.wrow \.days\s+\{([^}]*)\}/.exec(narrow);
-  assert.ok(days, 'no phone rule for the day count');
-  for (const [name, decl] of [['status', /\.wrow \.stc\s+\{([^}]*)\}/.exec(narrow)],
-                              ['day count', days], ['amount', amt]]) {
-    assert.match(decl[1], /grid-area:\s*\d+ \/ 3/, name + ' is not in the right-hand column');
-    assert.match(decl[1], /justify-self:\s*end/, name + ' is not aligned to the right of that column');
-  }
+  assert.match(amt[1], /justify-self:\s*end/, 'the amount is not aligned to the right edge');
+  assert.match(amt[1], /grid-area:\s*2 \/ 2 \/ 3 \/ 4/,
+    'the amount does not span to the right edge, so it floats in the middle of the row');
 });
 
 test('the phone list is v21\'s, not a table in disguise', async () => {
@@ -286,7 +355,10 @@ test('the phone list is v21\'s, not a table in disguise', async () => {
   assert.match(card[1], /border-radius:\s*12px/, 'a list row is not v21\'s 12px radius');
   assert.match(card[1], /background:\s*var\(--paper\)/, 'a list row has no card background');
   assert.match(card[1], /padding:\s*14px 16px/, 'a list row has no card padding');
-  assert.match(card[1], /margin:\s*0 18px 10px/, 'the cards are not set apart from one another');
+  /* No horizontal margin of its own: the gutter belongs to one container, and
+     a margin here is exactly how the card ended up inset further than the
+     label above it. */
+  assert.match(card[1], /margin:\s*0 0 10px/, 'the card sets its own horizontal margin again');
 
   /* And the heading is one heading. The villa came out at 12.5px and the stage
      at 13px, so they read as two labels with a dot floating between them. */
