@@ -246,7 +246,7 @@ test('the villa and the stage are one run of text, not two cells', async () => {
     assert.ok(codes.length > 0,
       role + ' ' + p + ': no row puts the villa code inside its heading');
     // And the row says so, so the stylesheet can drop the standalone cell.
-    assert.match(h, /class="wrow hascode"/, role + ' ' + p + ': rows do not declare they carry a code');
+    assert.match(h, /class="wrow hascode[ "]/, role + ' ' + p + ': rows do not declare they carry a code');
   }
 });
 
@@ -309,6 +309,13 @@ test('one gutter, and everything on a phone starts on it', async () => {
   assert.ok(tools && /margin-bottom:\s*(\d+)px/.test(tools[1]) &&
     Number(/margin-bottom:\s*(\d+)px/.exec(tools[1])[1]) >= 16,
     'the toolbar has no room under it, so its button will touch the next heading');
+  /* And a row with money but no control does not spend a whole line on the
+     money alone - there is nothing else on that line for it to line up with. */
+  assert.match(narrow, /\.wrow\.noact \.amt\s+\{[^}]*grid-area:\s*2 \/ 3/,
+    'a lone amount still takes a line of its own');
+  assert.match(narrow, /\.wrow\.noact \.mid p\.s \{[^}]*grid-area:\s*2 \/ 1 \/ 3 \/ 3/,
+    'the detail still spans under the amount that has moved up beside it');
+
   const gap = /\.mbody \.gap \{([^}]*)\}/.exec(narrow);
   assert.ok(gap, 'the section spacer keeps its desktop height on a phone');
   const px = Number(/height:\s*(\d+)px/.exec(gap[1])[1]);

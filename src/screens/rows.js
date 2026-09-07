@@ -91,7 +91,11 @@ module.exports = function rowBuilder({ esc }) {
        it carries a radio button, a status chip or a stage code, and a blanket
        rule would hide those. Only a row that genuinely has both forms of the
        same code may drop one of them. */
-    const cls = 'wrow' + (code ? ' hascode' : '') + (r.cls ? ' ' + r.cls : '');
+    /* An amount with no control beside it had a whole row to itself, with
+       nothing in the other two columns - a wasted line on every row of a
+       list. Where there is no action the money moves up beside the detail. */
+    const noact = r.amount && !r.action ? ' noact' : '';
+    const cls = 'wrow' + (code ? ' hascode' : '') + noact + (r.cls ? ' ' + r.cls : '');
     return r.href
       ? `<a class="${cls}" href="${r.href}" style="text-decoration:none;color:inherit">${inner}</a>`
       : `<div class="${cls}">${inner}</div>`;

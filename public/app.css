@@ -253,6 +253,12 @@ body { padding: 0; margin: 0; background: var(--paper); }
      one. The toolbar has nothing below it but the next heading. */
   .wl { margin-bottom: 0 !important; }
   .tools { margin-bottom: 20px !important; }
+  /* No control on the row means the money has no one to share row three
+     with, so it goes up onto the detail's line instead of taking a line of
+     its own. Worth 28px on every row of a list that is only ever read. */
+  .wrow.noact .mid p.s { grid-area: 2 / 1 / 3 / 3; }
+  .wrow.noact .amt     { grid-area: 2 / 3; align-self: center; }
+
   /* Which leaves the spacer as the one thing separating two sections. */
   .mbody .gap { height: 20px; }
 
