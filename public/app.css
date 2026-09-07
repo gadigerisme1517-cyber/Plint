@@ -191,9 +191,15 @@ body { padding: 0; margin: 0; background: var(--paper); }
   .uprow .mid .fi { flex: 1 1 100% !important; min-width: 0 !important; }
 
   /* The ageing histogram is a sparkline beside a KPI on a desktop. Given the
-     full width of a phone it hit its 74px per-bar cap and became four slabs. */
+     full width of a phone it hit its 74px per-bar cap and became four slabs.
+
+     Selector is `.agebars .agebar`, not `.agebar`. At equal specificity the
+     later rule wins, and the base rule below is later in this file - so the
+     first version of this scaled the width and not the height, and the live
+     phone view still showed slabs. Being one class more specific makes it
+     independent of where in the file it sits. */
   .agebars { height: 72px; gap: 8px; max-width: 280px; }
-  .agebar  { max-width: 46px; height: calc(var(--h, 8px) * .62); }
+  .agebars .agebar { max-width: 46px; height: calc(var(--h, 8px) * .62); }
 }
 
 /* The bar heights arrive as `--h` rather than an inline `height`, so the rule

@@ -194,6 +194,19 @@ test('the worklists can stop being tables', async () => {
   assert.match(narrow[1], /\.whead\s*\{\s*display:\s*none/, 'column headings survive as cards');
   assert.match(narrow[1], /\.wrow\s*\{[\s\S]*?display:\s*grid/, 'rows do not reflow to cards');
   assert.match(narrow[1], /\.uprow/, 'the forms keep their fixed field widths');
+
+  /* The narrow rule for the histogram must outrank the base rule rather than
+     merely differ from it. The first version used the same selector, `.agebar`,
+     and the base rule sits later in the file - so at equal specificity the base
+     won, the width scaled, the height did not, and the deployed phone view
+     still drew four slabs. */
+  assert.match(narrow[1], /\.agebars \.agebar\s*\{[^}]*height:\s*calc\(/,
+    'the narrow histogram rule is not specific enough to beat the base height');
+  const base = /\n\.agebar \{[^}]*height:\s*var\(--h/.exec(css);
+  assert.ok(base, 'no base height rule driven by --h');
+  assert.ok(css.indexOf(narrow[0]) < base.index,
+    'the base rule now precedes the media block, so the ordering trap is gone - ' +
+    'but the specific selector is what this test is really holding');
 });
 
 test('nothing is laid out with a width the page cannot override', async () => {

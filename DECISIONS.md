@@ -1863,3 +1863,21 @@ Templating is no longer specific to the worker: any text asset containing
 treatment without a build step.
 
 174 assertions, fifteen suites, green from a clean database.
+
+## One more that only the deployed phone showed: a CSS ordering trap
+
+The narrow-screen rule for the ageing histogram used the same selector as the
+base rule, `.agebar`, and the base rule sits later in `app.css`. At equal
+specificity the later rule wins, so the width scaled and **the height did not** -
+and the live phone view still drew four slabs after the fix that was supposed
+to remove them.
+
+The rule is now `.agebars .agebar`, one class more specific, which makes it
+independent of where in the file it sits. `test/shell.test.js` asserts the
+specific selector rather than the file order, because ordering is the thing
+that was fragile. Reverting the selector fails the test.
+
+Worth naming the pattern: three separate defects in this feature - the
+constant cache name, the `===` on `If-None-Match`, and this - were invisible
+on localhost and shipped green. A local suite proves the code does what it
+says. It does not prove the network, the proxy, or the cascade agree.
