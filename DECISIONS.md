@@ -1967,3 +1967,76 @@ dropping the authorship check on snags, granting DELETE, and letting a buyer
 read every villa's choices. All five now fail a test.
 
 188 assertions, sixteen suites, green from a clean database.
+
+## Pass 2 — the engineer, five tabs and a villa
+
+`src/screens/engineer.js`. server.js was 1041 lines before this pass and would
+have been near 3000 by the end of the office; the screens move out now rather
+than after three more passes make it unmovable. It is handed the helpers it
+needs rather than requiring server.js back, because server.js requires it.
+`certify()` stays in server.js: it is the only path that prices a stage and
+raises a demand, which is not a screen concern.
+
+Me, Villas, Visits, Log, Certs, and the villa detail with v21's three modes.
+Every control writes: mark a stage done, add a photograph, accept or decline a
+visit or ask for it to be reassigned, close a snag with a photograph of the
+fix, log the day in two taps, report a delay.
+
+**Navigation.** Buyer and engineer keep v21's five-slot bottom bar; only the
+head office gets a menu button, because fifteen destinations in nine groups are
+not a bar at any width. The test now encodes five as the threshold rather than
+four, and asserts the menu appears above it - so forgetting it when the office
+lands is a failure rather than a squashed bar.
+
+Snags is reached from Me and from a villa, not from the bar. Five slots are
+taken and v21 gives it a back button rather than a slot, so the shell is told
+Me is current: otherwise the bar highlights nothing while the engineer is
+standing on a real screen, which the test caught.
+
+## Four faults in this pass, and one that matters more than the others
+
+Three were mine and shallow: `full_name` where the column is `display_name`,
+`t.detail` where it is `t.description`, and reading the engineer's registration
+off the session, which does not carry it. The registration is now read from the
+row that holds it, because it decides whether this person may sign at all -
+Suresh marks work done and is not a qualified engineer - and that is not a fact
+to take from a cookie issued at login.
+
+The fourth was already deployed. `assign_engineer` in migration 012 selected
+`full_name` too. PL/PgSQL resolves column names when the body runs, not when it
+is defined, so the function created, migrated and deployed perfectly and would
+have failed the first time anybody reassigned a villa - the one act that whole
+office screen exists to perform. Migration **013** replaces it. It was found
+only because the same mistake in the screens' own SQL failed loudly first.
+
+## The check that was not checking
+
+The layout probe I have been verifying every screen with skipped any element
+inside an ancestor with `overflow-x: auto`. `.mbody` is one, and `.mbody` wraps
+essentially all engineer and office content - so the probe reported the site
+log clean while the screenshot showed its right-hand column cut off at 375px.
+
+Two things wrong. The grid was mine: an inline `grid-template-columns:1fr 1fr`,
+and `1fr` has an automatic minimum of min-content, so a tile whose label will
+not break forces its column wider than its share - measured at 208px and 182px
+inside a 323px box. It now uses v21's own `.lgrid`/`.lgb` with
+`minmax(0, 1fr)`, and the tiles wrap.
+
+The probe was worse. It now asks two questions instead of one: does any element
+extend past the viewport, and does any scroll container have content wider than
+itself. A container that scrolls sideways is sideways scrolling; being a
+container does not excuse it. Only the evidence photo strip is exempt, and it
+is exempt by name.
+
+## And a test that passed by not looking
+
+`smoke.test.js` certified B-14 through the engineer screen, and when the control
+moved to its own certificate page the match failed - falling into an `else`
+branch that reported `ok(true, 'certified on an earlier run')` without checking.
+The suite went green while the flow was broken, and the failure surfaced two
+suites later as a missing PDF. That branch now asserts the demand exists.
+
+203 assertions across eighteen suites, green from a clean database. Eight of
+them are cross-role flows driven over real HTTP: a row is only ever written by
+posting the form the screen posts, and only ever observed by fetching the page
+the other role opens.

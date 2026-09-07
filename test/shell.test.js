@@ -35,13 +35,18 @@ const ROLES = {
    test failure rather than an orphan page. */
 const SCREENS = {
   buyer:    ['/villa/B-14', '/documents'],
-  engineer: ['/engineer'],
+  engineer: ['/engineer', '/engineer/villas', '/engineer/visits', '/engineer/log',
+             '/engineer/certs', '/engineer/snags'],
   office:   ['/office', '/office/sanctions'],
 };
+
 /* How many destinations each role has, and therefore what navigation it gets.
-   Four or fewer is a tab bar; more would be a menu button. Nothing here has
-   more than two, so nothing here has a menu button. */
-const DESTINATIONS = { buyer: 2, engineer: 1, office: 2 };
+
+   Up to five is v21's bottom bar - `.nav five` is a shape v21 designed and
+   five fits a phone. Above five it becomes a menu button, which is the head
+   office: fifteen destinations in nine groups are not a bar at any width. */
+const BAR_FITS = 5;
+const DESTINATIONS = { buyer: 2, engineer: 5, office: 2 };
 
 const cookies = {};
 before(async () => {
@@ -133,9 +138,15 @@ test('each role gets the navigation its number of sections earns', async () => {
          furniture that never does anything. */
       assert.strictEqual(tabs, '', role + ' has one section and still gets a tab bar');
     }
-    // Nothing here has more than four, so nothing should have grown a menu.
-    assert.ok(DESTINATIONS[role] <= 4, role + ' now has more than four sections: it needs a menu');
-    assert.ok(!/class="ab-menu"/.test(h), role + ' rendered a menu button it does not need');
+    /* Above five destinations the bar becomes a menu. Nothing has crossed that
+       line yet; when the office grows to fifteen this assertion is what makes
+       forgetting the menu a failure rather than a squashed bar. */
+    if (DESTINATIONS[role] > BAR_FITS) {
+      assert.match(h, /class="ab-menu"/,
+        role + ' has ' + DESTINATIONS[role] + ' destinations and no menu button');
+    } else {
+      assert.ok(!/class="ab-menu"/.test(h), role + ' rendered a menu button it does not need');
+    }
   }
 });
 

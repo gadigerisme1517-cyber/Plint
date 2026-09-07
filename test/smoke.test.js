@@ -39,12 +39,21 @@ const get = (p, cookie) => fetch(BASE + p, { headers: cookie ? { cookie } : {}, 
   ok((await get('/office', buyer)).status === 404, 'the buyer cannot open the head-office worklist');
 
   console.log('\nengineer');
-  const e1 = await (await get('/engineer', eng)).text();
+  const e1 = await (await get('/engineer/certs', eng)).text();
   const waiting = (e1.match(/class="wrow"/g) || []).length;
   ok(waiting > 0, waiting + ' stages waiting on a certificate');
-  const b14Pending = /value="us-B-14-brick"[\s\S]{0,400}?Certify/.test(e1);
 
+  /* The certificate is signed on its own screen now, so the walk is: the list
+     offers B-14 blockwork, the certificate reads the figures back, and the
+     signature is what raises the demand. */
+  const b14Pending = /\/engineer\/cert\/us-B-14-brick/.test(e1);
   if (b14Pending) {
+    const doc = await (await get('/engineer/cert/us-B-14-brick', eng)).text();
+    ok(/Engineer's certificate of stage completion/.test(doc), 'the certificate document renders');
+    ok(/₹33,60,000/.test(doc), 'the certificate states what it releases before it is signed');
+    ok(/KAR\/CE\/2014\/8842/.test(doc), 'the certificate carries the signing registration');
+    ok(/name="id" value="us-B-14-brick"/.test(doc), 'the signature form is on the certificate');
+
     const r = await fetch(BASE + '/engineer/certify', {
       method: 'POST', redirect: 'manual', headers: {
         cookie: eng, 'content-type': 'application/x-www-form-urlencoded',
@@ -54,7 +63,12 @@ const get = (p, cookie) => fetch(BASE + p, { headers: cookie ? { cookie } : {}, 
     ok(/certified/.test(msg) && /₹33,60,000/.test(msg),
        'certifying B-14 blockwork raises a demand for ₹33,60,000');
   } else {
-    ok(true, 'B-14 blockwork was certified on an earlier run');
+    /* Do not simply pass. An earlier run having certified it is a claim, and
+       the claim is checkable: the demand exists. Reporting ok() here without
+       looking is how a suite goes green while the flow is broken - which is
+       exactly what happened when the control moved screens. */
+    const d = await get('/doc/demand/us-B-14-brick.pdf', eng);
+    ok(d.status === 200, 'B-14 blockwork was certified on an earlier run, and its demand exists');
   }
 
   console.log('\ndocuments');

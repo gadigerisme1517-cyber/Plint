@@ -182,7 +182,12 @@ function destinations(sess) {
   if (sess.role === 'office') {
     return [['/office', 'Stuck money', 'money'], ['/office/sanctions', 'Sanctions', 'doc']];
   }
-  return [['/engineer', 'Sign-off', 'tick']];
+  /* v21's five-slot bottom bar, and five fits: Me, Villas, Visits, Log, Certs.
+     A menu button is for the head office, whose fifteen destinations cannot be
+     a bar at any width. */
+  return [['/engineer', 'Me', 'home'], ['/engineer/villas', 'Villas', 'home'],
+          ['/engineer/visits', 'Visits', 'doc'], ['/engineer/log', 'Log', 'doc'],
+          ['/engineer/certs', 'Certs', 'tick']];
 }
 
 const TABICON = {
@@ -463,69 +468,13 @@ function stageTotal(byProject, row) {
   return priced[row.seq].totalPaise;
 }
 
-// ------------------------------------------------------------ engineer view
-async function engineerScreen(sess, flash) {
-  const { rows, byProject } = await asUser(sess, async c => ({
-    rows: (await c.query(
-      `SELECT s.id, s.status, s.marked_by, s.marked_at, u.code, u.buyer_name, u.bank,
-              u.agreement_value_paise, u.project_id, t.name stage_name, t.pct_bp, t.seq,
-              (SELECT count(*)::int FROM evidence e WHERE e.unit_stage_id = s.id) shots
-         FROM unit_stages s
-         JOIN units u ON u.id = s.unit_id
-         JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
-        WHERE s.status = 'marked'
-        ORDER BY s.marked_at`)).rows,
-    byProject: await schedules(c),
-  }));
+/* ---------------------------------------------------------- the engineer
 
-  const list = rows.map(x => {
-    const total = stageTotal(byProject, x);
-    const thin = x.shots < 2;
-    return `<div class="wrow">
-<span class="id">${esc(x.code)}</span>
-<span class="mid"><p class="rt">${esc(x.stage_name)}</p>
-<p class="s">${esc(x.buyer_name)} &middot; marked by ${esc(x.marked_by)} on ${M.longDate(x.marked_at)}</p></span>
-<span class="stc"><i class="chip ${thin ? 'warn' : 'wait'}">${
-  thin ? x.shots + ' photograph' + (x.shots === 1 ? '' : 's') : 'evidence ready'}</i></span>
-<span class="amt n">${M.money(total)}</span>
-${thin
-  ? `<span class="s actc">Too few photographs</span>`
-  : `<form method="post" action="/engineer/certify" class="actc">
-<input type="hidden" name="id" value="${esc(x.id)}">
-<button class="wbtn solid st" type="submit">Certify</button></form>`}
-</div>
-<form method="post" action="/evidence/upload" enctype="multipart/form-data" class="uprow"
-  style="display:flex;gap:10px;align-items:center;padding:10px 26px 16px;border-bottom:1px solid var(--hair)">
-<input type="hidden" name="stage" value="${esc(x.id)}">
-<span class="mid" style="display:flex;gap:10px;align-items:center">
-<input class="fi" type="file" name="photo" accept="image/jpeg,image/png" required
-  style="margin:0;flex:0 0 200px;padding:7px 8px">
-<input class="fi" name="caption" placeholder="Caption" required maxlength="120"
-  style="margin:0;flex:1;min-width:0;padding:7px 10px">
-<input class="fi n" name="gps" placeholder="12.8391, 77.7724" required maxlength="40"
-  style="margin:0;flex:0 0 150px;padding:7px 10px"></span>
-<button class="wbtn st" type="submit" style="flex:0 0 140px">Add photograph</button>
-</form>`;
-  }).join('');
-
-  return desk(sess, '/engineer', 'Sign-off and evidence', '', `
-<div class="mhead"><div class="hstrip">
-<div class="g"><h1 class="pgt">Sign-off and evidence</h1>
-<p class="s" style="margin-top:2px">Stages marked done on site, not yet certified</p></div>
-<div class="kpi"><span class="kpin">${rows.length}</span><span class="k">files</span></div>
-</div></div>
-<div class="mbody anim">
-${flash ? `<div class="tools"><span class="rescount s">${flash}</span><div class="g"></div></div>` : ''}
-<div class="tools"><span class="rescount s">A stage cannot go to the lender without a certificate
-signed by a qualified engineer. A supervisor marking it done on site is not the same thing.</span>
-<div class="g"></div></div>
-<div class="wl">
-${rows.length ? `<div class="whead"><span class="id">Villa</span><span class="mid">Stage and buyer</span>
-<span class="stc">Evidence</span><span class="amt">Amount</span><span class="actc">Action</span></div>` : ''}
-${list || '<div class="emptyrow"><p class="b ink">Nothing is waiting on you.</p></div>'}
-</div>
-</div>`);
-}
+   Five tabs and a villa detail, in src/screens/engineer.js. It is handed the
+   helpers it needs rather than requiring this file back, because this file
+   requires it. certify() below stays here: it is the only path that prices a
+   stage and raises a demand, which is not a screen concern. */
+const ENG = require('./screens/engineer')({ esc, desk, M, asUser, schedules, stageTotal, LOGO });
 
 /** Certification. The only place a demand is created. */
 async function certify(sess, stageId) {
@@ -595,10 +544,11 @@ async function certify(sess, stageId) {
 }
 
 // --------------------------------------------------------- head office view
-async function officeScreen(sess) {
-  const { rows, byProject } = await asUser(sess, async c => ({
+async function officeScreen(sess, flash) {
+  const { rows, byProject, engineers } = await asUser(sess, async c => ({
     rows: await c.query(
-      `SELECT u.code, u.buyer_name, u.bank, u.agreement_value_paise, u.project_id,
+      `SELECT u.id unit_id, u.code, u.buyer_name, u.bank, u.agreement_value_paise, u.project_id,
+              u.assigned_engineer_id,
               t.name stage_name, t.pct_bp, t.seq, s.status,
               b.holder, b.holder_role, b.reason, b.since,
               (CURRENT_DATE - b.since) age
@@ -608,6 +558,9 @@ async function officeScreen(sess) {
          JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
         ORDER BY b.holder_role, (CURRENT_DATE - b.since) DESC`),
     byProject: await schedules(c),
+    engineers: (await c.query(
+      `SELECT id, display_name, engineer_reg FROM users
+        WHERE role = 'engineer' ORDER BY display_name`)).rows,
   }));
 
   const groups = {};
@@ -640,7 +593,17 @@ ${g.map(x => `<div class="wrow">
 <span class="stc"><i class="chip ${x.age >= 21 ? 'late' : x.age >= 10 ? 'warn' : 'wait'}">${
   x.age >= 21 ? 'Overdue' : x.age >= 10 ? 'Ageing' : 'Open'}</i></span>
 <span class="days"><b class="${x.age >= 21 ? 'h' : ''}">${x.age}</b>d</span>
-<span class="amt n">${M.crore(x.value)}</span></div>`).join('')}
+<span class="amt n">${M.crore(x.value)}</span></div>
+${k === 'engineer' ? `<form method="post" action="/office/assign" class="uprow"
+  style="display:flex;gap:10px;align-items:center;padding:8px 26px 14px;border-bottom:1px solid var(--hair)">
+<input type="hidden" name="unit" value="${esc(x.unit_id)}">
+<span class="mid" style="display:flex;gap:10px;align-items:center">
+<span class="s">Sitting with ${esc(x.holder)}. Move it to</span>
+<select class="fi" name="engineer" style="margin:0;flex:0 0 220px;padding:7px 10px">
+${engineers.filter(e => e.id !== x.assigned_engineer_id).map(e =>
+  `<option value="${esc(e.id)}">${esc(e.display_name)}${e.engineer_reg ? '' : ' (cannot certify)'}</option>`).join('')}
+</select></span>
+<button class="wbtn st" type="submit" style="flex:0 0 120px">Reassign</button></form>` : ''}`).join('')}
 </div><div class="gap"></div>`;
   }).join('');
 
@@ -664,7 +627,7 @@ ${bars}</div>
 <div class="kpi"><span class="kpin hot">${M.crore(stuck)}</span><span class="k">stuck</span></div>
 <div class="kpi"><span class="kpin">${rows.rows.length}</span><span class="k">files</span></div>
 </div></div>
-<div class="mbody anim">${body}</div>`);
+<div class="mbody anim">${flash ? `<div class="tools"><span class="rescount s">${esc(flash)}</span><div class="g"></div></div>` : ''}${body}</div>`);
 }
 
 /* --------------------------------------------- head office: record a sanction
@@ -866,8 +829,34 @@ const server = http.createServer(async (req, res) => {
         '<div class="gap l"></div><div class="blk"><h1 class="h1">No such villa.</h1></div>'));
     }
 
-    if (p === '/engineer' && sess.role === 'engineer')
-      return html(200, await engineerScreen(sess, url.searchParams.get('m')));
+    // ------------------------------------------------------ the engineer
+    if (p.startsWith('/engineer') && sess.role === 'engineer' && req.method === 'GET') {
+      const msg = url.searchParams.get('m');
+      // One read for every tab: they all count from the same five queries.
+      const d = await ENG.load(sess);
+
+      if (p === '/engineer')         return html(200, ENG.me(sess, d, msg));
+      if (p === '/engineer/villas')  return html(200, ENG.villas(sess, d, msg));
+      if (p === '/engineer/visits')  return html(200, ENG.visits(sess, d, msg));
+      if (p === '/engineer/snags')   return html(200, ENG.snags(sess, d, msg));
+      if (p === '/engineer/certs')   return html(200, ENG.certs(sess, d, msg));
+      if (p === '/engineer/log')     return html(200, ENG.log(sess, d, null, msg));
+
+      if (p.startsWith('/engineer/log/')) {
+        return html(200, ENG.log(sess, d, decodeURIComponent(p.slice(14)), msg));
+      }
+      if (p.startsWith('/engineer/cert/')) {
+        const out = await ENG.certDetail(sess, decodeURIComponent(p.slice(15)), d);
+        return out ? html(200, out) : html(404, page('Not found', sess,
+          '<div class="blk"><h1 class="h1">That stage is not waiting for a certificate.</h1></div>'));
+      }
+      if (p.startsWith('/engineer/villa/')) {
+        const out = await ENG.villa(sess, decodeURIComponent(p.slice(16)),
+          url.searchParams.get('mode') || 'update', d, msg);
+        return out ? html(200, out) : html(404, page('Not found', sess,
+          '<div class="blk"><h1 class="h1">No such villa.</h1></div>'));
+      }
+    }
 
     if (p === '/engineer/certify' && req.method === 'POST' && sess.role === 'engineer') {
       const f = form(await body(req));
@@ -877,11 +866,130 @@ const server = http.createServer(async (req, res) => {
           + (r.bank ? `The evidence pack is queued for ${r.bank}.`
                     : 'No lender is on file, so there is no pack to send.')
         : 'That stage could not be certified.';
-      res.writeHead(302, { location: '/engineer?m=' + encodeURIComponent(msg) });
+      res.writeHead(302, { location: '/engineer/certs?m=' + encodeURIComponent(msg) });
       return res.end();
     }
 
-    if (p === '/office' && sess.role === 'office') return html(200, await officeScreen(sess));
+    /* ------------------------------------------------- the engineer writes
+
+       Every one of these is the point of the whole exercise: an act on site
+       that another role sees. Marking a stage moves it onto the office's
+       sign-off list and off the engineer's; answering a visit is read by the
+       buyer who booked it; closing a snag needs the photograph of the fix. */
+    if (p === '/engineer/mark' && req.method === 'POST' && sess.role === 'engineer') {
+      const f = form(await body(req));
+      const back = m => { res.writeHead(302, { location: '/engineer/villas?m=' + encodeURIComponent(m) }); res.end(); };
+      const r = await asUser(sess, async c => {
+        /* A stage cannot be marked without evidence. The rule lives here and
+           not only in the markup, because a form is not a constraint. */
+        const s = (await c.query(
+          `SELECT s.id, s.status, u.code, t.name,
+                  (SELECT count(*)::int FROM evidence e WHERE e.unit_stage_id = s.id) shots
+             FROM unit_stages s JOIN units u ON u.id = s.unit_id
+             JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
+            WHERE s.id = $1`, [f.id])).rows[0];
+        if (!s || s.status !== 'pending') return null;
+        if (s.shots < 1) return { refused: s };
+        await c.query(
+          `UPDATE unit_stages SET status = 'marked', marked_by = $2, marked_at = now()
+            WHERE id = $1 AND status = 'pending'`, [f.id, sess.name]);
+        return { s };
+      });
+      if (!r) return back('That stage could not be marked.');
+      if (r.refused) return back(r.refused.code + ' ' + r.refused.name.toLowerCase()
+        + ' needs a photograph before it can be marked done.');
+      return back(r.s.code + ' ' + r.s.name.toLowerCase()
+        + ' marked done on site. It is now waiting for a certificate.');
+    }
+
+    if (p === '/engineer/visit' && req.method === 'POST' && sess.role === 'engineer') {
+      const f = form(await body(req));
+      const want = ['confirmed', 'declined', 'reassign'].includes(f.do) ? f.do : null;
+      const r = want && await asUser(sess, async c => (await c.query(
+        `UPDATE visits SET status = $2, responded_at = now(), response_note = $3
+          WHERE id = $1 AND status <> 'done'
+          RETURNING (SELECT code FROM units WHERE id = unit_id) code`,
+        [f.id, want, want === 'reassign' ? 'Engineer asked for this to be reassigned.' : null]
+      )).rows[0]);
+      const said = { confirmed: 'accepted', declined: 'declined', reassign: 'sent back to the office to reassign' };
+      res.writeHead(302, { location: '/engineer/visits?m=' + encodeURIComponent(
+        r ? `Visit to ${r.code} ${said[want]}. ${want === 'confirmed'
+          ? 'The buyer can see it is confirmed.' : 'The office picks it up from here.'}`
+          : 'That visit could not be answered.') });
+      return res.end();
+    }
+
+    if (p === '/engineer/log' && req.method === 'POST' && sess.role === 'engineer') {
+      const f = form(await body(req));
+      const kind = Object.keys(ENG.LOG_KINDS).includes(f.kind) ? f.kind : null;
+      const title = (f.title || '').trim().slice(0, 120);
+      const ok = kind && title && await asUser(sess, async c => {
+        const project = (await c.query(`SELECT project_id FROM units LIMIT 1`)).rows[0];
+        if (!project) return false;
+        await c.query(
+          `INSERT INTO site_log (id, project_id, kind, title, detail, logged_by)
+           VALUES ($1,$2,$3,$4,$5,$6)`,
+          ['log-' + crypto.randomUUID(), project.project_id, kind, title,
+           (f.detail || '').trim().slice(0, 200), sess.id]);
+        return true;
+      });
+      res.writeHead(302, { location: '/engineer/log?m=' + encodeURIComponent(
+        ok ? 'Logged: ' + title : 'That entry could not be logged.') });
+      return res.end();
+    }
+
+    if (p === '/engineer/flag' && req.method === 'POST' && sess.role === 'engineer') {
+      const f = form(await body(req));
+      const reason = (f.reason || '').trim().slice(0, 60);
+      const detail = (f.detail || '').trim().slice(0, 200);
+      const r = reason && detail && await asUser(sess, async c => {
+        const s = (await c.query(
+          `SELECT s.id, u.id unit_id, u.code, u.buyer_name, u.project_id
+             FROM unit_stages s JOIN units u ON u.id = s.unit_id
+            WHERE u.code = $1 AND s.status IN ('pending','marked')
+            ORDER BY s.stage_code LIMIT 1`, [f.code])).rows[0];
+        if (!s) return null;
+        /* The blocker is what the office's worklist reads, so a problem
+           reported on site is on their screen without anyone being told. */
+        await c.query(
+          `INSERT INTO blockers (unit_stage_id, holder, holder_role, reason, since)
+           VALUES ($1,$2,'engineer',$3,current_date)
+           ON CONFLICT (unit_stage_id) DO UPDATE SET holder = $2, reason = $3, since = current_date`,
+          [s.id, sess.name, reason + ': ' + detail]);
+        await c.query(
+          `INSERT INTO notifications (id, project_id, for_role, unit_id, severity, title, detail)
+           VALUES ($1,$2,'office',$3,'warn',$4,$5)`,
+          ['nt-' + crypto.randomUUID(), s.project_id, s.unit_id,
+           s.code + ': ' + reason, detail + ' — reported by ' + sess.name]);
+        return s;
+      });
+      res.writeHead(302, { location: r
+        ? '/engineer/villa/' + encodeURIComponent(f.code) + '?mode=flag&m='
+          + encodeURIComponent('Reported. ' + r.buyer_name + ' and the office both see it.')
+        : '/engineer/villas?m=' + encodeURIComponent('That problem could not be reported.') });
+      return res.end();
+    }
+
+    if (p === '/office' && sess.role === 'office')
+      return html(200, await officeScreen(sess, url.searchParams.get('m')));
+
+    /* Reassigning a villa. The write goes through assign_engineer(), which is
+       SECURITY DEFINER because units has no UPDATE policy - the same route
+       record_sanction takes, and for the same reason. */
+    if (p === '/office/assign' && req.method === 'POST' && sess.role === 'office') {
+      const f = form(await body(req));
+      const r = f.unit && f.engineer && await asUser(sess, async c => {
+        const ok = (await c.query('SELECT assign_engineer($1,$2) ok', [f.unit, f.engineer])).rows[0].ok;
+        if (!ok) return null;
+        return (await c.query(
+          `SELECT u.code, e.display_name FROM units u
+             JOIN users e ON e.id = u.assigned_engineer_id WHERE u.id = $1`, [f.unit])).rows[0];
+      }).catch(() => null);
+      res.writeHead(302, { location: '/office?m=' + encodeURIComponent(
+        r ? `${r.code} reassigned to ${r.display_name}. It is on their list now and off the last one's.`
+          : 'That villa could not be reassigned.') });
+      return res.end();
+    }
 
     if (p === '/office/sanctions' && sess.role === 'office')
       return html(200, await sanctionScreen(sess, url.searchParams.get('m')));
@@ -948,7 +1056,15 @@ const server = http.createServer(async (req, res) => {
         return html(404, page('Not found', sess,
           '<div class="gap l"></div><div class="blk"><h1 class="h1">Not found.</h1></div>'));
       }
-      const back = m => { res.writeHead(302, { location: '/engineer?m=' + encodeURIComponent(m) }); res.end(); };
+      /* Where to land afterwards. The villa detail screen posts its own path
+         so the engineer stays on the villa he is photographing instead of
+         being thrown back to a list. Only a local path is honoured: a `back`
+         value is attacker-controlled input like any other. */
+      let dest = '/engineer/certs';
+      const back = m => {
+        res.writeHead(302, { location: dest + (dest.includes('?') ? '&' : '?') + 'm=' + encodeURIComponent(m) });
+        res.end();
+      };
       let parsed;
       try {
         const raw = await MP.read(req, EV.MAX_BYTES + 4096);
@@ -962,6 +1078,8 @@ const server = http.createServer(async (req, res) => {
       const stage = (parsed.fields.stage || '').trim();
       const caption = (parsed.fields.caption || '').trim().slice(0, 120);
       const gps = (parsed.fields.gps || '').trim().slice(0, 40);
+      // A relative path on this site, nothing else. Not a URL, not a host.
+      if (/^\/[A-Za-z0-9/_-]{1,80}$/.test(parsed.fields.back || '')) dest = parsed.fields.back;
       if (!file || !stage || !caption || !gps) return back('A photograph, a caption and a GPS reading are all required.');
 
       let stored;
@@ -990,6 +1108,42 @@ const server = http.createServer(async (req, res) => {
         return back('That stage would not accept the photograph.');
       }
       return back('Photograph filed against ' + stage + '.');
+    }
+
+    /* Closing a snag is the same act as filing evidence - a photograph, taken
+       and stamped - so it goes through the same store and the same integrity
+       check. What differs is where the hash lands: a snag closed without one
+       is a claim rather than a record, which the table's own constraint says. */
+    if (p === '/engineer/snag' && req.method === 'POST' && sess.role === 'engineer') {
+      const back = m => { res.writeHead(302, { location: '/engineer/snags?m=' + encodeURIComponent(m) }); res.end(); };
+      let parsed;
+      try {
+        const raw = await MP.read(req, EV.MAX_BYTES + 4096);
+        parsed = MP.parse(raw, req.headers['content-type']);
+      } catch (e) {
+        return back(e.code === 'TOO_LARGE'
+          ? 'That photograph is larger than the ' + Math.round(EV.MAX_BYTES / 1048576) + ' MB limit.'
+          : 'That upload could not be read.');
+      }
+      const file = parsed.files.photo;
+      const id = (parsed.fields.id || '').trim();
+      const caption = (parsed.fields.caption || '').trim().slice(0, 120);
+      if (!file || !id || !caption) return back('A photograph of the fix and a note are both required.');
+
+      let stored;
+      try { stored = await EV.store(file.data); }
+      catch (e) {
+        return back(e.code === 'BAD_TYPE' ? 'Only JPEG and PNG photographs are accepted.'
+                  : 'That photograph could not be stored.');
+      }
+
+      const r = await asUser(sess, async c => (await c.query(
+        `UPDATE snags SET status = 'fixed', fixed_at = now(), fixed_by = $2, fix_sha256 = $3
+          WHERE id = $1 AND status = 'open'
+          RETURNING title, (SELECT code FROM units WHERE id = unit_id) code`,
+        [id, sess.id, stored.sha256])).rows[0]);
+      return back(r ? r.code + ': "' + r.title + '" photographed and sent to the buyer to sign off.'
+                    : 'That snag is not open.');
     }
 
     const doc = /^\/doc\/(demand|certificate)\/(.+)\.pdf$/.exec(p);

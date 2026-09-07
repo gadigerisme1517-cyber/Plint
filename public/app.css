@@ -190,6 +190,16 @@ body { padding: 0; margin: 0; background: var(--paper); }
   .uprow .mid { flex-wrap: wrap !important; gap: 8px !important; }
   .uprow .mid .fi { flex: 1 1 100% !important; min-width: 0 !important; }
 
+  /* v21's two-column tile grid, used by the site log. `1fr` has an automatic
+     minimum of min-content, so a tile whose label will not break forces its
+     column wider than the share it was given and the second column runs off
+     the screen - which is what happened at 375px: two columns of 208px and
+     182px inside a 323px box. `minmax(0, 1fr)` lets a column be narrower than
+     its content, and the tiles wrap their text instead. */
+  .lgrid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .lgb { min-width: 0; }
+  .lgb .h2, .lgb .s { overflow-wrap: anywhere; }
+
   /* The ageing histogram is a sparkline beside a KPI on a desktop. Given the
      full width of a phone it hit its 74px per-bar cap and became four slabs.
 
