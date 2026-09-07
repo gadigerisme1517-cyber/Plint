@@ -210,8 +210,19 @@ body { padding: 0; margin: 0; background: var(--paper); }
 
    A single overflowing child makes the whole document pan, which on a phone
    reads as a broken page. These are the containers that hold long unbroken
-   strings: certificate hashes, GPS pairs, bank names. */
-html, body { overflow-x: hidden; }
+   strings: certificate hashes, GPS pairs, bank names.
+
+   `clip`, not `hidden`. `overflow-x: hidden` makes the element a scroll
+   container, which forces `overflow-y` from `visible` to `auto` - so `body`
+   grew its own scrollbar inside the document's, its content box became 1420px
+   in a 1430px viewport, and every buyer screen sat in a dead ten pixel strip.
+   Measured on the deployed URL before this was changed. `clip` clips without
+   creating a scroll container and leaves the vertical axis alone.
+
+   It is a backstop, not the fix: nothing in the app overflows, and the walk in
+   the notes below is what establishes that. A browser too old for `clip` gets
+   no backstop and needs none. */
+html { overflow-x: clip; }
 .wrow .mid p, .item .mid p, .lede .cap { overflow-wrap: anywhere; }
 img, svg, table { max-width: 100%; }
 

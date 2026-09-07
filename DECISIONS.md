@@ -1881,3 +1881,22 @@ Worth naming the pattern: three separate defects in this feature - the
 constant cache name, the `===` on `If-None-Match`, and this - were invisible
 on localhost and shipped green. A local suite proves the code does what it
 says. It does not prove the network, the proxy, or the cascade agree.
+
+## The sideways-scroll backstop was costing ten pixels
+
+`html, body { overflow-x: hidden }` went in as a belt-and-braces guard. It is
+not free: `overflow-x: hidden` makes an element a scroll container, which
+forces `overflow-y` from `visible` to `auto`. On `body` that meant a second
+scrollbar inside the document's own - `body.clientWidth` measured **1420px in a
+1430px viewport** on the deployed URL, so every buyer screen sat in a dead ten
+pixel strip against the right edge while reporting no sideways scroll.
+
+`html { overflow-x: clip }` clips without creating a scroll container and
+leaves the vertical axis alone. And the guard was never the fix: the element
+walk is what establishes nothing overflows. A browser too old for `clip` gets
+no backstop and does not need one.
+
+Worth noticing how this was found. `document.scrollWidth === clientWidth` was
+true the whole time - the guard was making the symptom I was testing for
+impossible to observe. It only surfaced from measuring the box against the
+viewport instead, which is the check that would have caught it on day one.

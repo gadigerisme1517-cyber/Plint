@@ -187,6 +187,18 @@ test('every role can install the app, not only the buyer', async () => {
 
 // ------------------------------------------------------- responsive rules
 
+test('the sideways-scroll backstop does not cost a scrollbar', async () => {
+  /* `overflow-x: hidden` makes an element a scroll container, which forces
+     `overflow-y` from `visible` to `auto`. On `body` that meant a second
+     scrollbar inside the document's own: the content box measured 1420px in a
+     1430px viewport on the deployed URL, and every buyer screen sat in a dead
+     ten pixel strip. `clip` clips without becoming a scroll container. */
+  const css = await (await get('/app.css')).text();
+  assert.ok(!/\bbody\b[^{]*\{[^}]*overflow-x:\s*hidden/.test(css),
+    'body uses overflow-x: hidden, which gives it its own scrollbar');
+  assert.match(css, /html\s*\{\s*overflow-x:\s*clip/, 'no horizontal backstop at all');
+});
+
 test('the worklists can stop being tables', async () => {
   const css = await (await get('/app.css')).text();
   const narrow = /@media \(max-width: 720px\) \{([\s\S]*?)\n\}/.exec(css);
