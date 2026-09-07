@@ -165,19 +165,27 @@ module.exports = function buyerScreens(ctx) {
       const shots = d.evidence.filter(e => e.stage_code === s.stage_code);
       const last = shots[0] ? days(shots[0].taken_at) : null;
       const dem = d.demands.find(x => x.stage_code === s.stage_code);
+      /* A finished stage gets a date, not an age. The number here is how old
+         the last photograph is, and on a stage that is paid and behind you
+         that measures nothing - it was reddening every settled stage on the
+         screen, five in a row saying "173d" in the colour the rest of the
+         application uses for late. An age is only a verdict while somebody is
+         still waiting for the thing it counts. */
+      const settled = s.status === 'paid';
       return wrow({
         href: '/stage/' + encodeURIComponent(s.stage_code),
         code: String(i + 1).padStart(2, '0'),
         title: s.name,
         detail: esc(s.description) +
           (shots.length ? ' &middot; ' + shots.length + ' photograph' + (shots.length === 1 ? '' : 's')
-                        : ' &middot; no photographs yet'),
+                        : ' &middot; no photographs yet')
+          + (settled && dem && dem.paid_at ? ' &middot; paid ' + M.longDate(dem.paid_at) : ''),
         chip: stateChip(s),
-        /* A day count with no verdict beside it is a number the reader has to
-           score for themselves. Where the pill is already busy saying what the
-           stage is, the number is coloured on the same thresholds instead. */
-        days: last === null ? '' : last + 'd',
-        daysAge: last,
+        /* And where it is still a verdict, it is coloured on the thresholds the
+           whole application uses, because the pill here is busy saying what the
+           stage is rather than how old it is. */
+        days: settled || last === null ? '' : last + 'd',
+        daysAge: settled ? null : last,
         amount: M.money(priced[i].totalPaise),
       });
     }).join('');

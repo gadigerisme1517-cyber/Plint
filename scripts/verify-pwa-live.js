@@ -28,7 +28,8 @@ const WHO = {
    page proves nothing about the screen they are actually looking at when they
    decide to install. */
 const SCREENS = {
-  buyer:    ['/villa/B-14', '/documents'],
+  buyer:    ['/journey', '/villa/B-14', '/visit', '/money', '/more',
+             '/bank', '/loan', '/agreement', '/choices', '/questions', '/documents'],
   engineer: ['/engineer', '/engineer/villas', '/engineer/visits', '/engineer/log',
              '/engineer/certs', '/engineer/snags'],
   office:   ['/office', '/office/sanctions'],

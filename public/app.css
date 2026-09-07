@@ -423,18 +423,18 @@ body { padding: 0; margin: 0; background: var(--paper); }
   .wrow .stc  { grid-area: 1 / 3; justify-self: end; text-align: right;
                 line-height: 20px; }
 
-  /* Line two: the detail, with the money right-aligned beside it. */
-  /* The detail is a sentence, so it gets the width of the card.
+  /* Line two: the detail is a sentence, so it gets a line of its own.
 
      It used to share the line with the amount and the action, which left it
      162px of a 393px screen: "N. Prasad · marked by Suresh Kumar on 31 Aug
      2026" folded into a narrow column with the amount stranded beneath it,
-     and the card came out 110px against 84px for a row without an action. */
-     Spanning columns one and two rather than all three: run to the far edge
-     and the sentence sits directly under the status pill and directly over
-     the Review button, reading as though it were crowding both. Stopping it
-     short of the pill's column gives it a right edge of its own; a sentence
-     this long then takes two lines, which is what it should have taken. */
+     and the card came out 110px against 84px for a row without an action.
+
+     Columns one and two rather than all three: run it to the far edge and the
+     sentence sits directly under the status pill and directly over the Review
+     button, reading as though it were crowding both. Stopping short of the
+     pill's column gives it a right edge of its own, and a sentence this long
+     then takes the two lines it should have taken. */
   .wrow .mid p.s { grid-area: 2 / 1 / 3 / 3; margin-top: 3px; }
 
   /* Then the money and the control that acts on it.

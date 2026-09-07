@@ -265,6 +265,75 @@ test('the install belongs to the application, not to one role', async () => {
     'the three roles link different shells: ' + [...sheets].join(', '));
 });
 
+test('the stylesheet parses: no rule is stranded in prose', async () => {
+  /* Every other test in this file matches the text of app.css, and text cannot
+     tell a live rule from a dead one. A comment that was closed twice - a
+     terminator left behind from an earlier edit and a second one at the end
+     of the new paragraph - left five lines of English between two rules. The
+     browser read that English as the start of a selector, ran on to the next
+     `{`, and dropped `.wrow .mid p.s` with it. Every text assertion stayed
+     green, because the rule was still in the file; the detail line auto-placed
+     itself into the day-count column on every card in the application.
+
+     So this reads the file the way a parser does. Strip the comments, then
+     what is left has to be nothing but `selector { declarations }` and
+     at-rules - any stray word between rules is a rule somebody has lost. */
+  for (const name of ['app.css', 'plint.css']) {
+    const css = await (await get('/' + name)).text();
+
+    // Comments out, strings out (a `content:` may hold a brace or a slash).
+    let bare = css.replace(/\/\*[\s\S]*?\*\//g, ' ')
+                  .replace(/"(?:[^"\\]|\\.)*"/g, '""')
+                  .replace(/'(?:[^'\\]|\\.)*'/g, "''");
+
+    // An unclosed or twice-closed comment shows up here first.
+    assert.ok(!bare.includes('*/'), name + ' has a stray comment terminator');
+    assert.ok(!bare.includes('/*'), name + ' has an unclosed comment');
+
+    /* Walk it: outside a block, text up to the next `{` is a selector or an
+       at-rule prelude. A selector may not contain a `;` or a `}`, and it may
+       not read as a sentence - the giveaway is a full stop followed by a
+       space, which no selector has and every dropped paragraph does. */
+    let depth = 0, buf = '', line = 1;
+    for (const ch of bare) {
+      if (ch === '\n') line++;
+      if (ch === '{') {
+        if (depth === 0) {
+          const sel = buf.trim().replace(/\s+/g, ' ');
+          assert.ok(!/[;}]/.test(sel),
+            name + ': a selector near line ' + line + ' contains a ; or } - ' +
+            'a rule above it was probably swallowed: ' + JSON.stringify(sel.slice(0, 90)));
+          assert.ok(!/\.\s/.test(sel) && !/\,\s\w+\s\w+\s\w+\s\w+/.test(sel),
+            name + ': prose is being read as a selector near line ' + line + ': ' +
+            JSON.stringify(sel.slice(0, 90)));
+        }
+        depth++; buf = '';
+      } else if (ch === '}') {
+        depth--; buf = '';
+        assert.ok(depth >= 0, name + ' closes a block it never opened, near line ' + line);
+      } else if (depth === 0) {
+        buf += ch;
+      }
+    }
+    assert.strictEqual(depth, 0, name + ' ends inside an unclosed block');
+    assert.strictEqual(buf.trim(), '', name + ' ends with text outside any rule');
+  }
+});
+
+test('the rules the phone layout depends on are rules, not prose', async () => {
+  /* The handful whose loss is silent: they change where something sits rather
+     than whether it is drawn, so the page still renders and simply renders
+     wrong. Each is asserted elsewhere by text; here they are counted as
+     declarations inside a block, which is what the text assertions cannot see. */
+  const css = await (await get('/app.css')).text();
+  const bare = css.replace(/\/\*[\s\S]*?\*\//g, ' ');
+  for (const sel of ['.wrow .mid p.s', '.wrow .amt', '.wrow .days', '.wrow .stc',
+                     '.mhead, .mbody, .scroll', '.wbtn, .sortb']) {
+    const re = new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{[^}]*\\}');
+    assert.match(bare, re, sel + ' is not a live rule once the comments are gone');
+  }
+});
+
 // ------------------------------------------------------- responsive rules
 
 test('the sideways-scroll backstop does not cost a scrollbar', async () => {
