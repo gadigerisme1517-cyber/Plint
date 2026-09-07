@@ -410,14 +410,20 @@ body { padding: 0; margin: 0; background: var(--paper); }
     background: var(--paper);
     border-bottom: 1px solid var(--hair);
   }
-  .hstrip { flex-wrap: wrap; gap: 0; align-items: baseline; }
+  /* A column gap rather than a margin on the second KPI: if the two are too
+     wide to share the line the second wraps, and a margin would then indent it
+     past the page gutter. It did, by 18px, on the head office dashboard. */
+  .hstrip { flex-wrap: wrap; column-gap: 18px; row-gap: 0; align-items: baseline; }
   .hstrip .g { flex: 1 1 100%; order: 2; }
   .pgt { font-size: 15px; line-height: 20px; color: var(--ink-2); font-weight: 500; }
   .mhead .s { font-size: 12.5px; line-height: 17px; margin-top: 4px !important; }
 
   /* The number first and biggest. `order` puts it above the title without
      moving it in the markup, where it belongs after the heading it counts. */
-  .kpi { order: 1; flex: 1 1 100%; flex-direction: row; align-items: baseline;
+  /* `flex: 0 0 auto` rather than a full line each: the head office shows two
+     of these and they were taking 116px of an 812px screen between them, one
+     above the other. `.g` still starts a new line because its basis is 100%. */
+  .kpi { order: 1; flex: 0 0 auto; flex-direction: row; align-items: baseline;
          gap: 8px; margin: 2px 0 2px; }
   /* plint.css:417 sets `font: 400 19px/24px … !important` on `.kpin`, so a
      plain `font-size` here loses to it. The whole shorthand, and `!important`
@@ -426,8 +432,9 @@ body { padding: 0; margin: 0; background: var(--paper); }
   .kpin { font: 500 44px/46px 'Instrument Sans', system-ui, sans-serif !important;
           font-variant-numeric: tabular-nums; letter-spacing: -1px; }
   .kpi .k { font-size: 12px; }
-  /* A second KPI beside the first, where a screen has two. */
-  .kpi ~ .kpi { flex: 0 0 auto; margin-left: 18px; }
+  /* The second is quieter than the first: the first is the screen's headline
+     figure, the second is context for it. */
+  .kpi ~ .kpi .kpin { font-size: 30px !important; line-height: 46px !important; }
 
 
   /* ------------------------------------------------ 5b. tap targets

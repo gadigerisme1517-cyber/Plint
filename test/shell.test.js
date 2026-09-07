@@ -367,6 +367,16 @@ test('the summary reads as a summary, not as body text', async () => {
   assert.match(kpin[1], /font:\s*\d+ 4\dpx/, 'the count is not the largest thing in the block');
   assert.match(kpin[1], /!important/, 'plint.css sets .kpin with !important and will win');
   assert.match(narrow, /\.kpi \{[^}]*order:\s*1/, 'the count is not lifted above the title');
+  /* But not a line each. The head office shows two, and one above the other
+     they took 116px of the 812px before a single row of work appeared. */
+  assert.match(narrow, /\.kpi \{[^}]*flex:\s*0 0 auto/,
+    'a KPI still claims a whole line, so two of them cost two');
+  /* And the gap between them belongs to the strip, not to the second one: as a
+     margin it survived the wrap and pushed the second past the page gutter. */
+  assert.ok(!/\.kpi ~ \.kpi \{[^}]*margin-left/.test(narrow),
+    'the second KPI carries its own margin, which will indent it if it wraps');
+  assert.match(narrow, /\.hstrip \{[^}]*column-gap:\s*18px/,
+    'the header strip has no column gap to separate two counts');
   assert.match(narrow, /\.pgt \{[^}]*font-size:\s*15px/, 'the title still competes with the count');
 });
 
