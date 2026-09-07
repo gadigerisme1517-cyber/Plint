@@ -304,6 +304,9 @@ body { padding: 0; margin: 0; background: var(--paper); }
     grid-area: 1 / 1;
     font: 500 14.5px/20px 'Instrument Sans', system-ui, sans-serif;
     color: var(--ink);
+    /* The title carries a 3px top margin from the desktop table, which pushed
+       its line box 3px below the day count and the pill sharing the track. */
+    margin-top: 0;
   }
 
   /* Top right, on the heading's line: how long, and where it stands. */
