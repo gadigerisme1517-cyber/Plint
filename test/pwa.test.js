@@ -14,6 +14,7 @@ const { test, before, after } = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 
 const { pool } = require('../src/db');
 
@@ -160,6 +161,72 @@ test('the worker refuses to touch anything but same-origin GETs', () => {
   assert.strictEqual(puts, 1, 'expected exactly one cache write, found ' + puts);
 });
 
+// ------------------------------------------ the cache name has to move
+
+test('the worker ships with a real build hash, not the placeholder', async () => {
+  const src = await (await get('/sw.js')).text();
+  assert.ok(!src.includes('__BUILD__'), 'the server served the template, unsubstituted');
+  const v = /const VERSION = '(plint-shell-[0-9a-f]{12})'/.exec(src);
+  assert.ok(v, 'no versioned cache name in the served worker');
+  assert.strictEqual(v[1], 'plint-shell-' + server.BUILD);
+});
+
+test('the build hash moves when any shell asset changes', () => {
+  /* The whole point of the hash. If it were a constant - as it was when this
+     first shipped - an installed app would keep the stylesheet it cached on
+     the day it was installed, through every later deploy, for ever: the cache
+     is keyed by URL, the URL carries no version, and cache-first never asks. */
+  const css = path.join(__dirname, '..', 'public', 'app.css');
+  const before = fs.readFileSync(css);
+  const read = () => JSON.parse(execFileSync(process.execPath,
+    ['-e', 'const s=require("./src/server");console.log(JSON.stringify(s.BUILD));process.exit(0)'],
+    { cwd: path.join(__dirname, '..'), encoding: 'utf8' }).trim());
+
+  const first = read();
+  assert.strictEqual(first, server.BUILD, 'a child of the same tree hashes differently');
+  try {
+    fs.writeFileSync(css, Buffer.concat([before, Buffer.from('\n/* one byte */\n')]));
+    assert.notStrictEqual(read(), first, 'a changed stylesheet left the cache name alone');
+  } finally {
+    fs.writeFileSync(css, before);
+  }
+  assert.strictEqual(read(), first, 'the hash did not come back when the file did');
+});
+
+test('the shell is filled past the browser HTTP cache', () => {
+  /* A source assertion, because no Node process can observe a browser's HTTP
+     cache. Without `cache: 'reload'` a new VERSION opens a new cache and then
+     fills it from the same week-old icon the HTTP cache is still holding,
+     which makes versioning the name pointless. Confirmed by hand in Chrome:
+     an edited stylesheet reached an already-installed worker. */
+  const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'sw.js'), 'utf8');
+  assert.match(src, /new Request\(url, \{ cache: 'reload' \}\)/,
+    'the shell must be fetched with cache: reload');
+  const fills = [...src.matchAll(/addAll\(SHELL[^)]*\)/g)].map(m => m[0]);
+  assert.strictEqual(fills.length, 2, 'expected two shell fills: install, and sign-out');
+  for (const f of fills) {
+    assert.match(f, /\.map\(fresh\)/, 'a shell fill that does not bypass the HTTP cache: ' + f);
+  }
+});
+
+test('the stylesheets revalidate instead of claiming to be immutable', async () => {
+  for (const p of ['/plint.css', '/app.css']) {
+    const r = await get(p);
+    assert.strictEqual(r.headers.get('cache-control'), 'no-cache',
+      p + ' has no version in its URL, so it must not be held without asking');
+    const etag = r.headers.get('etag');
+    assert.match(etag || '', /^"[0-9a-f]{16}"$/, p + ' has no ETag, so revalidation costs a download');
+
+    const again = await fetch(BASE + p, { headers: { 'if-none-match': etag } });
+    assert.strictEqual(again.status, 304, p + ' ignored If-None-Match');
+    assert.strictEqual((await again.arrayBuffer()).byteLength, 0);
+  }
+
+  // The icons genuinely may be held: a stale mark for a week is cosmetic.
+  const icon = await get('/icons/icon-192.png');
+  assert.match(icon.headers.get('cache-control'), /max-age=604800/);
+});
+
 test('sign-out clears the cache and then restores the shell', () => {
   /* Clearing alone leaves the cache to refill lazily from whatever the next
      page requests, which does not include /offline. Verified in Chrome: after
@@ -169,7 +236,7 @@ test('sign-out clears the cache and then restores the shell', () => {
   const handler = /'plint:signout'\)? *\{?([\s\S]*?)\n\}\);/.exec(src);
   assert.ok(handler, 'no sign-out handler in sw.js');
   assert.match(handler[1], /caches\.delete/, 'sign-out must clear the cache');
-  assert.match(handler[1], /addAll\(SHELL\)/, 'sign-out must put the shell back');
-  assert.ok(handler[1].indexOf('caches.delete') < handler[1].indexOf('addAll(SHELL)'),
+  assert.match(handler[1], /addAll\(SHELL/, 'sign-out must put the shell back');
+  assert.ok(handler[1].indexOf('caches.delete') < handler[1].indexOf('addAll(SHELL'),
     'the shell is restored before it is deleted, which deletes it');
 });

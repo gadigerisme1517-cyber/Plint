@@ -7,7 +7,7 @@ engineer certified it, and that a demand for money followed from that
 certificate. Its value is the evidence trail, not the screens.
 
 `npm test` builds a scratch database, migrates it, seeds it, runs every suite,
-and drops it. **158 assertions across fourteen suites, green from nothing.**
+and drops it. **162 assertions across fourteen suites, green from nothing.**
 
 Every one of them has been checked by mutation — break the behaviour, confirm a
 test fails. `npm run audit`: 36 mutations, 34 killed, 2 demonstrated
@@ -394,6 +394,21 @@ mid-session: the worker registers and activates; a signed-in villa page goes
 through the worker and is not cached; with the server down, navigation renders
 the offline page from cache and a demand PDF throws; sign-out drops a sentinel
 entry and restores all ten shell entries.
+
+**How an update reaches an installed app.** `/sw.js` is served `no-cache`, so
+the browser refetches it on navigation; its cache name is `plint-shell-` plus a
+hash over the bytes of every file in the shell, so any change opens a new cache,
+fills it past the browser's own HTTP cache, and deletes the old one. Verified by
+editing one byte of a stylesheet and watching the edited file arrive in an
+already-installed app. Get this wrong — a constant cache name, which is what
+shipped first — and an installed app keeps its original stylesheet through every
+future deploy, permanently, with no header that can fix it.
+
+**Free tier, worth knowing.** The Render instance sleeps after 15 minutes, so
+the first request wakes it and can take the better part of a minute. That is
+slow, not offline: `fetch` waits rather than failing, so the offline page does
+not appear. Evidence photographs are on the container's own filesystem and are
+gone after every sleep, deploy or restart — nothing to do with the worker.
 
 **Not verified**: the `@media (display-mode: standalone)` layout — full-bleed,
 no fake status bar, safe-area padding — has not been seen on an actually

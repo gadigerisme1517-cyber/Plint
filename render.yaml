@@ -17,7 +17,15 @@ services:
     plan: free
     region: singapore          # nearest to the project this demo describes
     healthCheckPath: /health
-    autoDeploy: false
+    # On. It was off, with no reason recorded anywhere, and the cost of that
+    # was a push sitting on GitHub while the live URL served a build without
+    # the service worker in it - looking exactly like a code fault. A demo URL
+    # that silently lags master is worse than a surprise deploy.
+    #
+    # Changing this file does not deploy anything. Render reads it on a
+    # blueprint sync, so the first deploy after this lands is still a Manual
+    # Deploy in the dashboard.
+    autoDeploy: true
     envVars:
       # Supabase, pasted once into Render's dashboard. sync:false means Render
       # prompts for it and stores it there; it is never in this repository.

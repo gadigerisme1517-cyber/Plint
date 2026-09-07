@@ -24,9 +24,17 @@ const esc = s => String(s == null ? '' : s)
    sw.js is served no-cache on purpose: it is how every future change reaches
    an installed app, so it must never be the stale thing. */
 const IMMUTABLE = 'public, max-age=604800';
+
+/* The stylesheets are NOT immutable and must not claim to be. Their URLs carry
+   no version, so a browser told to hold /plint.css for a week holds whatever
+   it had when the deploy landed. `no-cache` means "keep it, but ask before you
+   use it" - and the ask costs a 304 against the ETag below, not a download.
+   The icons keep the long life: a stale mark for a week is cosmetic, a stale
+   stylesheet is a broken screen. */
+const REVALIDATE = 'no-cache';
 const STATIC = {
-  '/plint.css':            ['plint.css', 'text/css; charset=utf-8', IMMUTABLE],
-  '/app.css':              ['app.css', 'text/css; charset=utf-8', IMMUTABLE],
+  '/plint.css':            ['plint.css', 'text/css; charset=utf-8', REVALIDATE],
+  '/app.css':              ['app.css', 'text/css; charset=utf-8', REVALIDATE],
   '/manifest.webmanifest': ['manifest.webmanifest', 'application/manifest+json; charset=utf-8', 'public, max-age=3600'],
   '/sw.js':                ['sw.js', 'text/javascript; charset=utf-8', 'no-cache'],
   '/offline':              ['offline.html', 'text/html; charset=utf-8', 'public, max-age=3600'],
@@ -37,6 +45,42 @@ const STATIC = {
   '/icons/apple-touch-icon.png':  ['icons/apple-touch-icon.png', 'image/png', IMMUTABLE],
   '/icons/favicon.svg':           ['icons/favicon.svg', 'image/svg+xml; charset=utf-8', IMMUTABLE],
 };
+
+/* Read and hashed once, at boot. Two things need the hash: an ETag, so the
+   `no-cache` above costs a 304 rather than a download; and BUILD. */
+const ASSETS = {};
+for (const [route, [file, type, cache]] of Object.entries(STATIC)) {
+  const bytes = fs.readFileSync(path.join(__dirname, '..', 'public', file));
+  const digest = crypto.createHash('sha256').update(bytes).digest('hex').slice(0, 16);
+  ASSETS[route] = { bytes, type, cache, etag: '"' + digest + '"', digest };
+}
+
+/* One hash over every static file, in a fixed order, computed before sw.js is
+   templated so nothing is circular.
+
+   It is the service worker's cache name. Without it the name is a constant,
+   and a constant is a bug: the cache is keyed by URL, the URLs carry no
+   version, and cache-first never asks the server again - so an app installed
+   today would keep today's stylesheet through every future deploy, for ever.
+   Change one byte of one asset and the worker gets a new cache to fill and
+   deletes the old one on activate. */
+const BUILD = crypto.createHash('sha256')
+  .update(Object.keys(ASSETS).sort().map(r => r + ' ' + ASSETS[r].digest).join('\n'))
+  .digest('hex').slice(0, 12);
+
+{
+  const a = ASSETS['/sw.js'];
+  const templated = a.bytes.toString('utf8');
+  /* Anchored on the declaration, not on the token appearing anywhere: the
+     comment above it mentions __BUILD__ too, so a looser check passed happily
+     while VERSION had been hardcoded back to a constant. */
+  if (!/^const VERSION = 'plint-shell-__BUILD__';$/m.test(templated)) {
+    throw new Error("public/sw.js must declare: const VERSION = 'plint-shell-__BUILD__'; " +
+                    'without it the shell cache name never changes between deploys');
+  }
+  a.bytes = Buffer.from(templated.split('__BUILD__').join(BUILD), 'utf8');
+  a.etag = '"' + crypto.createHash('sha256').update(a.bytes).digest('hex').slice(0, 16) + '"';
+}
 
 /* Registers the service worker, and clears its cache on sign-out.
 
@@ -689,11 +733,15 @@ const server = http.createServer(async (req, res) => {
        no request can ever walk out of public/ and no route can be added to
        this list by accident. These are the only things the service worker is
        allowed to cache, and the two lists have to agree. */
-    if (STATIC[p]) {
-      const [file, type, cache] = STATIC[p];
-      return send(200, type, fs.readFileSync(path.join(__dirname, '..', 'public', file)), {
-        'cache-control': cache,
-      });
+    if (ASSETS[p]) {
+      const a = ASSETS[p];
+      // Cheap revalidation, which is what makes `no-cache` on the stylesheets
+      // affordable on a phone.
+      if (req.headers['if-none-match'] === a.etag) {
+        res.writeHead(304, { etag: a.etag, 'cache-control': a.cache });
+        return res.end();
+      }
+      return send(200, a.type, a.bytes, { 'cache-control': a.cache, etag: a.etag });
     }
 
     if (p === '/' ) {
@@ -921,3 +969,4 @@ if (require.main === module) start();
 
 module.exports = server;
 module.exports.start = start;
+module.exports.BUILD = BUILD;   // the shell hash, so a test can prove it moves

@@ -1605,3 +1605,92 @@ The `@media (display-mode: standalone)` rules - full-bleed layout, no fake
 status bar, safe-area padding for the notch - are asserted by the media query
 and by the rules being present. They have not been observed on an installed
 app, because installing one is a step on the user's device.
+
+# Fourteenth pass: what the deployed URL showed that localhost could not
+
+## The live site was three commits behind, and that was my doing
+
+`https://plint-o0vr.onrender.com/sw.js` answered **302**, not 200 - the old
+build has no such route, so it fell through to the catch-all redirect. Nothing
+about the service worker was live at all.
+
+`render.yaml` carried `autoDeploy: false` with **no reason recorded anywhere**,
+in a file where every other line has a comment explaining itself. An unlogged
+decision is a bug, and this one cost a working push sitting on GitHub while the
+demo URL served something else and looked like a code fault. It is now `true`,
+with the reasoning in the file.
+
+Worth naming the near-miss: a service worker script served through a redirect
+fails registration with an opaque error. Had the route existed and 302'd, the
+failure would have looked exactly like the one the preview pane produces, and
+I would have gone looking in the wrong place.
+
+## The cache name was a constant, which made it a bug
+
+`const VERSION = 'plint-shell-v1'` shipped in the previous pass. On localhost
+it is invisible. On a URL that gets deployed to more than once it is a defect
+with no recovery path:
+
+- the cache is keyed by URL;
+- none of `/plint.css`, `/app.css` or the icons carries a version in its URL;
+- the fetch handler is cache-first for exactly those files, so after the first
+  hit it never asks the server again;
+- and `activate` only deletes caches whose name is *not* VERSION.
+
+So an app installed today would still be running today's stylesheet after every
+future deploy. For ever. There is no cache-busting header that fixes this,
+because the worker never issues the request.
+
+VERSION is now `plint-shell-<BUILD>`, where **BUILD is a hash over the bytes of
+every file in the shell**, computed once at boot and substituted into `/sw.js`
+as it is served. One byte changes anywhere in the shell and the worker opens a
+new cache, fills it, and deletes the old one. `src/server.js` refuses to start
+if `public/sw.js` does not declare the placeholder - anchored on the exact
+declaration line, because a looser check passed happily while VERSION had been
+hardcoded back to a constant, which is a mutation I actually ran.
+
+## Filling the new cache from the old bytes would have defeated it
+
+`cache.addAll(SHELL)` fetches through the browser's own HTTP cache. A new
+VERSION would have opened a new cache and filled it from the same week-old copy
+the HTTP cache was holding. The shell is now fetched with
+`new Request(url, { cache: 'reload' })`, which goes past it.
+
+## The stylesheets were lying about being immutable
+
+`public, max-age=604800` on a URL with no version in it means a browser holds
+whatever it had when the deploy landed, for a week, and is right to. That is
+fine for an icon and wrong for a stylesheet. Both `.css` files are now
+`no-cache` - held, but revalidated - and every static file carries an **ETag**,
+so the revalidation costs a 304 rather than a download. The icons keep the long
+life: a stale mark for a week is cosmetic, a stale stylesheet is a broken
+screen. Static files are now read and hashed once at boot rather than off disk
+per request.
+
+## Proved end to end, in Chrome, not asserted
+
+The whole chain was run against a real browser and a real server:
+
+1. Install: cache `plint-shell-617011eb93bc`, ten entries, matching the
+   server's own `BUILD`.
+2. One byte appended to `public/app.css`, server restarted - `BUILD` moved to
+   `5f7ebbcd3dc4`.
+3. Reload: the old cache **gone**, the new one present with ten entries, and
+   the edited stylesheet **actually inside it**. That last check is the one
+   that matters; without `cache: 'reload'` it is the step that fails.
+4. `public/app.css` restored, `BUILD` back to `617011eb93bc`.
+
+Then the server was stopped mid-session for a genuine offline run: navigation
+to `/office` rendered the offline page, styled from cache; the villa screen,
+the office worklist, a demand PDF, an evidence photograph and a sign-in were
+all unreachable; the stylesheets, manifest, icons and offline page all
+answered 200 from cache.
+
+Five more mutations, all caught: the cache name back to a constant, `BUILD`
+frozen to a literal, the ETag dropped, `no-cache` back to `IMMUTABLE`, and the
+304 branch disabled. A sixth - dropping `cache: 'reload'` - was **not** caught
+by any behavioural test, because no Node process can observe a browser's HTTP
+cache; it is held by a source assertion instead, and that is stated in the test
+rather than hidden.
+
+162 assertions, fourteen suites, green from a clean database.

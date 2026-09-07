@@ -18,7 +18,13 @@
    for an application whose entire product is an evidence trail about money.
    ========================================================================= */
 
-const VERSION = 'plint-shell-v1';
+/* `__BUILD__` is substituted by the server, at boot, with a hash over the
+   bytes of every file in the list below. It must not be a constant: the cache
+   is keyed by URL, none of these URLs carries a version, and cache-first never
+   asks the server a second time - so under a fixed name an app installed today
+   would still be running today's stylesheet after every future deploy. The
+   server refuses to start if the placeholder is missing. */
+const VERSION = 'plint-shell-__BUILD__';
 
 /* Only these are ever stored. The list is explicit rather than pattern-based
    so that adding a route can never silently make it cacheable. */
@@ -37,12 +43,18 @@ const SHELL = [
 
 const CACHEABLE = new Set(SHELL);
 
+/* `cache: 'reload'` goes past the browser's own HTTP cache. Without it a new
+   VERSION would open a new cache and then fill it from the same week-old copy
+   of an icon the HTTP cache is still holding, which defeats the point of
+   versioning the name at all. */
+const fresh = url => new Request(url, { cache: 'reload' });
+
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(VERSION);
     // addAll fails the whole install if any one is missing, which is what we
     // want: a half-populated shell is worse than no shell.
-    await cache.addAll(SHELL);
+    await cache.addAll(SHELL.map(fresh));
     await self.skipWaiting();
   })());
 });
@@ -108,7 +120,7 @@ self.addEventListener('message', event => {
   if (event.data === 'plint:signout') {
     event.waitUntil((async () => {
       for (const key of await caches.keys()) await caches.delete(key);
-      await (await caches.open(VERSION)).addAll(SHELL);
+      await (await caches.open(VERSION)).addAll(SHELL.map(fresh));
     })());
   }
 });
