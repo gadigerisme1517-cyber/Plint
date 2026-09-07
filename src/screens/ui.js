@@ -145,10 +145,14 @@ ${t.sub ? `<p class="s">${esc(t.sub)}</p>` : ''}`;
   function mix(cap, parts) {
     const live = parts.filter(p => p && p.n > 0);
     const total = live.reduce((a, p) => a + p.n, 0) || 1;
+    /* No tone means the brand colour, not the grey. Falling back to `rest` gave
+       a segment with no tone and one explicitly marked `rest` the same pale
+       grey, so two parts of the bar read as one and the legend had two
+       identical swatches. */
     const bar = live.map(p =>
-      `<i class="${p.tone || 'rest'}" style="--pct:${(p.n / total * 100).toFixed(2)}%"></i>`).join('');
+      `<i class="${p.tone || ''}" style="--pct:${(p.n / total * 100).toFixed(2)}%"></i>`).join('');
     const key = live.map(p => `<span class="mixk">
-<i class="${p.tone || 'rest'}"></i>${esc(p.label)} <b>${p.value}</b></span>`).join('');
+<i class="${p.tone || ''}"></i>${esc(p.label)} <b>${p.value}</b></span>`).join('');
     return `<div class="chart">
 <p class="cap">${esc(cap)}</p>
 <div class="mixbar">${bar}</div>
