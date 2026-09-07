@@ -307,16 +307,27 @@ test('one gutter, and everything on a phone starts on it', async () => {
      it, `.wl` is a bordered card that padded it again, and the row added a
      margin - so cards sat at 54..321 while the label above them sat at
      18..357 and the button between them at 36..339. */
-  assert.match(narrow, /\.mhead, \.mbody \{[^}]*padding-left:\s*var\(--gutter\)/,
-    'the gutter is not applied to the one container that owns it');
-  const cleared = /\.mbody \.wl, \.mbody \.tools, \.mbody \.blk, \.mbody \.lede \{([^}]*)\}/.exec(narrow);
+  assert.match(narrow, /\.mhead, \.mbody, \.scroll \{[^}]*padding-left:\s*var\(--gutter\)/,
+    'the gutter is not applied to the containers that own it');
+  /* `.scroll` as well as `.mbody`: the buyer's screens and the sign-in page
+     are built by a different function and have no `.mbody` at all, so a rule
+     that names only `.mbody` leaves that whole side of the product out. */
+  assert.match(narrow, /\.scroll \.item, \.scroll \.duebar \{[^}]*margin-left:\s*0/,
+    "the buyer's cards keep a margin that stacks on the container's padding");
+  const cleared = /\.mbody \.wl,[^{]*\.scroll \.blk[^{]*\{([^}]*)\}/.exec(narrow);
   assert.ok(cleared, 'the nested containers never give up their own padding');
   /* And only inside `.mbody`, which is the container that puts the gutter
      back. Unscoped it stripped `.blk` on every screen `page()` builds - the
      sign-in form and all of the buyer's side - where nothing re-pads it and
      the text ran into the left edge. */
-  assert.ok(!/(^|[^y])\s\.blk,/.test(narrow) && !/\{\s*\.blk/.test(narrow),
-    'a padding reset still reaches .blk outside .mbody');
+  const resetSel = /((?:\.mbody|\.scroll)[^{]*)\{[^}]*padding-left:\s*0/.exec(narrow);
+  assert.ok(resetSel, 'no padding reset found at all');
+  for (const one of resetSel[1].split(',')) {
+    const t = one.trim();
+    if (!t) continue;
+    assert.ok(/^(\.mbody|\.scroll) /.test(t),
+      'the padding reset selector "' + t + '" is not qualified by a shell that puts the gutter back');
+  }
   assert.match(cleared[1], /padding-left:\s*0/, 'a nested container still adds to the gutter');
   assert.match(cleared[1], /margin-left:\s*0/, 'a nested container still adds a margin');
 
