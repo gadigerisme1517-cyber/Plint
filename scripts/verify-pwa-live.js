@@ -35,7 +35,7 @@ const SCREENS = {
   office:   ['/office', '/office/owner', '/office/handoff', '/office/packs',
              '/office/query', '/office/chase', '/office/signoff', '/office/silent',
              '/office/wait', '/office/escrow', '/office/choices', '/office/warranty',
-             '/office/evidence', '/office/qpr', '/office/possession', '/office/menu'],
+             '/office/evidence', '/office/qpr', '/office/possession'],
 };
 
 const ICONS = [

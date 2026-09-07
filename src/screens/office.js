@@ -75,6 +75,30 @@ module.exports = function officeScreens(ctx) {
     ]],
   ];
 
+  /* One icon per destination, in v21's stroke style: 24x24, 1.6 stroke, round
+     caps. A menu of fifteen labels is a wall of text - the icon is what lets
+     somebody find "Escrow drawdown" without reading the eight words above it,
+     and it is the thing the row is recognised by after the second week. */
+  const ICON = {
+    today:      'M12 7v5l3 2M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z',
+    owner:      'M4 19V5m0 14h16M8 16V9m4 7v-4m4 4V7',
+    handoff:    'M4 13h4l2 3h4l2-3h4M4 13l2-8h12l2 8v6H4Z',
+    packs:      'M4 8 12 4l8 4v8l-8 4-8-4Zm0 0 8 4m0 0 8-4m-8 4v8',
+    query:      'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 13v.5M9.6 9.2A2.4 2.4 0 1 1 12 12v1.2',
+    chase:      'M6 3h8l4 4v14H6Zm8 0v4h4M12 11v3m0 3v.5',
+    signoff:    'M4.5 12.5 9 17l10.5-11',
+    silent:     'M3 3l18 18M9.5 5h5l1.5 2H20v9M4 7h1.5M4 7v11h12',
+    wait:       'M8 3h8M8 21h8M8 3c0 5 8 4 8 9s-8 4-8 9',
+    escrow:     'M3 9 12 4l9 5M5 9v9m4-9v9m6-9v9m4-9v9M3 20h18',
+    choices:    'M4 7h10M4 12h10M4 17h6M17 15l2 2 3.5-4',
+    warranty:   'M12 3 5 6v5c0 5 3 8 7 10 4-2 7-5 7-10V6Z',
+    evidence:   'M4 8h3l1.5-2h7L17 8h3v11H4Zm8 2.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z',
+    qpr:        'M6 3h8l4 4v14H6Zm8 0v4h4M9 13h6M9 17h4',
+    possession: 'M14.5 4a4.5 4.5 0 1 1-3.2 7.7L4 19v2h3v-2h2v-2h2l1.3-1.3A4.5 4.5 0 0 1 14.5 4Zm1.5 3.5v.01',
+  };
+  const icon = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+ stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICON[k]}"/></svg>`;
+
   /** Every key, flat, so a route can decide in one lookup whether it is ours. */
   const KEYS = new Set(GROUPS.flatMap(([, items]) => items.map(([k]) => k)));
 
@@ -171,36 +195,40 @@ module.exports = function officeScreens(ctx) {
       }).join('')).join('');
   }
 
-  /* The same nine groups as a screen, for a phone. A drawer would need script;
-     this is one tap to a list and one tap to a destination, it works with no
-     JavaScript at all, and it is the same GROUPS the sidebar is drawn from
-     rather than a second copy that will drift from it.
+  /* The same nine groups as a drawer over whatever you were looking at.
 
-     Drawn as a menu, not as another screen. It used to have the hero with a
-     count in it, the cards, and the subtitle under every row - so opening it
-     looked exactly like arriving at a fifteenth dashboard, and the only way to
-     tell was to read it. It also ran to two screens of scrolling, which is the
-     opposite of what a menu is for. One line each, no count in the header, and
-     all fifteen inside one screen. */
-  function menu(sess, n, msg) {
+     It was a screen: you tapped Menu, the page navigated, and you arrived
+     somewhere that looked like every other screen in the role. That reads as
+     the menu not having opened - which is how it was reported. A menu is a
+     layer, not a destination: the thing you were reading stays behind it,
+     dimmed, so it is obvious both that something opened and what it is over.
+
+     No JavaScript. The button is a link to `#menu` and the panel is shown by
+     `:target`, which also means the back button closes it and the browser's
+     own history does the work. With no CSS at all it degrades to a list of
+     fifteen links at the foot of the document, which is the correct fallback.
+
+     `overflow-y: auto` on the panel is the one place in the application an
+     inner scroller is right: it is a fixed-height layer over the page, not a
+     pane inside it. */
+  function drawer(current, n) {
     const body = GROUPS.map(([g, items]) =>
-      (g ? `<p class="grp">${esc(g)}</p>` : '') +
+      (g ? `<p class="dgrp">${esc(g)}</p>` : '') +
       items.map(([k, label]) => {
         const c = n[k];
-        /* The number, and nothing else. What each destination is for belongs on
-           the destination, which says it in its own subtitle; repeating it here
-           is what made every row two lines and the menu two screens. */
         const num = c === null || c === undefined ? ''
-          : `<span class="n${c === 0 ? ' zero' : k === 'chase' || k === 'silent' ? ' due' : ''}">${c}</span>`;
-        return `<a href="${href(k)}">${esc(label)}${num}</a>`;
+          : `<span class="dn${c === 0 ? ' zero' : k === 'chase' || k === 'silent' ? ' due' : ''}">${c}</span>`;
+        return `<a href="${href(k)}"${current === k ? ' aria-current="page"' : ''}>${
+          icon(k)}<span class="dl">${esc(label)}</span>${num}</a>`;
       }).join('')).join('');
 
-    /* No page header. The app bar already says Menu, and a title block here
-       cost 160px of a screen whose whole job is to show fifteen things at
-       once - which is what made it scroll like a dashboard. */
-    return desk(sess, 'menu', 'Menu', '', `
-<div class="mbody anim" style="padding-top:14px">${flash(msg)}
-<nav class="omenu">${body}</nav></div>`, sidebar(null, n));
+    return `<div class="drawer" id="menu">
+<a class="dscrim" href="#" aria-label="Close the menu"></a>
+<nav class="dpanel" aria-label="All destinations">
+<div class="dhead"><p class="dname">Plint</p><p class="dorg">NVT Eterna &middot; Phase 1</p></div>
+${body}
+<div class="dfoot"><a class="wbtn st" href="#" style="text-decoration:none">Close</a></div>
+</nav></div>`;
   }
 
   // ---------------------------------------------------------------- the reads
@@ -406,7 +434,7 @@ module.exports = function officeScreens(ctx) {
 
   /** Wraps a screen in the shell, with the office's own sidebar. */
   const screen = (sess, k, n, main) =>
-    desk(sess, k, HEAD[k][0], '', main, sidebar(k, n));
+    desk(sess, k, HEAD[k][0], '', main, sidebar(k, n), drawer(k, n));
 
   /* Stuck money, grouped by who is holding it up rather than by stage.
 
@@ -1005,7 +1033,7 @@ ${hero(u.code, 'buyer file', 'Villa ' + u.code,
     days: days(q.raised_at) + 'd', daysAge: days(q.raised_at),
   })).join('') : '')
 + (!openChoices && !openQ ? empty('Nothing is open with this buyer.') : '')}</div>
-</div>`, sidebar(null, n));
+</div>`, sidebar(null, n), drawer(null, n));
   }
 
   // ------------------------------------------------------- one question thread
@@ -1057,9 +1085,9 @@ ${q.status !== 'closed' ? `<div class="gap"></div>
 <div class="tools"><form method="post" action="/office/close">
 <input type="hidden" name="id" value="${esc(q.id)}">
 <button class="wbtn st" type="submit">Close this</button></form><div class="g"></div></div>` : ''}
-</div>`, sidebar(null, n));
+</div>`, sidebar(null, n), drawer(null, n));
   }
 
-  return { GROUPS, KEYS, HEAD, href, SCREENS, load, counts, sidebar, menu,
+  return { GROUPS, KEYS, HEAD, href, SCREENS, load, counts, sidebar, drawer,
            buyerFile, questionThread, PACK_LATE_DAYS };
 };

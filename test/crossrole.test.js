@@ -498,22 +498,16 @@ test('the sidebar is the nine groups, on every one of the fifteen', async () => 
   const items = (html.match(/class="sbtn st"/g) || []).length;
   assert.strictEqual(items, 15, 'the sidebar has ' + items + ' destinations, not fifteen');
 
-  /* And the phone gets the same nine groups rather than a second list. Fifteen
-     tabs in a 375px bar is twenty-five pixels each. */
-  const menu = await get('office', '/office/menu');
-  assert.strictEqual(menu.status, 200, 'the phone menu does not open');
+  /* And the phone gets the same nine groups as a layer over the screen it was
+     opened from, rather than a second list. Fifteen tabs in a 375px bar is
+     twenty-five pixels each. */
+  const panel = html.split('<nav class="dpanel"')[1] || '';
+  assert.ok(panel, 'there is no menu layer to open on a phone');
   for (const g of ['New from sales', 'Compliance']) {
-    assert.ok(menu.html.includes(g), 'the phone menu is missing the group "' + g + '"');
+    assert.ok(panel.includes(g), 'the menu is missing the group "' + g + '"');
   }
-  /* Counted on the menu's own markup, not on `.wrow`. A menu drawn as a
-     worklist reads as a sixteenth dashboard, which is exactly what it did. */
-  const links = (menu.html.match(/<a href="\/office[^"]*"/g) || []).length;
-  assert.strictEqual(links, 15, 'the phone menu offers ' + links + ' destinations, not fifteen');
-  assert.match(menu.html, /<nav class="omenu">/, 'the menu is not drawn as a menu');
-  assert.ok(!/class="wrow/.test(menu.html),
-    'the menu is built out of worklist cards, so it reads as another screen');
-  assert.ok(!/class="kpin/.test(menu.html),
-    'the menu leads with a count, which is a dashboard doing that');
+  const links = (panel.match(/<a href="\/office[^"]*"/g) || []).length;
+  assert.strictEqual(links, 15, 'the menu offers ' + links + ' destinations, not fifteen');
 });
 
 test('every row on every office screen leads somewhere', async () => {

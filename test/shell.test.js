@@ -43,7 +43,7 @@ const SCREENS = {
   office:   ['/office', '/office/owner', '/office/handoff', '/office/packs',
              '/office/query', '/office/chase', '/office/signoff', '/office/silent',
              '/office/wait', '/office/escrow', '/office/choices', '/office/warranty',
-             '/office/evidence', '/office/qpr', '/office/possession', '/office/menu'],
+             '/office/evidence', '/office/qpr', '/office/possession'],
 };
 
 /* How many destinations each role has, and therefore what navigation it gets.
@@ -196,9 +196,7 @@ test('the current screen is marked in the navigation', async () => {
          screen behind a destination rather than being one - a buyer file, a
          question thread, the phone menu - marks nothing, and says so by being
          listed here. */
-      const behind = ['/office/menu'].includes(p);
       const marks = (h.match(/aria-current="page"/g) || []).length;
-      if (behind) continue;
       assert.ok(marks >= 1, role + ' ' + p + ' marks no destination as current');
     }
   }
@@ -390,23 +388,94 @@ test('a phone has one scroll, not three nested ones', async () => {
     'the desktop card keeps its minimum height on a phone');
 });
 
-test('the office menu is a menu, and fits like one', async () => {
+test('the office menu is a layer over the screen, not another screen', async () => {
+  /* It was a screen: you tapped Menu, the page navigated, and you arrived
+     somewhere that looked like every other screen in the role - which reads as
+     the menu not having opened, and was reported that way. A menu is a layer.
+     The thing you were reading stays behind it, dimmed, so it is obvious both
+     that something opened and what it is over.
+
+     And no JavaScript: the button is a link to `#menu`, `:target` shows the
+     panel, and the back button closes it because the browser's own history is
+     doing the work. */
+  const h = await body('/office', 'office');
+  assert.match(h, /<div class="drawer" id="menu">/, 'no menu layer on an office screen');
+  assert.match(h, /class="ab-menu" href="#menu"/, 'the menu button navigates instead of opening a layer');
+  assert.match(h, /<a class="dscrim" href="#"/,
+    'the layer has nothing over the page behind it, and no way to dismiss it');
+  /* Scoped to the layer itself: the service worker registration is a script
+     further down the same document and has nothing to do with this. */
+  const layer = (/<div class="drawer" id="menu">[\s\S]*?<\/nav><\/div>/.exec(h) || [''])[0];
+  assert.ok(layer, 'the menu layer is not a self-contained block');
+  assert.ok(!/<script|onclick|onchange/i.test(layer),
+    'the menu needs script to open, so it will not open before the script runs');
+
+  const links = (h.match(/<a href="\/office[^"]*"[^>]*><svg/g) || []).length;
+  assert.strictEqual(links, 15, 'the menu offers ' + links + ' destinations, not fifteen');
+
+  /* Every office screen carries it, or the menu is missing from wherever you
+     happen to be standing - which is every screen but one. */
+  for (const p of ['/office/owner', '/office/chase', '/office/qpr']) {
+    assert.match(await body(p, 'office'), /<div class="drawer" id="menu">/,
+      p + ' has no way into the other fourteen');
+  }
+
+  // The old URL still works. Somebody's bookmark lands on Today with it open.
+  const moved = await get('/office/menu', 'office');
+  assert.strictEqual(moved.status, 302, '/office/menu is still a screen of its own');
+  assert.strictEqual(moved.headers.get('location'), '/office#menu',
+    '/office/menu does not land anywhere useful');
+});
+
+test('the menu layer is hidden until it is asked for, and never on a desktop', async () => {
+  const css = await (await get('/app.css')).text();
+  assert.match(css, /\.drawer \{[^}]*visibility:\s*hidden/,
+    'the layer is on the screen before anybody opens it');
+  assert.match(css, /\.drawer:target \{[^}]*visibility:\s*visible/,
+    'nothing opens the layer');
+  /* `visibility`, not `display`, so the slide and the fade can be transitions
+     and so it is out of the accessibility tree while it is shut. */
+  assert.ok(!/\.drawer \{[^}]*display:\s*none/.test(css),
+    'the layer is hidden with display, which cannot animate');
+  /* And on a monitor the sidebar is already the menu, so `#menu` in a
+     bookmarked URL must not black out the screen. */
+  const wide = /@media \(min-width: 901px\) \{([\s\S]*?)\n\}/.exec(css);
+  assert.ok(wide && /\.drawer:target \{[^}]*visibility:\s*hidden/.test(wide[1]),
+    'a bookmarked #menu opens the layer over a desktop screen that already lists all fifteen');
+});
+
+test('the office menu names every destination and counts it', async () => {
   /* A menu drawn with the same hero, the same cards and a subtitle under every
      row reads as a sixteenth dashboard - it was reported as the menu not
      opening at all, because there was nothing to tell it apart from the screen
      it was opened from. */
-  const h = await body('/office/menu', 'office');
-  assert.match(h, /<nav class="omenu">/, 'the menu is not drawn as a menu');
-  assert.ok(!/class="kpin/.test(h), 'the menu leads with a count, which is a dashboard doing that');
-  assert.ok(!/class="wrow/.test(h), 'the menu is built out of worklist cards');
-  assert.ok(!/class="mhead"/.test(h),
-    'the menu carries a page header, which costs a sixth of the screen it needs');
+  const h = await body('/office', 'office');
+  const panel = h.split('<nav class="dpanel"')[1] || '';
+  assert.ok(panel, 'the menu layer has no panel in it');
 
-  const links = (h.match(/<a href="\/office[^"]*"/g) || []).length;
-  assert.strictEqual(links, 15, 'the menu offers ' + links + ' destinations, not fifteen');
+  /* Every group heading and every label, so a destination cannot be added to
+     the route table and quietly left out of the only way to reach it. */
+  for (const g of ['New from sales', 'Waiting on you', 'Buyer loans', 'Chasing your team',
+                   'Waiting on the bank', 'Your own money', 'Buyer decisions', 'Compliance']) {
+    assert.ok(panel.includes(g), 'the menu is missing the group "' + g + '"');
+  }
+  for (const label of ['Today', 'Owner view', 'Waiting for pickup', 'Ready to send',
+                       'Lender asked a question', 'Sanction not recorded', 'Sign-off and evidence',
+                       'Site gone quiet', 'Sent, not yet paid', 'Escrow drawdown',
+                       'Choices not made', 'Warranty claims', 'Evidence certificates',
+                       'Quarterly RERA filing', 'After possession']) {
+    assert.ok(panel.includes(label), 'the menu is missing "' + label + '"');
+  }
+
+  /* An icon each. Fifteen labels with nothing beside them is a wall of text,
+     and the icon is what a destination is recognised by after the second week. */
+  const icons = (panel.match(/<svg /g) || []).length;
+  assert.strictEqual(icons, 15, 'the menu draws ' + icons + ' icons for fifteen destinations');
+
   // One line each. Two lines a row is what made it scroll for two screens.
-  assert.ok(!/<p class="s">/.test(h.split('<nav class="omenu">')[1] || ''),
-    'a menu row carries a subtitle, so every row is two lines');
+  assert.ok(!/<p class="s">/.test(panel), 'a menu row carries a subtitle, so every row is two lines');
+  assert.ok(!/class="wrow/.test(panel), 'the menu is built out of worklist cards');
+  assert.ok(!/class="kpin/.test(panel), 'the menu leads with a count, which is a dashboard doing that');
 });
 
 // ------------------------------------------------------- responsive rules

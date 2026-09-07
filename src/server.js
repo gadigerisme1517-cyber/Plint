@@ -234,8 +234,8 @@ ${screen ? `<span class="ab-screen">${esc(screen)}</span>` : ''}
 ${inlineNav && dests.length > 1 ? `<nav class="ab-nav">${dests.map(([href, label]) =>
   `<a href="${href}"${current === href ? ' aria-current="page"' : ''}>${esc(label)}</a>`).join('')}</nav>` : ''}
 <div class="ab-g"></div>
-${dests.length > BAR_FITS ? `<a class="ab-menu" href="/office/menu"
- aria-label="All destinations" style="text-decoration:none">Menu</a>` : ''}
+${dests.length > BAR_FITS ? `<a class="ab-menu" href="#menu"
+ aria-label="Open the menu" style="text-decoration:none">Menu</a>` : ''}
 ${sess ? `<span class="ab-who">${esc(sess.name)}</span>
 <a class="ab-out" href="/logout">Sign out</a>` : ''}
 </header>`;
@@ -283,7 +283,7 @@ ${tabbar(sess, current)}${SW}</body></html>`;
  * what make it one. So that role hands in its own, drawn from the same
  * structure its phone menu is drawn from.
  */
-function desk(sess, tab, title, sub, main, sidebar) {
+function desk(sess, tab, title, sub, main, sidebar, drawer) {
   const dests = destinations(sess);
   return `${HEAD}${appbar(sess, tab, false, title)}<div class="wrap">
 <div class="desk">
@@ -297,7 +297,7 @@ ${sidebar || dests.map(([href, label]) => `<a class="sbtn st" href="${href}" ari
 <div class="topbar"><div class="crumb"><span>NVT Eterna</span><b>${esc(title)}</b></div></div>
 ${main}
 </div></div></div>
-${tabbar(sess, tab)}${SW}</body></html>`;
+${tabbar(sess, tab)}${drawer || ''}${SW}</body></html>`;
 }
 
 // -------------------------------------------------------------------- login
@@ -896,12 +896,13 @@ const server = http.createServer(async (req, res) => {
         return html(200, OFF.SCREENS[key](sess, d, msg));
       }
 
-      /* The phone's way in. A drawer would need script; this is the same nine
-         groups as a screen, and it is drawn from the structure the sidebar is
-         drawn from rather than a second copy that would drift from it. */
+      /* The menu is a layer over whatever you were looking at rather than a
+         screen of its own, so there is nothing here to render. The link stays
+         valid - somebody's bookmark, an old notification - and lands on Today
+         with the drawer open. */
       if (p === '/office/menu') {
-        const n = await asUser(sess, c => OFF.counts(c));
-        return html(200, OFF.menu(sess, n, msg));
+        res.writeHead(302, { location: '/office#menu' });
+        return res.end();
       }
 
       if (p.startsWith('/office/buyer/')) {

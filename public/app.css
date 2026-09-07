@@ -125,36 +125,98 @@ body { padding: 0; margin: 0; background: var(--paper); }
            padding: 0 12px; min-height: var(--btn-h);
            align-items: center; white-space: nowrap; }
 
-/* ----------------------------------------------------------------- the menu
+/* --------------------------------------------------------------- the drawer
 
-   A menu that is drawn like a dashboard is not a menu. This one was: the same
-   hero with a count in it, the same cards, the same detail sentence under each
-   row - so opening it looked like arriving at another screen, and the only way
-   to tell it apart was to read it. It scrolled for two screens as well, which
-   is the opposite of what a menu is for.
+   The head office's fifteen, as a layer over whatever you were looking at.
 
-   So it has its own shape: no count, no cards, one line per destination, and
-   the whole of the head office's fifteen inside one screen. The rows are still
-   44px, because it is the one screen whose entire content is things to tap. */
-.omenu { display: block; }
-.omenu .grp {
-  font: 500 11.5px/14px 'Instrument Sans', system-ui, sans-serif;
-  letter-spacing: .04em; text-transform: uppercase;
-  color: var(--ink-3); margin: 10px 0 0;
+   It used to be a screen: you tapped Menu, the page navigated, and you arrived
+   somewhere that looked like every other screen in the role. That reads as the
+   menu not having opened at all, which is how it was reported. A menu is a
+   layer - the thing you were reading stays behind it, dimmed, so it is obvious
+   both that something opened and what it is over.
+
+   No JavaScript anywhere in it. The button is a link to `#menu`, `:target`
+   shows the panel, and the back button closes it because the browser's own
+   history is doing the work. `visibility` rather than `display` so the slide
+   and the fade can be transitions; hidden it is out of the accessibility tree
+   as well as off the screen. */
+.drawer { position: fixed; inset: 0; z-index: 70; visibility: hidden; }
+.drawer:target { visibility: visible; }
+
+.dscrim {
+  position: absolute; inset: 0; display: block;
+  background: rgba(10, 37, 64, .42);
+  opacity: 0; transition: opacity .18s ease;
+  -webkit-tap-highlight-color: transparent;
 }
-.omenu .grp:first-child { margin-top: 0; }
-.omenu a {
-  display: flex; align-items: center; gap: 10px;
-  min-height: 44px; padding: 0 2px;
-  border-bottom: 1px solid var(--hair);
+.drawer:target .dscrim { opacity: 1; }
+
+/* `overflow-y: auto` here is the one place in this application an inner
+   scroller is right: this is a fixed-height layer over the page, not a pane
+   inside it, so the page behind it must not move while it is open. */
+.dpanel {
+  position: absolute; inset: 0 auto 0 0;
+  width: min(86vw, 340px);
+  background: var(--paper);
+  box-shadow: 0 0 40px rgba(10, 37, 64, .18);
+  padding: 0 12px calc(18px + var(--safe-b));
+  overflow-y: auto; overscroll-behavior: contain;
+  transform: translateX(-101%);
+  transition: transform .2s ease;
+}
+.drawer:target .dpanel { transform: none; }
+/* Somebody who has asked not to see motion still gets the layer, instantly. */
+@media (prefers-reduced-motion: reduce) {
+  .dscrim, .dpanel { transition: none; }
+}
+
+.dhead { padding: calc(18px + env(safe-area-inset-top, 0px)) 10px 6px; }
+.dname { font: 700 19px/24px 'Instrument Sans', system-ui, sans-serif; color: var(--ink); }
+.dorg  { font: 400 13px/18px 'Instrument Sans', system-ui, sans-serif; color: var(--ink-3);
+         margin-top: 2px; }
+
+.dgrp {
+  font: 500 11.5px/14px 'Instrument Sans', system-ui, sans-serif;
+  letter-spacing: .05em; text-transform: uppercase; color: var(--ink-3);
+  padding: 0 10px; margin: 18px 0 6px;
+}
+.dgrp:first-of-type { margin-top: 14px; }
+
+.dpanel > a {
+  display: flex; align-items: center; gap: 12px;
+  min-height: 46px; padding: 0 10px; border-radius: 10px;
   text-decoration: none; color: var(--ink);
   font: 500 15px/20px 'Instrument Sans', system-ui, sans-serif;
 }
-.omenu a:last-child { border-bottom: 0; }
-.omenu a .n { margin-left: auto; font-variant-numeric: tabular-nums; font-size: 13px; }
-.omenu a .n.zero { color: var(--ink-3); }
-.omenu a .n.due  { color: var(--hot); font-weight: 600; }
-.omenu a[aria-current="page"] { color: var(--brand); }
+.dpanel > a svg { width: 20px; height: 20px; flex: 0 0 20px; color: var(--ink-2); }
+.dpanel > a .dl { flex: 1 1 auto; min-width: 0; }
+
+/* The one you are on, said the way v21 says it everywhere else: the brand
+   colour, and a tint of it behind. */
+.dpanel > a[aria-current="page"] { background: var(--brand-soft); color: var(--brand); font-weight: 600; }
+.dpanel > a[aria-current="page"] svg { color: var(--brand); }
+
+/* A count, in the shape v21 gives a chip. Red only where the number is
+   somebody waiting on this office - the same rule the rest of the application
+   uses for late, rather than every number shouting. */
+.dn {
+  flex: 0 0 auto; min-width: 24px; text-align: center;
+  font: 600 12px/20px 'Instrument Sans', system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  padding: 0 7px; border-radius: 999px;
+  background: var(--hair-2); color: var(--ink-2);
+}
+.dn.zero { background: none; color: var(--ink-3); font-weight: 400; }
+.dn.due  { background: var(--hot-soft); color: var(--hot); }
+
+.dfoot { padding: 18px 10px 0; }
+.dfoot .wbtn { width: 100%; }
+
+/* On a monitor the sidebar is already the menu, so the layer never opens -
+   `#menu` in a bookmarked URL must not black out a desktop screen. */
+@media (min-width: 901px) {
+  .drawer, .drawer:target { visibility: hidden; }
+}
 /* The screen name is a phone affordance: on a desktop the breadcrumb in the
    topbar already names it, and saying it twice is noise. */
 .ab-screen { display: none; }
