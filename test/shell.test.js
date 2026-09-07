@@ -551,6 +551,31 @@ test('the money leads its line, tabular, and never breaks mid-value', async () =
     'two or more controls must still take their own line, they will not fit beside an amount');
 });
 
+test('a row with one control never claims a line for it', async () => {
+  /* `actc wide` takes a whole line below the amount, which is right for two
+     buttons and wrong for one. The Visits tab marked every row wide, so a
+     confirmed visit - which offers only "Cannot make it" - put one button on
+     a row of its own with the rest of that line empty. This is the same shape
+     the Review button had before it moved up beside the amount. */
+  const h = await body('/engineer/visits', 'engineer');
+  const rows = h.match(/<span class="actc[^"]*">[\s\S]*?<\/span>/g) || [];
+  assert.ok(rows.length > 0, 'the visits list has no action cells to check');
+  let single = 0;
+  for (const cell of rows) {
+    const buttons = (cell.match(/<button/g) || []).length;
+    if (buttons === 1) {
+      single++;
+      assert.ok(!/class="actc[^"]*\bwide\b/.test(cell),
+        'a cell with one button is marked wide, so it takes a line of its own');
+    }
+    if (buttons > 1) {
+      assert.match(cell, /class="actc[^"]*\bwide\b/,
+        'a cell with ' + buttons + ' buttons is not marked wide; they will not fit beside an amount');
+    }
+  }
+  assert.ok(single > 0, 'no single-control row in the visits list, so this proves nothing');
+});
+
 test('the phone list is v21\'s, not a table in disguise', async () => {
   const css = await (await get('/app.css')).text();
   const narrow = /@media \(max-width: 720px\) \{([\s\S]*?)\n\}/.exec(css)[1];

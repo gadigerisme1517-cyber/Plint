@@ -210,7 +210,10 @@ without a photograph.</p></div>
               : v.status === 'reassign' ? 'warn' : 'wait') + '">'
               + (v.status === 'confirmed' ? 'Accepted'
               : v.status === 'reassign' ? 'Reassign' : 'New') + '</i>',
-        actionWide: true,
+        /* Two controls need a line of their own; one does not. A confirmed
+           visit offers only "Cannot make it", and marking it wide put that
+           single button on its own row with the rest of the line empty. */
+        actionWide: v.status !== 'confirmed',
         action: `
 ${v.status === 'confirmed'
   ? `<form method="post" action="/engineer/visit"><input type="hidden" name="id" value="${esc(v.id)}">
