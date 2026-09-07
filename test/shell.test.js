@@ -256,8 +256,17 @@ test('amounts are right-aligned, tabular, and never break mid-value', async () =
   assert.match(amt[1], /text-align:\s*right/, 'amounts are not right-aligned');
   assert.match(amt[1], /white-space:\s*nowrap/, 'an amount may break mid-value');
   assert.match(amt[1], /tabular-nums/, 'amounts do not line up digit for digit down the column');
-  // Spanning to the row edge, rather than stopping short in the middle of it.
-  assert.match(amt[1], /grid-area:\s*3 \/ 2 \/ 4 \/ 4/, 'the amount stops short of the right edge');
+
+  /* Status, day count and amount all sit in the same right-hand column, one
+     under the other. The day count used to get a line of its own across the
+     row, right-aligned against nothing. */
+  const days = /\.wrow \.days\s+\{([^}]*)\}/.exec(narrow);
+  assert.ok(days, 'no phone rule for the day count');
+  for (const [name, decl] of [['status', /\.wrow \.stc\s+\{([^}]*)\}/.exec(narrow)],
+                              ['day count', days], ['amount', amt]]) {
+    assert.match(decl[1], /grid-area:\s*\d+ \/ 3/, name + ' is not in the right-hand column');
+    assert.match(decl[1], /justify-self:\s*end/, name + ' is not aligned to the right of that column');
+  }
 });
 
 test('the phone list is v21\'s, not a table in disguise', async () => {
@@ -268,24 +277,44 @@ test('the phone list is v21\'s, not a table in disguise', async () => {
   // The wrapper is dropped so the meta line can use the full width.
   assert.match(narrow, /\.wrow \.mid \{[^}]*display:\s*contents/,
     'the row wrapper still traps the meta line in one column');
-  // v21's .vcard metrics, for the rows that carry actions.
-  const card = /\.wrow\.card \{([^}]*)\}/.exec(narrow);
-  assert.ok(card, 'there is no card variant for rows with actions');
-  assert.match(card[1], /padding:\s*16px/, 'the card is not v21\'s 16px padding');
-  assert.match(card[1], /border-radius:\s*12px/, 'the card is not v21\'s 12px radius');
-  assert.match(card[1], /margin:\s*0 26px 12px/, 'the cards are not v21\'s 12px apart');
+  /* Every list row is a card, in every tab and for all three roles. A flat row
+     reads as loose text once the desktop table's columns are gone: there is no
+     left edge for the eye to run down. */
+  const card = /\n  \.wrow \{([^}]*)\}/.exec(narrow);
+  assert.ok(card, 'there is no phone rule for a list row');
+  assert.match(card[1], /border:\s*1px solid var\(--hair\)/, 'a list row has no card border');
+  assert.match(card[1], /border-radius:\s*12px/, 'a list row is not v21\'s 12px radius');
+  assert.match(card[1], /background:\s*var\(--paper\)/, 'a list row has no card background');
+  assert.match(card[1], /padding:\s*14px 16px/, 'a list row has no card padding');
+  assert.match(card[1], /margin:\s*0 18px 10px/, 'the cards are not set apart from one another');
+
+  /* And the heading is one heading. The villa came out at 12.5px and the stage
+     at 13px, so they read as two labels with a dot floating between them. */
+  const head = /\.wrow \.id, \.wrow \.mid \.rt \{([^}]*)\}/.exec(narrow);
+  assert.ok(head, 'the villa and the stage are not typed as one heading');
+  assert.match(head[1], /font:\s*500 14\.5px\/20px/, 'the heading is not one size');
 });
 
-test('the app bar is opaque and content passes under it, not through it', async () => {
+test('the app bar is opaque, full width, and content passes under it', async () => {
   const css = await (await get('/app.css')).text();
   const bar = /\.appbar \{([^}]*)\}/.exec(css);
   assert.ok(bar, 'no app bar rule');
   assert.match(bar[1], /position:\s*sticky/, 'the app bar is not sticky, so it scrolls away');
   assert.match(bar[1], /background:\s*var\(--paper\)/, 'the app bar is not painted, so content shows through it');
   assert.match(bar[1], /z-index:\s*\d+/, 'the app bar has no stacking order');
-  // Sticky keeps the bar in flow, so nothing can start underneath it.
   assert.ok(!/\.appbar \{[^}]*position:\s*fixed/.test(css),
     'a fixed bar would sit on top of the first row of content');
+
+  /* The width is the part that actually went wrong, and asserting `sticky` and
+     an opaque background proved nothing about it. plint.css puts
+     `display:flex; align-items:center` on the BODY to centre v21's phone mock,
+     which makes every direct child shrink to its own content: the bar rendered
+     280px wide in a 375px viewport, a floating pill with the page scrolling
+     past on both sides. Both of these are needed - `width` alone loses to the
+     flex item's default cross-axis sizing. */
+  assert.match(bar[1], /align-self:\s*stretch/,
+    'the app bar is a flex item on a centring body, so it will shrink to its content');
+  assert.match(bar[1], /width:\s*100%/, 'the app bar does not claim the full width');
 });
 
 test('nothing is laid out with a width the page cannot override', async () => {
