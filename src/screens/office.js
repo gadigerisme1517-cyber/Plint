@@ -88,7 +88,7 @@ module.exports = function officeScreens(ctx) {
     chase:      'M6 3h8l4 4v14H6Zm8 0v4h4M12 11v3m0 3v.5',
     signoff:    'M4.5 12.5 9 17l10.5-11',
     silent:     'M3 3l18 18M9.5 5h5l1.5 2H20v9M4 7h1.5M4 7v11h12',
-    wait:       'M8 3h8M8 21h8M8 3c0 5 8 4 8 9s-8 4-8 9',
+    wait:       'M7 3h10M7 21h10M17 3v4l-5 5 5 5v4M7 3v4l5 5-5 5v4',
     escrow:     'M3 9 12 4l9 5M5 9v9m4-9v9m6-9v9m4-9v9M3 20h18',
     choices:    'M4 7h10M4 12h10M4 17h6M17 15l2 2 3.5-4',
     warranty:   'M12 3 5 6v5c0 5 3 8 7 10 4-2 7-5 7-10V6Z',

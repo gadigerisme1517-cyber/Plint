@@ -161,9 +161,14 @@ body { padding: 0; margin: 0; background: var(--paper); }
   box-shadow: 0 0 40px rgba(10, 37, 64, .18);
   padding: 0 12px calc(18px + var(--safe-b));
   overflow-y: auto; overscroll-behavior: contain;
+  /* Its own scrollbar, hidden the way v21 hides `.mbody`'s. A 10px gutter down
+     the inside edge of a drawer reads as an unfinished panel, and it was
+     taking 10px off a 323px one. */
+  scrollbar-width: none;
   transform: translateX(-101%);
   transition: transform .2s ease;
 }
+.dpanel::-webkit-scrollbar { width: 0; height: 0; }
 .drawer:target .dpanel { transform: none; }
 /* Somebody who has asked not to see motion still gets the layer, instantly. */
 @media (prefers-reduced-motion: reduce) {
