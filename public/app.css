@@ -197,6 +197,10 @@ body { padding: 0; margin: 0; background: var(--paper); }
   .phone.wide .blk        { padding: 0 var(--gutter); }
   .phone.wide .item       { padding: 17px 16px; gap: 18px; }
   .phone.wide .gap        { height: 36px; }
+  /* `.gap.s` too, or this rule flattens it: three classes beats v21's two, so
+     every small spacer on the buyer's screens was rendering at the full 36px
+     and the three sizes were indistinguishable. */
+  .phone.wide .gap.s      { height: 22px; }
   .phone.wide .gap.l      { height: 54px; }
   .phone.wide .nav        { flex: 0 0 58px; padding: 0; }
 
@@ -281,8 +285,15 @@ body { padding: 0; margin: 0; background: var(--paper); }
   .wrow.noact .mid p.s { grid-area: 2 / 1 / 3 / 3; }
   .wrow.noact .amt     { grid-area: 2 / 3; align-self: center; }
 
-  /* Which leaves the spacer as the one thing separating two sections. */
-  .mbody .gap { height: 20px; }
+  /* Which leaves the spacer as the one thing separating two sections.
+
+     The buyer's screens need the same cut: ten spacers at 36px and 54px is
+     378px of blank in a 3257px page. `.phone` is in the selector to outrank
+     the `.phone.wide` rules above, which are three classes to `.scroll .gap`'s
+     two - it ties them instead, and this block comes later. */
+  .mbody .gap,     .phone .scroll .gap      { height: 20px; }
+  .mbody .gap.s,   .phone .scroll .gap.s    { height: 12px; }
+  .mbody .gap.l,   .phone .scroll .gap.l    { height: 28px; }
 
   .wrow {
     display: grid !important;

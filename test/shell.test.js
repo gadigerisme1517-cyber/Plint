@@ -361,11 +361,21 @@ test('one gutter, and everything on a phone starts on it', async () => {
   assert.match(narrow, /\.wrow\.noact \.mid p\.s \{[^}]*grid-area:\s*2 \/ 1 \/ 3 \/ 3/,
     'the detail still spans under the amount that has moved up beside it');
 
-  const gap = /\.mbody \.gap \{([^}]*)\}/.exec(narrow);
+  const gap = /\.mbody \.gap,[^{]*\{([^}]*)\}/.exec(narrow);
   assert.ok(gap, 'the section spacer keeps its desktop height on a phone');
   const px = Number(/height:\s*(\d+)px/.exec(gap[1])[1]);
   assert.ok(px > 0 && px <= 24,
     'the section spacer is ' + px + 'px; it is the only separator left, but it is not a screenful');
+  /* All three sizes, on both shells. Ten spacers at v21's 36px and 54px is
+     378px of blank on the buyer's villa screen alone. */
+  assert.match(narrow, /\.mbody \.gap\.s,[^{]*\.scroll \.gap\.s\s*\{/,
+    'the small spacer is not cut on one of the two shells');
+  assert.match(narrow, /\.mbody \.gap\.l,[^{]*\.scroll \.gap\.l\s*\{/,
+    'the large spacer is not cut on one of the two shells');
+  /* And this block must come after the `.phone.wide` rules it ties with on
+     specificity, or they win and nothing here applies. */
+  assert.ok(css.indexOf('.phone.wide .gap ') < css.indexOf('.phone .scroll .gap '),
+    'the phone spacer heights are declared before the .phone.wide ones that tie with them');
 });
 
 test('the day count sits with the status pill, on the heading line', async () => {
