@@ -112,6 +112,13 @@ body { padding: 0; margin: 0; background: var(--paper); }
 .ab-ctx  { font-size: 12.5px; color: var(--ink-3); white-space: nowrap;
            overflow: hidden; text-overflow: ellipsis; }
 .ab-g    { flex: 1; }
+/* The head office's way into its fifteen. It sits on the right with the sign
+   out rather than beside the screen name, where it read as part of the title -
+   "Today Menu", "Owner view Menu". It is a control, so it is drawn as one. */
+.ab-menu { font: 600 13px/1 'Instrument Sans', system-ui, sans-serif;
+           color: var(--brand); border: 1px solid var(--hair); border-radius: var(--btn-r);
+           padding: 0 12px; min-height: var(--btn-h);
+           display: inline-flex; align-items: center; white-space: nowrap; }
 /* The screen name is a phone affordance: on a desktop the breadcrumb in the
    topbar already names it, and saying it twice is noise. */
 .ab-screen { display: none; }

@@ -231,11 +231,11 @@ function appbar(sess, current, inlineNav, screen) {
 <a class="ab-brand" href="/"><span class="ab-mark">${LOGO}</span><span class="ab-name">Plint</span></a>
 <span class="ab-ctx">NVT Eterna &middot; Phase 1</span>
 ${screen ? `<span class="ab-screen">${esc(screen)}</span>` : ''}
-${dests.length > BAR_FITS ? `<a class="ab-menu" href="/office/menu"
- aria-label="All destinations" style="text-decoration:none">Menu</a>` : ''}
 ${inlineNav && dests.length > 1 ? `<nav class="ab-nav">${dests.map(([href, label]) =>
   `<a href="${href}"${current === href ? ' aria-current="page"' : ''}>${esc(label)}</a>`).join('')}</nav>` : ''}
 <div class="ab-g"></div>
+${dests.length > BAR_FITS ? `<a class="ab-menu" href="/office/menu"
+ aria-label="All destinations" style="text-decoration:none">Menu</a>` : ''}
 ${sess ? `<span class="ab-who">${esc(sess.name)}</span>
 <a class="ab-out" href="/logout">Sign out</a>` : ''}
 </header>`;
