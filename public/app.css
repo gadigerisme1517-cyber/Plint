@@ -405,14 +405,18 @@ body { padding: 0; margin: 0; background: var(--paper); }
 @media (max-width: 720px) {
   .whead { display: none; }
 
-  /* The list is the page, not a panel floating on it. */
-  .wl { border: 0 !important; border-radius: 0; background: none; box-shadow: none; }
+  /* A SECTION IS ONE CARD, NOT A PILE OF THEM.
 
-  /* Every list row is a card. v21 reserves `.vcard` for rows carrying actions
-     and leaves the rest flat, but a flat row on this app reads as loose text
-     against the page - there is no left edge to line up against once the
-     desktop table's columns are gone. So the card is the row, everywhere, in
-     every tab and for all three roles, on v21's `.vcard` metrics. */
+     This was the other way round: `.wl` gave up its border and every `.wrow`
+     inside it became a card of its own with a gap under it. Each row was
+     legible and the screen was not - a heading, then five or forty separate
+     tiles floating on a tint, with no edge saying where the section began or
+     ended. It reads as a jigsaw, which is how it was described.
+
+     So the panel comes back. The section heading is the top of the card, the
+     rows sit inside it separated by a hairline, and the card's own border is
+     the only edge on the screen. That is v21's own `.wl` on a desktop, and it
+     is what every list on a phone looks like: one container, rows within it. */
   /* The gutter, applied once. Everything inside gives up its own horizontal
      padding, borders and margins so there is a single left edge down the page.
      `.wl` and `.tools` are bordered cards in v21's desktop shell; on a phone
@@ -440,22 +444,47 @@ body { padding: 0; margin: 0; background: var(--paper); }
      buyer's two document cards sat at 36px while everything above them sat at
      18px: an 18px margin of their own inside an 18px-padded block. */
   .scroll .item, .scroll .duebar { margin-left: 0 !important; margin-right: 0 !important; }
-  .wl, .tools {
-    border: 0 !important;
-    border-radius: 0;
-    background: none;
-    box-shadow: none;
-    /* With the panel's border and background gone the list is no longer a box,
-       so its inner padding is only dead space. It was stacking with the last
-       card's own margin, the panel's margin and the section spacer to put 70px
-       of nothing between the last card of one section and the next heading. */
-    padding-top: 0 !important;
-    padding-bottom: 0 !important;
+  /* The toolbar is not a panel - it holds buttons, not rows. */
+  .tools {
+    border: 0 !important; border-radius: 0; background: none; box-shadow: none;
+    padding-top: 0 !important; padding-bottom: 0 !important;
+    margin-bottom: 20px !important;
   }
-  /* Only the list gives up its bottom margin - the last card already carries
-     one. The toolbar has nothing below it but the next heading. */
-  .wl { margin-bottom: 0 !important; }
-  .tools { margin-bottom: 20px !important; }
+
+  /* The list is a card. `overflow: hidden` so the last row's corners are the
+     card's corners rather than square ones poking out of a 12px radius. */
+  .wl {
+    background: var(--paper) !important;
+    border: 1px solid var(--hair) !important;
+    border-radius: 12px;
+    box-shadow: none;
+    padding: 0 !important;
+    margin-bottom: 0 !important;
+    overflow: hidden;
+  }
+
+  /* A heading immediately above a list is that list's heading, so it becomes
+     the top of the same card. `:has()` rather than new markup: the pairing is
+     already there in every screen of every role - a `.blk` with the label in
+     it, then the `.wl` with the rows - and a second way of writing it would
+     have to be applied in three modules and remembered in a fourth. */
+  .mbody .blk:has(+ .wl) {
+    background: var(--paper);
+    border: 1px solid var(--hair);
+    border-bottom: 0;
+    border-radius: 12px 12px 0 0;
+    padding: 13px 14px 10px !important;
+  }
+  .mbody .blk:has(+ .wl) + .wl { border-radius: 0 0 12px 12px; border-top: 0 !important; }
+
+  /* Same for the count line the head office puts above a group of villas. */
+  .mbody .tools:has(+ .wl) {
+    background: var(--paper); border: 1px solid var(--hair); border-bottom: 0;
+    border-radius: 12px 12px 0 0;
+    padding: 13px 14px 10px !important;
+    margin-bottom: 0 !important;
+  }
+  .mbody .tools:has(+ .wl) + .wl { border-radius: 0 0 12px 12px; border-top: 0 !important; }
   /* No control on the row means the money has no one to share row three
      with, so it goes up onto the detail's line instead of taking a line of
      its own. Worth 28px on every row of a list that is only ever read. */
@@ -488,12 +517,20 @@ body { padding: 0; margin: 0; background: var(--paper); }
        rule of this file's kind that plint.css was quietly winning. */
     column-gap: 10px !important;
     row-gap: 4px !important;
-    margin: 0 0 8px !important;
-    padding: 12px 14px !important;
-    border: 1px solid var(--hair) !important;
-    border-radius: 12px;
-    background: var(--paper);
+    /* A row inside the panel, not a card of its own: no border of its own, no
+       radius, no gap under it. The hairline between rows is the only division,
+       and the panel's own edge is the only edge. */
+    margin: 0 !important;
+    padding: 13px 14px !important;
+    border: 0 !important;
+    border-bottom: 1px solid var(--hair) !important;
+    border-radius: 0;
+    background: none;
   }
+  .wl > .wrow:last-child, .wl > a.wrow:last-child { border-bottom: 0 !important; }
+  /* A row that carries a form under it owns the hairline instead, or there are
+     two lines between one row and the next. */
+  .wrow:has(+ .uprow) { border-bottom: 0 !important; }
   .wrow > * { flex: none !important; min-width: 0; }
 
   /* The buyer's screens are built from v21's `.item`, not from the worklist
@@ -622,14 +659,13 @@ body { padding: 0; margin: 0; background: var(--paper); }
      as three loose boxes underneath. `:has()` closes the join where the browser
      supports it; where it does not, the panel simply butts against a rounded
      card, which still reads as one thing. */
-  .wrow:has(+ .uprow) { border-radius: 12px 12px 0 0; margin-bottom: 0; border-bottom: 0 !important; }
   .wrow + .uprow {
-    margin: 0 0 10px;
-    padding: 4px 16px 16px !important;
-    border: 1px solid var(--hair) !important;
-    border-top: 0 !important;
-    border-radius: 0 0 12px 12px;
-    background: var(--paper);
+    margin: 0 !important;
+    padding: 0 14px 14px !important;
+    border: 0 !important;
+    border-bottom: 1px solid var(--hair) !important;
+    border-radius: 0;
+    background: none;
     /* The sentence, the picker and the button were three full-width lines,
        145px under every row of a six-row list. The sentence keeps its line -
        it is a sentence - and the picker and the button share the next one.

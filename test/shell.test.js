@@ -618,10 +618,19 @@ test('one gutter, and everything on a phone starts on it', async () => {
      a 812px screen. On a phone `.wl` has no border and no background, so its
      padding and margin are buying nothing and the spacer is left to do the
      job alone. */
-  const panel = /\.wl, \.tools \{([^}]*)\}/.exec(narrow);
-  assert.ok(panel, 'the list panel is never stripped down on a phone');
-  assert.match(panel[1], /padding-bottom:\s*0/, 'the stripped panel still pads its own bottom');
-  assert.match(narrow, /\.wl \{[^}]*margin-bottom:\s*0/, 'the list still adds a bottom margin');
+  /* The list is a card and its heading is the top of that card. It was the
+     other way round - `.wl` gave up its border and every row inside became a
+     tile of its own with a gap under it. Each row was legible and the screen
+     was not: a heading, then five or forty separate tiles floating on a tint,
+     with no edge saying where the section began or ended. */
+  const panel = /\n  \.wl \{([^}]*)\}/.exec(narrow);
+  assert.ok(panel, 'the list has no rule of its own on a phone');
+  assert.match(panel[1], /border:\s*1px solid var\(--hair\)/, 'the list is not a card');
+  assert.match(panel[1], /background:\s*var\(--paper\)/, 'the list card has no ground of its own');
+  assert.match(panel[1], /overflow:\s*hidden/,
+    "the last row's square corners will poke out of the card's radius");
+  assert.match(narrow, /\.mbody \.blk:has\(\+ \.wl\) \{[^}]*border-radius:\s*12px 12px 0 0/,
+    'a section heading is not joined to the list under it');
   /* But not the toolbar: it has no card of its own below it to space it from
      the next heading, and zeroing it put the Close-a-snag button hard against
      the "Office is chasing you" label. */
@@ -883,8 +892,8 @@ test('a row with one control never claims a line for it', async () => {
 test('the phone list is v21\'s, not a table in disguise', async () => {
   const css = await (await get('/app.css')).text();
   const narrow = /@media \(max-width: 720px\) \{([\s\S]*?)\n\}/.exec(css)[1];
-  // The list is the page: no panel border around it.
-  assert.match(narrow, /\.wl \{[^}]*border:\s*0/, 'the worklist is still a bordered panel on a phone');
+  // The list is a card, and the rows inside it are rows.
+  assert.match(narrow, /\n  \.wl \{[^}]*border:\s*1px solid/, 'the worklist is not a card on a phone');
   // The wrapper is dropped so the meta line can use the full width.
   assert.match(narrow, /\.wrow \.mid \{[^}]*display:\s*contents/,
     'the row wrapper still traps the meta line in one column');
@@ -893,14 +902,22 @@ test('the phone list is v21\'s, not a table in disguise', async () => {
      left edge for the eye to run down. */
   const card = /\n  \.wrow \{([^}]*)\}/.exec(narrow);
   assert.ok(card, 'there is no phone rule for a list row');
-  assert.match(card[1], /border:\s*1px solid var\(--hair\)/, 'a list row has no card border');
-  assert.match(card[1], /border-radius:\s*12px/, 'a list row is not v21\'s 12px radius');
-  assert.match(card[1], /background:\s*var\(--paper\)/, 'a list row has no card background');
-  assert.match(card[1], /padding:\s*12px 14px/, 'a list row has no card padding');
-  /* No horizontal margin of its own: the gutter belongs to one container, and
-     a margin here is exactly how the card ended up inset further than the
+  /* A row inside the panel, not a card of its own: the hairline between rows
+     is the only division and the panel's edge is the only edge. Forty tiles
+     each with their own border and a gap under them is a jigsaw. */
+  assert.match(card[1], /border:\s*0/, 'a row still draws its own border inside the card');
+  assert.match(card[1], /border-bottom:\s*1px solid var\(--hair\)/,
+    'nothing divides one row from the next');
+  assert.match(card[1], /margin:\s*0\s*!important/, 'a row still floats on a gap of its own');
+  assert.match(narrow, /\.wl > \.wrow:last-child[^{]*\{[^}]*border-bottom:\s*0/,
+    'the last row draws a line along the bottom of the card');
+  assert.match(card[1], /padding:\s*13px 14px/, 'a list row has no padding of its own');
+  /* No margin at all now: the gutter belongs to one container, and the rows
+     sit flush inside the panel rather than floating on gaps. A horizontal
+     margin here is exactly how a card once ended up inset further than the
      label above it. */
-  assert.match(card[1], /margin:\s*0 0 8px/, 'the card sets its own horizontal margin again');
+  assert.ok(!/margin:[^;]*\d+px[^;]*;/.test(card[1].replace(/margin:\s*0\s*!important;/, '')),
+    'the row sets a margin of its own again');
 
   /* plint.css:420 sets `gap: 14px !important` on `.wrow` for its desktop
      table. Without `!important` here every card carried 28px of row gaps it
