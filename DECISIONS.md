@@ -2040,3 +2040,65 @@ suites later as a missing PDF. That branch now asserts the demand exists.
 them are cross-role flows driven over real HTTP: a row is only ever written by
 posting the form the screen posts, and only ever observed by fetching the page
 the other role opens.
+
+## The phone layer was a desktop table in disguise
+
+The engineer and office screens were built out of v21's **desktop** components -
+`.wl`, `.wrow`, `.whead`, the five fixed columns - and then reflowed with CSS
+into bordered three-line blocks. That did not scroll sideways, which is what I
+had been checking, and it was not v21 either.
+
+v21 has phone components for these and they are a different thing. Its lists
+are `.item`: flat rows on the page, hairline separated, with the villa and the
+stage on **one** line and the status pill on that same line. Its `.vcard` -
+16px padding, 12px radius, 12px apart - appears only where a row carries
+actions. Reading those metrics off `plint.css` is how this was matched, with
+the design file served at 375px next to the built screens for comparison
+(`scripts/serve-v21.js`, reference only).
+
+So there are two shapes now and the markup says which: a plain `.wrow` is a
+list row, `.wrow.card` is a card. Visits and snags are cards. Everything else
+is a row.
+
+Four things that only showed at 375px:
+
+**`.mid` trapped the meta line.** It wraps the title and the description
+together, so both sat in one narrow column beside a chip - "J. Kulkarni ·
+marked by Suresh Kumar on 31 Aug 2026" came out five lines deep.
+`display: contents` drops the wrapper so its children take their own places in
+the row's grid, which is how v21 gets the description across the full width.
+
+**Amounts stopped short of the edge.** They were right-aligned inside a middle
+column, which left them floating mid-row. They span to the row's right edge
+now, tabular, and never break mid-value.
+
+**A form sat below its row's rule**, so the reassign control read as the top of
+the *following* villa - the one villa it will not act on. The rule moves below
+the form.
+
+**Tap targets.** v21's own `.wbtn` is about 31px and its `.tab` about 34, and
+"Sign out" in the app bar measured **16px** - a line of text with no box round
+it, and the control someone reaches for on a shared phone. Everything pressable
+is 44px on a phone now. This is the only place the phone layer deliberately
+departs from v21's metrics, and it is a touch decision rather than a design
+one.
+
+## A mutation run left data behind
+
+`asUser` commits when its callback returns, so `assert.rejects` around an
+INSERT leaves the row behind on exactly the day the policy is wrong - which is
+the day that test is earning its keep. A mutation run that made the snag policy
+permissive left a snag titled **"Forged"**, raised in the head office's name,
+sitting on the engineer's screen in the development database. The test caught
+the mutation and still made a mess.
+
+Refused writes now go through a helper that throws a sentinel after the
+attempt, so the transaction always rolls back, and a further test asserts that
+nothing a refused write attempted was committed.
+
+## Iterating on CSS needs a restart
+
+The asset table and the build hash are computed once at boot. Editing
+`public/app.css` and reloading shows the old stylesheet, which cost a round of
+"the rule is in the file and not in the browser". The server has to be
+restarted after every stylesheet change. Worth knowing before the next pass.
