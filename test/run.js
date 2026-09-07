@@ -31,6 +31,7 @@ const SUITES = [
   'pack.test.js',
   'loan.test.js',
   'reconcile.test.js',   // seeded rows against the layer, before anything mutates more
+  'shell.test.js',       // the frame is gone, and each role can navigate
   'pwa.test.js',        // manifest, icons, and the worker's cache allowlist
   'config.test.js',
   'tls.test.js',

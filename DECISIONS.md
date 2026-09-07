@@ -1741,3 +1741,100 @@ the constant cache name, the immutable stylesheet, and this - were all
 invisible until the code ran on a real origin, and all three were shipped
 green. A local suite proves the code does what it says. It cannot prove the
 network agrees.
+
+# Fifteenth pass: the phone frame comes off
+
+## What was wrong
+
+v21 is a design file. It draws each role twice - once as a 392px phone mock
+with a painted-on `9:41` status bar, once as a desktop mock - both sitting on a
+slate inside the prototype's own chrome (`.bar`: a logo, a caption, a role
+switcher). Shipping that as the product meant a buyer on a laptop got a phone
+card down the middle of the screen, and the office worklist on a handset got
+five fixed columns - id 58px, days 84px, amount 108px, action 118px - squeezed
+into 347px.
+
+Adding `.phone.wide` to the buyer screen last pass made it worse, not better.
+v21's `wide` block is a *desktop* rendering, and its only responsive line caps
+the card at 392px and unstacks one grid; the 48px paddings and 76px figures
+have no media query at all. On the live URL at 375px the amount rendered
+`₹33,66,6` - clipped mid-number, on the one screen a buyer ever opens.
+
+## What replaced it
+
+**One shell.** `.bar` and `.sysbar` are gone. Every view is full-bleed at every
+width: `.phone`, `.phone.wide` and `.desk` all release their max-width, their
+radius and their shadow, and the page scrolls instead of a box inside it - so a
+phone browser can hide its own chrome on scroll.
+
+**One app bar**, sticky, inside the product rather than around it: the mark,
+the project, who is signed in, and the way out. It is the only chrome an
+installed app has, which is why sign-out lives there and not in a menu.
+
+**One set of destinations per role**, defined once in `destinations(sess)` and
+rendered three ways: a sidebar on a desktop for the two roles that have one,
+inline links in the app bar for the buyer who does not, and a bottom tab bar on
+phones. Building it from the role rather than fixing it is what stops an
+engineer being offered the office's two links, which 404 for him.
+
+## The navigation choice, per dashboard
+
+The rule was: tab bar at four sections or fewer, menu button above that.
+
+| Dashboard | Sections | Choice |
+|---|---|---|
+| Buyer | 2 - Villa, Papers | Bottom tab bar |
+| Office | 2 - Stuck money, Sanctions | Bottom tab bar |
+| Engineer | 1 - Sign-off and evidence | **No tab bar** |
+
+Nothing in this application has more than two sections, so **nothing gets a
+menu button**. The threshold is encoded in `test/shell.test.js` and the test
+fails if a role ever grows past four without one.
+
+The engineer is the honest exception. A tab bar with a single tab in it is
+furniture that never does anything: it costs 56px of a phone screen to show a
+control that cannot change what is on screen. The engineer gets the app bar
+alone, and `tabbar()` returns nothing below two destinations. If a second
+engineer screen is ever built, the bar appears on its own.
+
+## Tables become cards
+
+Below 720px the column headings are dropped and each `.wrow` becomes a three
+row grid: identity and status on the first line, description across the full
+width, then the number of days, the amount and the action along the bottom.
+Both worklists and the sanction and evidence forms go through it - those forms
+carried inline flex bases (200px file input, 150px GPS pair, 140px button)
+which left a caption field about forty pixels wide, and the evidence row nests
+a second flex container inside the first, so the override needs `!important`
+twice.
+
+Two more things only a real viewport showed:
+
+- The ageing histogram shipped with `style="height:88px"` on each bar. An
+  inline height beats every rule, so given the full width of a phone the
+  sparkline became four slabs. Heights now travel as a `--h` custom property
+  the stylesheet can scale.
+- The office had a sidebar **and** the same two links in the app bar. Two live
+  controls for one thing. The inline nav is now passed only by the shell that
+  has no sidebar.
+
+## Measured, not asserted
+
+Every screen, every role, at 320, 375 and 1430px: `document.scrollWidth` equal
+to the viewport, and a walk of every element in the document reporting nothing
+extending past the right edge except inside containers that are deliberate
+horizontal scrollers - the evidence photo strip. Buyer, engineer and office all
+render full-bleed, all carry the manifest, the icons, the theme colour, the
+`viewport-fit=cover` opt-in for a notch and the worker registration.
+
+`test/shell.test.js` holds eleven of these as markup assertions. Six mutations
+confirmed they fail: putting the status bar back, giving the engineer a
+one-tab bar, restoring the office's duplicate nav, returning the histogram to
+an inline height, dropping `viewport-fit`, and un-hiding `.sysbar` in the
+stylesheet.
+
+`plint.css` is still v21 verbatim and still unedited. Everything above is in
+`public/app.css`, which is now the larger file of the two in intent if not in
+size: it is the difference between a design file and an application.
+
+173 assertions, fifteen suites, green from a clean database.

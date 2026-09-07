@@ -134,9 +134,8 @@ const LOGO = `<svg width="22" height="22" viewBox="0 0 32 32" fill="none" aria-l
 <path d="M14.2 8.6V15h4.6a3.2 3.2 0 0 0 0-6.4h-4.6Z" fill="#FFF"/>
 <rect x="5.4" y="8.6" width="6.4" height="6.4" rx="1.6" fill="var(--brand)"/></svg>`;
 
-function page(title, sess, body, wide) {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Plint</title>
+const HEAD = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Plint</title>
 <meta name="theme-color" content="#0A2540">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">
@@ -148,57 +147,84 @@ function page(title, sess, body, wide) {
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/plint.css">
-<link rel="stylesheet" href="/app.css"></head><body><div class="wrap">
-<div class="bar"><span class="blogo">${LOGO}</span>
-<span class="bm" style="color:var(--ink)">Plint</span>
-<span class="sub">NVT Eterna &middot; Phase 1 &middot; 48 villas</span>
-${sess ? `<span class="role" aria-pressed="true">${esc(sess.name)}</span>
-<a class="role" href="/logout" style="text-decoration:none">Sign out</a>` : ''}</div>
-<div class="stagearea"><div class="phone${wide ? ' wide solo' : ''}">
-<div class="sysbar"><span>9:41</span><span>Plint</span></div>
-<div class="scroll anim">${body}</div></div></div></div>${SW}</body></html>`;
+<link rel="stylesheet" href="/app.css"></head><body>`;
+
+/* Where each role can actually go. One list, rendered three ways: the sidebar
+   on a desktop office screen, links in the app bar for the buyer, and the
+   bottom tab bar on a phone. Built from the role, because an engineer offered
+   the office's destinations gets two links that 404 for him. */
+function destinations(sess) {
+  if (!sess) return [];
+  if (sess.role === 'buyer') {
+    return [['/villa/' + sess.unit, 'Villa', 'home'], ['/documents', 'Papers', 'doc']];
+  }
+  if (sess.role === 'office') {
+    return [['/office', 'Stuck money', 'money'], ['/office/sanctions', 'Sanctions', 'doc']];
+  }
+  return [['/engineer', 'Sign-off', 'tick']];
 }
 
-/** The office runs in v21's desktop shell, not the phone frame. */
+const TABICON = {
+  home:  'M4 11 12 4l8 7v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1Z',
+  doc:   'M6 3h8l4 4v14H6Zm8 0v4h4',
+  money: 'M7 5h10M7 9h10M15 5c0 4-3 5-6 5l7 9',
+  tick:  'M4.5 12.5 9 17l10.5-11',
+};
+const tabIcon = n => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+ stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${TABICON[n]}"/></svg>`;
+
+/* The application's own top bar. It replaces v21's `.bar`, which was the
+   prototype's chrome around a phone mock - a logo, a caption and a role
+   switcher sitting outside the product. This one is inside it: who you are
+   signed in as, and the way out. */
+function appbar(sess, current, inlineNav) {
+  const dests = destinations(sess);
+  return `<header class="appbar">
+<a class="ab-brand" href="/"><span class="ab-mark">${LOGO}</span><span class="ab-name">Plint</span></a>
+<span class="ab-ctx">NVT Eterna &middot; Phase 1</span>
+${inlineNav && dests.length > 1 ? `<nav class="ab-nav">${dests.map(([href, label]) =>
+  `<a href="${href}"${current === href ? ' aria-current="page"' : ''}>${esc(label)}</a>`).join('')}</nav>` : ''}
+<div class="ab-g"></div>
+${sess ? `<span class="ab-who">${esc(sess.name)}</span>
+<a class="ab-out" href="/logout">Sign out</a>` : ''}
+</header>`;
+}
+
+/* The bottom tab bar, phones only, and only when there is more than one place
+   to go. See DECISIONS.md for why every dashboard here gets tabs rather than a
+   menu button: none of them has more than two sections. */
+function tabbar(sess, current) {
+  const dests = destinations(sess);
+  if (dests.length < 2) return '';
+  return `<nav class="tabbar" style="--tabs:${dests.length}">
+${dests.map(([href, label, icon]) => `<a href="${href}"${current === href ? ' aria-current="page"' : ''}>
+${tabIcon(icon)}<span>${esc(label)}</span></a>`).join('')}
+</nav>`;
+}
+
+function page(title, sess, body, wide, current) {
+  return `${HEAD}${appbar(sess, current, true)}<div class="wrap">
+<div class="stagearea"><div class="phone${wide ? ' wide solo' : ''}">
+<div class="scroll anim">${body}</div></div></div></div>
+${tabbar(sess, current)}${SW}</body></html>`;
+}
+
+/** Office and engineer: a sidebar on a desktop, the same destinations as tabs on a phone. */
 function desk(sess, tab, title, sub, main) {
-  /* The sidebar is built from the role, not fixed. An engineer given the
-     office nav sees two links that 404 for him, which is a worse answer than
-     not offering them. */
-  const nav = sess.role === 'office'
-    ? [['', [['/office', 'Stuck money']]],
-       ['Buyer loans', [['/office/sanctions', 'Sanction not recorded']]]]
-    : [['', [['/engineer', 'Sign-off and evidence']]]];
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Plint</title>
-<meta name="theme-color" content="#0A2540">
-<link rel="manifest" href="/manifest.webmanifest">
-<link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Plint">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/plint.css">
-<link rel="stylesheet" href="/app.css"></head><body><div class="wrap">
-<div class="bar"><span class="blogo">${LOGO}</span>
-<span class="bm" style="color:var(--ink)">Plint</span>
-<span class="sub">NVT Eterna &middot; Phase 1 &middot; 48 villas</span>
-<span class="role" aria-pressed="true">${esc(sess.name)}</span>
-<a class="role" href="/logout" style="text-decoration:none">Sign out</a></div>
+  const dests = destinations(sess);
+  return `${HEAD}${appbar(sess, tab, false)}<div class="wrap">
 <div class="desk">
 <div class="side">
 <div class="logo">${LOGO}<span>Plint</span></div>
-${nav.map(([g, items]) => `${g ? `<p class="k grp">${esc(g)}</p>` : ''}
-${items.map(([href, label]) => `<a class="sbtn st" href="${href}" aria-selected="${tab === href}"
- style="text-decoration:none;display:block">${esc(label)}</a>`).join('')}`).join('')}
+${dests.map(([href, label]) => `<a class="sbtn st" href="${href}" aria-selected="${tab === href}"
+ style="text-decoration:none;display:block">${esc(label)}</a>`).join('')}
 <div class="foot"><p class="s">Eterna Phase 1 &middot; 48 villas<br>Reads from your ERP. Writes nothing back.</p></div>
 </div>
 <div class="main">
 <div class="topbar"><div class="crumb"><span>NVT Eterna</span><b>${esc(title)}</b></div></div>
 ${main}
-</div></div></div>${SW}</body></html>`;
+</div></div></div>
+${tabbar(sess, tab)}${SW}</body></html>`;
 }
 
 // -------------------------------------------------------------------- login
@@ -327,7 +353,7 @@ ${open ? `<div class="blk">
 <div class="gap"></div><div class="rule"></div><div class="gap s"></div>
 <div class="blk"><p class="k">Stage by stage</p></div><div class="gap s"></div>
 ${stageRows}
-<div class="gap l"></div>`, true);
+<div class="gap l"></div>`, true, '/villa/' + u.code);
 }
 
 /* ---------------------------------------------------------------- documents
@@ -390,7 +416,7 @@ ${DOC_SETS[a.kind].map(([label, ca]) => `<div class="drow2">
 </div></div>
 <p class="b note">Plint holds no loan papers and sends nothing to any bank. Your bank runs
 its own checks and you sign at the branch yourself.</p>
-<div class="gap l"></div>`, true);
+<div class="gap l"></div>`, true, '/documents');
 }
 
 /**
@@ -602,7 +628,10 @@ ${g.map(x => `<div class="wrow">
   const counts = buckets.map(([lo, hi]) => rows.rows.filter(r => r.age >= lo && r.age <= hi).length);
   const most = Math.max(1, ...counts);
   const bars = `<div class="agebars">${counts.map((n, i) =>
-    `<span class="agebar ${i >= 2 ? 'hot' : ''}" style="height:${n ? Math.max(8, (n / most) * 88) : 2}px"
+    /* The height goes out as a custom property, not as `height`, so a phone can
+       scale the whole histogram down. As an inline height it beat every rule
+       and rendered as four slabs half the screen wide. */
+    `<span class="agebar ${i >= 2 ? 'hot' : ''}" style="--h:${n ? Math.max(8, (n / most) * 88) : 2}px"
       title="${['0 to 9 days', '10 to 20 days', '21 to 34 days', '35 days and over'][i]}: ${n}"></span>`).join('')}</div>`;
 
   return desk(sess, '/office', 'Stuck money', '', `

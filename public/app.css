@@ -1,58 +1,223 @@
 /* ============================================================================
-   Application-level styling, layered on top of public/plint.css.
+   Application layout, layered on top of public/plint.css.
 
-   plint.css is lines 14-628 of plint-v21.html, verbatim, and is not edited.
-   Anything the running application needs that the design file does not carry -
-   a buyer screen that is not a phone-shaped card on a desktop monitor, and the
-   full-bleed layout of an installed app - lives here instead.
+   plint.css is v21 verbatim and is never edited. v21 is a design file: it
+   renders three roles as a phone mock and a desktop mock sitting side by side
+   on a slate, with prototype chrome around them. Everything below is the work
+   of turning those mocks into an application that fills a real screen at a
+   real width - the frame removed, one navigation model, and the tables in the
+   two worklists reflowed into cards where a phone cannot hold columns.
    ========================================================================= */
 
-/* ------------------------------------------------- the buyer on a desktop
-   The buyer screen is rendered with `phone wide`, so plint.css already gives
-   it the desktop paddings above 900px and collapses it back to 392px below.
-   1160px is right for the office worklist and far too wide for one column of
-   a buyer's own villa, so cap the measure. */
-@media (min-width: 901px) {
-  .phone.wide.solo { max-width: 860px; }
+:root {
+  --appbar-h: 52px;
+  --tabbar-h: 56px;
+  --safe-b: env(safe-area-inset-bottom, 0px);
 }
 
-/* ---------------------------------------------------- installed on a phone
-   No browser chrome, so the app should own the whole viewport: no page
-   padding, no floating rounded card, no fake status bar. The top bar stays -
-   it carries who you are signed in as and the way to sign out, which the
-   browser's own chrome was otherwise providing. */
+/* ------------------------------------------------------- 1. no frame, ever
+
+   v21 wraps every view in `.phone` - a 392px card with a shadow, rounded
+   corners and a painted-on `9:41` status bar - centred on a slate with the
+   prototype's own `.bar` above it. That is right for a design file and wrong
+   for the product: on a phone it is a card inside a browser inside a phone,
+   and on a monitor it is a strip down the middle. All of it goes. */
+body { padding: 0; margin: 0; background: var(--paper); }
+.wrap { max-width: none; width: 100%; }
+.bar { display: none; }               /* the prototype's chrome */
+.sysbar { display: none; }            /* the painted-on 9:41 */
+.stagearea { display: block; }
+
+.phone,
+.phone.wide,
+.phone.wide.solo {
+  max-width: none;
+  width: 100%;
+  height: auto;                       /* was min(830px, 88vh) */
+  min-height: calc(100dvh - var(--appbar-h));
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+}
+/* The page scrolls, not a box inside it. That is what lets a phone browser
+   hide its own chrome on scroll, and what makes the tab bar sit still. */
+.scroll { overflow-y: visible; }
+
+.desk {
+  border-radius: 0;
+  box-shadow: none;
+  min-height: calc(100dvh - var(--appbar-h));
+}
+
+/* --------------------------------------------------------- 2. the app bar */
+
+.appbar {
+  position: sticky; top: 0; z-index: 40;
+  display: flex; align-items: center; gap: 10px;
+  height: var(--appbar-h); padding: 0 18px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--hair);
+  padding-top: env(safe-area-inset-top, 0px);
+  height: calc(var(--appbar-h) + env(safe-area-inset-top, 0px));
+}
+.ab-brand { display: flex; align-items: center; gap: 7px; text-decoration: none; color: var(--ink); }
+.ab-mark { display: flex; }
+.ab-name { font: 600 15px/1 'Instrument Sans', system-ui, sans-serif; letter-spacing: -.2px; }
+.ab-ctx  { font-size: 12.5px; color: var(--ink-3); white-space: nowrap;
+           overflow: hidden; text-overflow: ellipsis; }
+.ab-g    { flex: 1; }
+.ab-who  { font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+.ab-out  { font-size: 13px; color: var(--brand); text-decoration: none; white-space: nowrap; }
+.ab-out:hover { text-decoration: underline; }
+
+/* Buyer navigation on a desktop: the same two destinations as the tab bar,
+   inline. The buyer has no sidebar - two sections do not earn one. */
+.ab-nav { display: flex; gap: 4px; margin-left: 14px; }
+.ab-nav a {
+  padding: 6px 12px; border-radius: 7px; text-decoration: none;
+  font: 400 13.5px/1 'Instrument Sans', system-ui, sans-serif; color: var(--ink-2);
+}
+.ab-nav a:hover { background: var(--hair-2); }
+.ab-nav a[aria-current="page"] { background: var(--brand-soft); color: var(--brand); font-weight: 600; }
+
+/* --------------------------------------------------- 3. the bottom tab bar
+
+   Phones only. Rendered only where a role has more than one destination, so
+   the engineer - who has exactly one screen - does not get a bar with one tab
+   in it. See DECISIONS.md. */
+.tabbar { display: none; }
+
+@media (max-width: 900px) {
+  .tabbar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+    display: grid; grid-template-columns: repeat(var(--tabs, 2), 1fr);
+    background: var(--paper);
+    border-top: 1px solid var(--hair);
+    padding-bottom: var(--safe-b);
+  }
+  .tabbar a {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 3px; height: var(--tabbar-h); text-decoration: none;
+    color: var(--ink-3); font: 500 11px/1 'Instrument Sans', system-ui, sans-serif;
+  }
+  .tabbar a svg { width: 21px; height: 21px; }
+  .tabbar a[aria-current="page"] { color: var(--brand); }
+
+  /* Content must end above the bar, not behind it. */
+  .phone, .phone.wide, .phone.wide.solo, .desk {
+    padding-bottom: calc(var(--tabbar-h) + var(--safe-b));
+    min-height: calc(100dvh - var(--appbar-h) - var(--tabbar-h) - var(--safe-b));
+  }
+  /* The sidebar is the desktop rendering of the same destinations. */
+  .side { display: none; }
+  .ab-nav { display: none; }
+  .ab-ctx { display: none; }
+}
+
+/* ------------------------------------------- 4. `wide` is a desktop rendering
+
+   Found on the deployed URL at 375px: the amount was clipped mid-number -
+   "₹33,66,6" - on the one screen a buyer ever opens.
+
+   v21's `.phone.wide` block (plint.css 25-44) is a desktop layout: 48px side
+   paddings, 76px figures, roomier rows. Its only responsive line is 45, which
+   caps the card at 392px and unstacks one grid; every other desktop rule stays
+   applied at phone widths. In a static design file that never shows, because
+   `wide` only ever appears in the desktop mock. Using `wide` so the buyer
+   screen stops being a phone card on a monitor brought the whole desktop rule
+   set down onto real phones with it: a 347px card with 96px of side padding
+   leaves 251px for a figure that wants 318px.
+
+   So below the breakpoint the layout goes back to v21's own phone values
+   (plint.css 47, 73, 76, 77, 79, 105, 356) rather than invented ones. */
+@media (max-width: 900px) {
+  .phone.wide .appbrand   { padding: 2px 24px 10px; font-size: 13px; border-bottom: 0; }
+  .phone.wide .top        { padding: 10px 26px 0; min-height: 48px; }
+  .phone.wide .blk        { padding: 0 26px; }
+  .phone.wide .item       { padding: 17px 26px; gap: 18px; }
+  .phone.wide .gap        { height: 36px; }
+  .phone.wide .gap.l      { height: 54px; }
+  .phone.wide .nav        { flex: 0 0 58px; padding: 0; }
+
+  .phone.wide .lede       { padding: 0 26px; display: block; }
+  .phone.wide .lede .k    { margin-bottom: 14px; }
+  .phone.wide .lede .cap  { margin-top: 12px; min-width: 0; max-width: none; }
+
+  /* Sized from the space it has, not from the viewport: 78px of that viewport
+     is body and card padding, and the figure is about five times its font
+     size wide. v21's flat 64px overflows the gutter under about 400px. */
+  .phone.wide .lede .mega { font-size: min(64px, calc((100vw - 80px) / 5)); line-height: 1; }
+}
+
+/* ------------------------------------ 5. the worklists stop being tables
+
+   `.wrow` is a flex row with fixed columns - id 58px, days 84px, amount 108px,
+   action 118px - plus a `.whead` of column labels. Below about 720px there is
+   no room for five columns, and squeezing them is how a table starts scrolling
+   sideways. Each row becomes a card instead: identity and status on the top
+   line, the description across the full width, the numbers and the action
+   along the bottom. */
+@media (max-width: 720px) {
+  .whead { display: none; }
+
+  .wrow {
+    display: grid !important;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 6px 10px;
+    padding: 14px 0 !important;
+  }
+  .wrow > * { flex: none !important; }
+  .wrow .id   { grid-column: 1; grid-row: 1; }
+  .wrow .stc  { grid-column: 3; grid-row: 1; justify-self: end; text-align: right; }
+  .wrow .mid  { grid-column: 1 / -1; grid-row: 2; min-width: 0; }
+  .wrow .days { grid-column: 1; grid-row: 3; text-align: left; white-space: nowrap; }
+  .wrow .days b { display: inline; }
+  .wrow .amt  { grid-column: 2; grid-row: 3; text-align: left; white-space: nowrap; }
+  .wrow .actc { grid-column: 3; grid-row: 3; justify-self: end; text-align: right; }
+
+  /* The header strip and its KPIs stack rather than compete for one line. */
+  .hstrip { flex-wrap: wrap; gap: 12px; }
+  .mhead, .mbody, .tools { padding-left: 18px !important; padding-right: 18px !important; }
+
+  /* The evidence and sanction forms carry inline flex bases - 200px for the
+     file input, 150px for the GPS pair, 140px for the button - which at 375px
+     leaves a caption field about forty pixels wide. Every field goes full
+     width instead. `!important` because the widths are inline attributes, and
+     the evidence row nests a second flex container inside the first. */
+  .uprow { flex-wrap: wrap; gap: 8px; }
+  .uprow .fi, .uprow .wbtn, .uprow > span { flex: 1 1 100% !important; min-width: 0 !important; }
+  .uprow .mid { flex-wrap: wrap !important; gap: 8px !important; }
+  .uprow .mid .fi { flex: 1 1 100% !important; min-width: 0 !important; }
+
+  /* The ageing histogram is a sparkline beside a KPI on a desktop. Given the
+     full width of a phone it hit its 74px per-bar cap and became four slabs. */
+  .agebars { height: 72px; gap: 8px; max-width: 280px; }
+  .agebar  { max-width: 46px; height: calc(var(--h, 8px) * .62); }
+}
+
+/* The bar heights arrive as `--h` rather than an inline `height`, so the rule
+   above can scale them. */
+.agebar { height: var(--h, 8px); }
+
+/* ------------------------------------------------------ 6. no sideways scroll
+
+   A single overflowing child makes the whole document pan, which on a phone
+   reads as a broken page. These are the containers that hold long unbroken
+   strings: certificate hashes, GPS pairs, bank names. */
+html, body { overflow-x: hidden; }
+.wrow .mid p, .item .mid p, .lede .cap { overflow-wrap: anywhere; }
+img, svg, table { max-width: 100%; }
+
+/* ------------------------------------------------------------- 7. installed
+
+   No browser chrome, so the app owns the whole viewport and the top bar is the
+   only chrome there is. */
 @media (display-mode: standalone), (display-mode: fullscreen) {
-  body { padding: 0; }
-  .wrap { max-width: none; }
-  .bar { padding: 10px 14px; margin-bottom: 0; }
-  .stagearea { display: block; }
-
-  .phone,
-  .phone.wide,
-  .phone.wide.solo {
-    max-width: none;
-    width: 100%;
-    height: calc(100vh - 44px);
-    height: calc(100dvh - 44px);
-    border-radius: 0;
-    box-shadow: none;
-  }
-  .sysbar { display: none; }
-
-  .desk {
-    border-radius: 0;
-    box-shadow: none;
-    min-height: calc(100vh - 44px);
-    min-height: calc(100dvh - 44px);
-  }
-
-  /* Keep content clear of the home indicator and the notch. */
-  .scroll { padding-bottom: env(safe-area-inset-bottom); }
-  .bar { padding-top: calc(10px + env(safe-area-inset-top)); }
+  .appbar { padding-top: calc(env(safe-area-inset-top, 0px) + 4px); }
 }
 
-/* -------------------------------------------------------------- offline
-   Shown by the service worker when a navigation cannot reach the server. */
+/* ---------------------------------------------------------------- offline */
 .offline-note {
   margin: 0 auto;
   max-width: 42ch;
