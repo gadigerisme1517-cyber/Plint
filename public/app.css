@@ -92,6 +92,9 @@ body { padding: 0; margin: 0; background: var(--paper); }
 .ab-ctx  { font-size: 12.5px; color: var(--ink-3); white-space: nowrap;
            overflow: hidden; text-overflow: ellipsis; }
 .ab-g    { flex: 1; }
+/* The screen name is a phone affordance: on a desktop the breadcrumb in the
+   topbar already names it, and saying it twice is noise. */
+.ab-screen { display: none; }
 .ab-who  { font-size: 13px; color: var(--ink-2); white-space: nowrap; }
 .ab-out  { font-size: 13px; color: var(--brand); text-decoration: none; white-space: nowrap; }
 .ab-out:hover { text-decoration: underline; }
@@ -138,6 +141,29 @@ body { padding: 0; margin: 0; background: var(--paper); }
   .side { display: none; }
   .ab-nav { display: none; }
   .ab-ctx { display: none; }
+
+  /* ------------------------------------------------ one bar, not four rows
+
+     The header was four bands deep before any content: the brand row, a 56px
+     breadcrumb saying "NVT Eterna · Villas", the page title, its subtitle, and
+     then the count. 273px of an 812px screen before the first card.
+
+     The breadcrumb's only job on a phone is naming the screen, and the brand
+     row has space for that once the wordmark goes - the mark carries the brand
+     perfectly well at this width. So they become one bar and `.topbar` is not
+     drawn at all. */
+  .topbar { display: none; }
+  .ab-name { display: none; }
+  .ab-screen {
+    display: block;
+    font: 600 15px/1 'Instrument Sans', system-ui, sans-serif;
+    color: var(--ink); white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .ab-who {
+    overflow: hidden; text-overflow: ellipsis; min-width: 0;
+    font-size: 12.5px;
+  }
 }
 
 /* ------------------------------------------- 4. `wide` is a desktop rendering
@@ -224,8 +250,8 @@ body { padding: 0; margin: 0; background: var(--paper); }
     align-items: baseline;
     column-gap: 10px;
     row-gap: 4px;
-    margin: 0 0 10px !important;
-    padding: 14px 16px !important;
+    margin: 0 0 8px !important;
+    padding: 12px 14px !important;
     border: 1px solid var(--hair) !important;
     border-radius: 12px;
     background: var(--paper);
@@ -277,21 +303,34 @@ body { padding: 0; margin: 0; background: var(--paper); }
   .wrow .days { grid-area: 1 / 2; justify-self: end; white-space: nowrap;
                 color: var(--ink-2); font-variant-numeric: tabular-nums;
                 font-size: 13px; }
+  /* Where the pill is busy saying something else, the number carries the
+     verdict, on the same thresholds the pill would have used. */
+  .wrow .days.age-warn { color: var(--warn); font-weight: 600; }
+  .wrow .days.age-late { color: var(--hot);  font-weight: 600; }
   .wrow .days b { display: inline; }
   .wrow .stc  { grid-area: 1 / 3; justify-self: end; text-align: right; }
 
   /* Line two: the detail, with the money right-aligned beside it. */
   .wrow .mid p.s { grid-area: 2 / 1; margin-top: 3px; }
-  .wrow .amt  { grid-area: 2 / 2 / 3 / 4; align-self: end; justify-self: end;
+  .wrow .amt  { grid-area: 2 / 2; align-self: end; justify-self: end;
                 text-align: right; white-space: nowrap;
                 font-variant-numeric: tabular-nums; }
 
-  /* Line four: anything you can press, on its own line so a thumb-sized
-     control is never squeezed against an amount. This is v21's `.vact`. */
-  .wrow .actc:not(.s) {
+  /* A single control belongs on the amount's line, compact and hard right - a
+     full-width row for one "Review" button cost a whole line per card and read
+     as more important than the row it acts on. Two or more controls will not
+     fit beside an amount, so those still take their own line; the row says
+     which through `actc wide`. */
+  .wrow .actc:not(.s):not(.wide) .wbtn { padding: 10px 12px; font-size: 13px; }
+  .wrow .actc:not(.s):not(.wide) {
+    grid-area: 2 / 3;
+    display: flex; align-items: center; justify-content: flex-end;
+    align-self: end;
+  }
+  .wrow .actc.wide {
     grid-area: 3 / 1 / 4 / 4;
     display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end;
-    margin-top: 6px;
+    margin-top: 8px;
   }
   /* A status line rather than a control - "Too few photographs". */
   .wrow .actc.s { grid-area: 3 / 1 / 4 / 4; justify-self: end; text-align: right; }
@@ -313,12 +352,38 @@ body { padding: 0; margin: 0; background: var(--paper); }
     background: var(--paper);
   }
 
-  /* The header stacks, and the count is the headline v21 makes it rather than
-     a footnote beside the title. */
-  .hstrip { flex-wrap: wrap; gap: 10px; }
-  .hstrip .g { flex: 1 1 100%; }
-  .kpi { flex-direction: column; align-items: flex-start; gap: 0; }
-  .kpin { font-size: 40px; line-height: 46px; }
+  /* ------------------------------------------------------ the hero summary
+
+     This block was reading as body text: a 17px title, a sentence under it,
+     and the count at 19px below that - three lines of prose where the count
+     is the thing the reader came for. It is now one tight block with the
+     number as the largest thing on the screen, sitting on the paper with a
+     rule under it so it separates from the cards rather than merging into
+     them. */
+  .mhead {
+    padding-top: 14px !important;
+    padding-bottom: 14px !important;
+    background: var(--paper);
+    border-bottom: 1px solid var(--hair);
+  }
+  .hstrip { flex-wrap: wrap; gap: 0; align-items: baseline; }
+  .hstrip .g { flex: 1 1 100%; order: 2; }
+  .pgt { font-size: 15px; line-height: 20px; color: var(--ink-2); font-weight: 500; }
+  .mhead .s { font-size: 12.5px; line-height: 17px; margin-top: 4px !important; }
+
+  /* The number first and biggest. `order` puts it above the title without
+     moving it in the markup, where it belongs after the heading it counts. */
+  .kpi { order: 1; flex: 1 1 100%; flex-direction: row; align-items: baseline;
+         gap: 8px; margin: 2px 0 2px; }
+  /* plint.css:417 sets `font: 400 19px/24px … !important` on `.kpin`, so a
+     plain `font-size` here loses to it. The whole shorthand, and `!important`
+     to match - which is why the count kept measuring 19px while this rule was
+     sitting right there. */
+  .kpin { font: 500 44px/46px 'Instrument Sans', system-ui, sans-serif !important;
+          font-variant-numeric: tabular-nums; letter-spacing: -1px; }
+  .kpi .k { font-size: 12px; }
+  /* A second KPI beside the first, where a screen has two. */
+  .kpi ~ .kpi { flex: 0 0 auto; margin-left: 18px; }
 
 
   /* ------------------------------------------------ 5b. tap targets

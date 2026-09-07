@@ -305,6 +305,75 @@ test('the day count sits with the status pill, on the heading line', async () =>
   assert.match(stc[1], /justify-self:\s*end/, 'the status pill is not aligned right');
 });
 
+test('the header is one bar, not four bands', async () => {
+  /* It was the brand row, a 56px breadcrumb, the title, its subtitle and then
+     the count - 273px of an 812px screen before the first card. */
+  const css = await (await get('/app.css')).text();
+  const phone = /@media \(max-width: 900px\) \{([\s\S]*?)\n\}/.exec(css)[1];
+  assert.match(phone, /\.topbar \{ display: none/, 'the breadcrumb band still takes a row of its own');
+  assert.match(phone, /\.ab-screen \{[\s\S]*?display: block/, 'the bar does not name the screen');
+
+  // And the screen actually says which screen it is.
+  for (const [role, p, name] of [['engineer', '/engineer', 'Me'],
+                                 ['engineer', '/engineer/villas', 'Villas'],
+                                 ['office', '/office', 'Stuck money']]) {
+    const h = await body(p, role);
+    assert.ok(h.includes('<span class="ab-screen">' + name + '</span>'),
+      role + ' ' + p + ' does not name itself in the bar');
+  }
+});
+
+test('the summary reads as a summary, not as body text', async () => {
+  const css = await (await get('/app.css')).text();
+  const narrow = /@media \(max-width: 720px\) \{([\s\S]*?)\n\}/.exec(css)[1];
+  const kpin = /\.kpin \{([^}]*)\}/.exec(narrow);
+  assert.ok(kpin, 'the count has no phone rule');
+
+  /* plint.css:417 sets `font: … !important` on `.kpin`, so a bare `font-size`
+     here loses to it - the count measured 19px for a whole round while this
+     rule sat in the file. The shorthand and the flag are both required. */
+  assert.match(kpin[1], /font:\s*\d+ 4\dpx/, 'the count is not the largest thing in the block');
+  assert.match(kpin[1], /!important/, 'plint.css sets .kpin with !important and will win');
+  assert.match(narrow, /\.kpi \{[^}]*order:\s*1/, 'the count is not lifted above the title');
+  assert.match(narrow, /\.pgt \{[^}]*font-size:\s*15px/, 'the title still competes with the count');
+});
+
+test('no day count is shown without a verdict', async () => {
+  /* Either the pill says what the age means, or - where the pill is busy
+     saying something else - the number itself is coloured on the same
+     thresholds. A bare figure asks the reader to score it, and they will
+     score it differently from the screen that decides what is late. */
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src/screens/rows.js'), 'utf8');
+  assert.match(src, /AGE = \{ overdue: 21, ageing: 10 \}/,
+    'the age thresholds are not in one place');
+  assert.match(src, /function ageChip/, 'there is no shared age pill');
+  assert.match(src, /ageClass/, 'there is no shared way to colour a bare day count');
+
+  // Nothing may hand-roll a threshold beside the shared one.
+  for (const f of ['src/screens/engineer.js', 'src/server.js']) {
+    const s = fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+    const rolled = s.match(/age >= 21|age >= 10|since > 20/g) || [];
+    assert.deepStrictEqual(rolled, [],
+      f + ' still decides for itself what is late: ' + rolled.join(', '));
+  }
+
+  /* And every row that shows a day count says what it means. Scoped to the
+     screens where the count is against a deadline: the site log shows how long
+     ago an entry was made, which has no due date and must not be reddened. */
+  for (const [role, p] of [['engineer', '/engineer/villas'], ['office', '/office'],
+                           ['engineer', '/engineer/certs']]) {
+    // The desktop table's column headings reuse the same cell classes, and
+    // "Age" is a label rather than a figure.
+    const h = (await body(p, role)).replace(/<div class="whead">[\s\S]*?<\/div>/g, '');
+    const rows = h.match(/<span class="days[^"]*">[^<]+<\/span>/g) || [];
+    assert.ok(rows.length > 0, role + ' ' + p + ' has no day counts to check');
+    for (const r of rows) {
+      assert.match(r, /class="days age-(ok|warn|late)"/,
+        role + ' ' + p + ' shows a day count with no verdict: ' + r);
+    }
+  }
+});
+
 test('everything you can press is at least 44px on a phone', async () => {
   const css = await (await get('/app.css')).text();
   const narrow = /@media \(max-width: 720px\) \{([\s\S]*?)\n\}/.exec(css)[1];
@@ -334,8 +403,15 @@ test('amounts are right-aligned, tabular, and never break mid-value', async () =
      under the other. The day count used to get a line of its own across the
      row, right-aligned against nothing. */
   assert.match(amt[1], /justify-self:\s*end/, 'the amount is not aligned to the right edge');
-  assert.match(amt[1], /grid-area:\s*2 \/ 2 \/ 3 \/ 4/,
-    'the amount does not span to the right edge, so it floats in the middle of the row');
+  /* The amount shares row two with a compact action now, so it sits in the
+     middle column rather than spanning to the edge: a full-width row holding
+     one "Review" button cost a whole line on every card. */
+  assert.match(amt[1], /grid-area:\s*2 \/ 2/, 'the amount is not on the detail line');
+  const act = /\.wrow \.actc:not\(\.s\):not\(\.wide\) \{([^}]*)\}/.exec(narrow);
+  assert.ok(act, 'a single control has no compact placement');
+  assert.match(act[1], /grid-area:\s*2 \/ 3/, 'a single control is not beside the amount');
+  assert.match(narrow, /\.wrow \.actc\.wide \{[^}]*grid-area:\s*3 \//,
+    'two or more controls must still take their own line, they will not fit beside an amount');
 });
 
 test('the phone list is v21\'s, not a table in disguise', async () => {
@@ -354,11 +430,11 @@ test('the phone list is v21\'s, not a table in disguise', async () => {
   assert.match(card[1], /border:\s*1px solid var\(--hair\)/, 'a list row has no card border');
   assert.match(card[1], /border-radius:\s*12px/, 'a list row is not v21\'s 12px radius');
   assert.match(card[1], /background:\s*var\(--paper\)/, 'a list row has no card background');
-  assert.match(card[1], /padding:\s*14px 16px/, 'a list row has no card padding');
+  assert.match(card[1], /padding:\s*12px 14px/, 'a list row has no card padding');
   /* No horizontal margin of its own: the gutter belongs to one container, and
      a margin here is exactly how the card ended up inset further than the
      label above it. */
-  assert.match(card[1], /margin:\s*0 0 10px/, 'the card sets its own horizontal margin again');
+  assert.match(card[1], /margin:\s*0 0 8px/, 'the card sets its own horizontal margin again');
 
   /* And the heading is one heading. The villa came out at 12.5px and the stage
      at 13px, so they read as two labels with a dot floating between them. */

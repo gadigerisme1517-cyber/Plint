@@ -22,6 +22,35 @@
 
 module.exports = function rowBuilder({ esc }) {
 
+  /* How old is too old.
+     These are the thresholds the head office's Stuck money worklist has always
+     used to colour a row, and they are the only ones in the application. A
+     day count with no verdict beside it is a number the reader has to score
+     for themselves, and they will score it differently from the screen that
+     decides what is late - so every age is put through here. */
+  const AGE = { overdue: 21, ageing: 10 };
+
+  /**
+   * A pill that says what a day count means, not just what it is.
+   * @param {number} n     days
+   * @param {string[]} [words]  what to call each band. The thresholds and the
+   *                            colours never vary; only the vocabulary does,
+   *                            because "on time" is right for a photograph and
+   *                            "Open" is right for money that is stuck.
+   */
+  /** The same three bands, as a class for colouring a bare number. */
+  const ageClass = n =>
+    n >= AGE.overdue ? 'age-late' : n >= AGE.ageing ? 'age-warn' : 'age-ok';
+
+  function ageChip(n, words) {
+    const [ok, mid, bad] = words || ['on time', 'ageing', 'overdue'];
+    if (n == null) return `<i class="chip idle">no date</i>`;
+    const cls = n >= AGE.overdue ? 'late' : n >= AGE.ageing ? 'warn' : 'wait';
+    const word = n >= AGE.overdue ? bad : n >= AGE.ageing ? mid : ok;
+    return `<i class="chip ${cls}">${esc(word)}</i>`;
+  }
+
+
   /**
    * @param {object} r
    * @param {string} [r.code]    villa code - its own column on a desktop,
@@ -48,9 +77,14 @@ module.exports = function rowBuilder({ esc }) {
       (r.detail ? `<p class="s">${r.detail}</p>` : '') +
       `</span>` +
       (r.chip   ? `<span class="stc">${r.chip}</span>` : '') +
-      (r.days   ? `<span class="days">${r.days}</span>` : '') +
+      /* A day count is never shown bare. Where the pill's job is the age, it
+         carries the word ("on time" / "ageing" / "overdue"). Where the pill
+         already means something else - "ready", "0 photos", "Chased" - the
+         number itself is coloured on the same thresholds, so the reader is
+         never left to score a figure the screen has already scored. */
+      (r.days   ? `<span class="days${r.daysAge == null ? '' : ' ' + ageClass(r.daysAge)}">${r.days}</span>` : '') +
       (r.amount ? `<span class="amt n">${r.amount}</span>` : '') +
-      (r.action ? `<span class="actc${r.actionIsText ? ' s' : ''}">${r.action}</span>` : '');
+      (r.action ? `<span class="actc${r.actionIsText ? ' s' : ''}${r.actionWide ? ' wide' : ''}">${r.action}</span>` : '');
 
     /* `hascode` is what lets the stylesheet swap the two. It is a class rather
        than `:has(.rcode)` because `.id` is not always a villa code: elsewhere
@@ -77,5 +111,5 @@ module.exports = function rowBuilder({ esc }) {
   /** An empty list says why it is empty rather than showing nothing at all. */
   const empty = why => `<div class="emptyrow"><p class="b ink">${esc(why)}</p></div>`;
 
-  return { wrow, whead, empty };
+  return { wrow, whead, empty, ageChip, AGE };
 };

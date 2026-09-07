@@ -22,7 +22,7 @@ module.exports = function engineerScreens(ctx) {
 
   /* One list row, built in one place. See src/screens/rows.js for why the
      villa code has to be inside the heading rather than beside it. */
-  const { wrow, whead, empty } = require('./rows')({ esc });
+  const { wrow, whead, empty, ageChip, AGE } = require('./rows')({ esc });
 
   /* v21's six kinds of log entry, with the quick entries it offers under each.
      Two taps, which is the point: a site person will not type a paragraph, and
@@ -51,7 +51,7 @@ module.exports = function engineerScreens(ctx) {
   ];
 
   const days = d => Math.max(0, Math.round((Date.now() - new Date(d).getTime()) / 86400000));
-  const chip = (n, warnAt = 7) => `<i class="chip ${n > warnAt ? 'late' : 'warn'}">${n}d</i>`;
+  const chip = n => ageChip(n);
   const flash = m => m ? `<div class="tools"><span class="rescount s">${esc(m)}</span><div class="g"></div></div>` : '';
 
   // ---------------------------------------------------------------- reads
@@ -137,6 +137,7 @@ ${chased.length ? `<div class="blk"><p class="k">Office is chasing you</p></div>
   title: v.next_stage || 'All stages done',
   detail: esc(v.buyer_name) + ' &middot; ' + esc(v.blocker_reason || ''),
   days: v.last_shot ? days(v.last_shot) + 'd' : 'no photo',
+  daysAge: v.last_shot ? days(v.last_shot) : null,
   chip: '<i class="chip late">Chased</i>',
 })).join('')}</div><div class="gap"></div>` : ''}
 
@@ -147,6 +148,7 @@ ${chased.length ? `<div class="blk"><p class="k">Office is chasing you</p></div>
   title: x.stage_name,
   detail: esc(x.buyer_name) + ' &middot; ' + x.shots + ' photograph' + (x.shots === 1 ? '' : 's'),
   days: days(x.marked_at) + 'd',
+  daysAge: days(x.marked_at),
   amount: M.money(stageTotal(d.byProject, x)),
 })).join('')
   : empty('Nothing waiting on your signature.')}</div>
@@ -158,19 +160,20 @@ ${chased.length ? `<div class="blk"><p class="k">Office is chasing you</p></div>
   function villas(sess, d, msg) {
     const rows = d.mine.map(v => {
       const since = v.last_shot ? days(v.last_shot) : null;
-      const behind = since === null || since > 20;
       return wrow({
         href: '/engineer/villa/' + encodeURIComponent(v.code),
         code: v.code,
         title: v.next_stage || 'All stages done',
         detail: esc(v.buyer_name) + ' &middot; ' + esc(v.bank || 'self funded'),
-        days: since === null ? 'no photo' : since + 'd',
-        chip: '<i class="chip ' + (behind ? 'late' : 'wait') + '">'
-              + (since === null ? 'never' : 'last photo') + '</i>',
+        days: since === null ? '' : since + 'd',
+        daysAge: since,
+        chip: ageChip(since),
       });
     }).join('');
 
-    const behind = d.mine.filter(v => !v.last_shot || days(v.last_shot) > 20).length;
+    /* 'Three weeks' and the pill's 'overdue' have to be the same number, or
+       the sentence counts villas the rows do not flag. */
+    const behind = d.mine.filter(v => !v.last_shot || days(v.last_shot) >= AGE.overdue).length;
     return desk(sess, '/engineer/villas', 'Villas', '', `
 <div class="mhead"><div class="hstrip">
 <div class="g"><h1 class="pgt">Villas to update</h1>
@@ -202,10 +205,12 @@ without a photograph.</p></div>
         detail: esc(when) + ' &middot; ' + esc(v.note || 'No note.')
                 + (mine ? '' : ' &middot; named to another engineer'),
         days: days(v.requested_at) + 'd ago',
+        daysAge: days(v.requested_at),
         chip: '<i class="chip ' + (v.status === 'confirmed' ? 'ok'
               : v.status === 'reassign' ? 'warn' : 'wait') + '">'
               + (v.status === 'confirmed' ? 'Accepted'
               : v.status === 'reassign' ? 'Reassign' : 'New') + '</i>',
+        actionWide: true,
         action: `
 ${v.status === 'confirmed'
   ? `<form method="post" action="/engineer/visit"><input type="hidden" name="id" value="${esc(v.id)}">
@@ -240,7 +245,8 @@ you answer on the spot.</p></div>
       code: s.code,
       title: s.title,
       detail: 'Raised by ' + esc(s.raiser) + ' &middot; ' + M.longDate(s.raised_at),
-      days: days(s.raised_at) + 'd',
+      days: s.status === 'fixed' ? '' : days(s.raised_at) + 'd',
+      daysAge: s.status === 'fixed' ? null : days(s.raised_at),
       chip: s.status === 'fixed' ? '<i class="chip ok">Sent</i>' : chip(days(s.raised_at)),
     }) + `
 ${s.status === 'open' ? `<form method="post" action="/engineer/snag" enctype="multipart/form-data" class="uprow"
@@ -322,7 +328,7 @@ ${Object.entries(LOG_KINDS).map(([k, [label, detail]]) => `<a class="lgb st"
 <div class="wl">${d.log.length ? d.log.map(e => wrow({
   title: e.title,
   detail: esc(e.detail || '') + (e.detail ? ' &middot; ' : '') + esc(e.logger),
-  days: days(e.logged_at) + 'd',
+  days: days(e.logged_at) + 'd ago',
   chip: '<i class="chip wait">' + esc(e.kind) + '</i>',
 })).join('')
   : empty('Nothing logged yet.')}</div>
@@ -351,6 +357,7 @@ ${pend.length ? pend.map(x => {
     detail: esc(x.buyer_name) + ' &middot; marked by ' + esc(x.marked_by)
             + ' on ' + M.longDate(x.marked_at),
     days: days(x.marked_at) + 'd',
+    daysAge: days(x.marked_at),
     chip: '<i class="chip ' + (thin ? 'warn' : 'wait') + '">'
           + (thin ? x.shots + ' photo' + (x.shots === 1 ? '' : 's') : 'ready') + '</i>',
     amount: M.money(stageTotal(d.byProject, x)),

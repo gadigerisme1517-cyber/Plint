@@ -203,11 +203,12 @@ const tabIcon = n => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
    prototype's chrome around a phone mock - a logo, a caption and a role
    switcher sitting outside the product. This one is inside it: who you are
    signed in as, and the way out. */
-function appbar(sess, current, inlineNav) {
+function appbar(sess, current, inlineNav, screen) {
   const dests = destinations(sess);
   return `<header class="appbar">
 <a class="ab-brand" href="/"><span class="ab-mark">${LOGO}</span><span class="ab-name">Plint</span></a>
 <span class="ab-ctx">NVT Eterna &middot; Phase 1</span>
+${screen ? `<span class="ab-screen">${esc(screen)}</span>` : ''}
 ${inlineNav && dests.length > 1 ? `<nav class="ab-nav">${dests.map(([href, label]) =>
   `<a href="${href}"${current === href ? ' aria-current="page"' : ''}>${esc(label)}</a>`).join('')}</nav>` : ''}
 <div class="ab-g"></div>
@@ -229,7 +230,7 @@ ${tabIcon(icon)}<span>${esc(label)}</span></a>`).join('')}
 }
 
 function page(title, sess, body, wide, current) {
-  return `${HEAD}${appbar(sess, current, true)}<div class="wrap">
+  return `${HEAD}${appbar(sess, current, true, title)}<div class="wrap">
 <div class="stagearea"><div class="phone${wide ? ' wide solo' : ''}">
 <div class="scroll anim">${body}</div></div></div></div>
 ${tabbar(sess, current)}${SW}</body></html>`;
@@ -238,7 +239,7 @@ ${tabbar(sess, current)}${SW}</body></html>`;
 /** Office and engineer: a sidebar on a desktop, the same destinations as tabs on a phone. */
 function desk(sess, tab, title, sub, main) {
   const dests = destinations(sess);
-  return `${HEAD}${appbar(sess, tab, false)}<div class="wrap">
+  return `${HEAD}${appbar(sess, tab, false, title)}<div class="wrap">
 <div class="desk">
 <div class="side">
 <div class="logo">${LOGO}<span>Plint</span></div>
@@ -592,9 +593,9 @@ ${g.map(x => ROW.wrow({
   code: x.code,
   title: x.stage_name,
   detail: esc(x.reason),
-  days: '<b class="' + (x.age >= 21 ? 'h' : '') + '">' + x.age + '</b>d',
-  chip: '<i class="chip ' + (x.age >= 21 ? 'late' : x.age >= 10 ? 'warn' : 'wait') + '">'
-        + (x.age >= 21 ? 'Overdue' : x.age >= 10 ? 'Ageing' : 'Open') + '</i>',
+  days: x.age + 'd',
+  daysAge: x.age,
+  chip: ROW.ageChip(x.age, ['Open', 'Ageing', 'Overdue']),
   amount: M.crore(x.value),
 }) + `
 ${k === 'engineer' ? `<form method="post" action="/office/assign" class="uprow"
@@ -654,7 +655,8 @@ async function sanctionScreen(sess, flash) {
   code: x.code,
   title: x.buyer_name,
   detail: esc(x.bank),
-  days: '<b class="' + (x.age > 10 ? 'h' : '') + '">' + (x.age == null ? '—' : x.age) + '</b>d',
+  days: x.age == null ? '' : x.age + 'd',
+  daysAge: x.age,
   chip: '<i class="chip ' + (x.age > 10 ? 'late' : 'wait') + '">no sanction</i>',
   amount: M.money(x.agreement_value_paise),
 }) + `
