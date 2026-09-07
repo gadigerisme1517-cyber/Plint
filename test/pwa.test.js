@@ -82,6 +82,55 @@ test('every page links the manifest and registers the worker', async () => {
   assert.match(html, /serviceWorker/, 'the sign-in page does not register the worker');
 });
 
+test('the installed window has no strip across the top of it', async () => {
+  /* An installed app paints its title bar with the manifest's `theme_color`,
+     and the app bar sits directly under it. At #0A2540 that put a near-black
+     strip above a white bar with a hard seam between them, across the top of
+     every window - the one part of an installed app that is meant to
+     disappear. It was reported from a desktop install.
+
+     So the invariant is not "the theme colour is white", it is that the title
+     bar and the bar it sits on are the same colour. Both sides are read here:
+     the manifest, every page's meta tag, and `.appbar`'s own background. */
+  const manifest = JSON.parse(await (await get('/manifest.webmanifest')).text());
+
+  const norm = c => {
+    const h = c.trim().toLowerCase().replace('#', '');
+    return h.length === 3 ? h.split('').map(x => x + x).join('') : h;
+  };
+
+  /* `.appbar` is painted with a token, so the token's value is what actually
+     reaches the screen. Both stylesheets are searched: `--paper` is v21's. */
+  const css = await (await get('/plint.css')).text() + await (await get('/app.css')).text();
+  const bg = /\.appbar\s*\{[^}]*background:\s*var\((--[a-z0-9-]+)\)/.exec(css);
+  assert.ok(bg, 'the app bar does not paint itself with a token');
+  const token = new RegExp('\\' + bg[1] + ':\\s*(#[0-9a-fA-F]{3,8})').exec(css);
+  assert.ok(token, bg[1] + ' has no value in either stylesheet');
+
+  assert.strictEqual(norm(manifest.theme_color), norm(token[1]),
+    'the installed title bar is ' + manifest.theme_color + ' and the app bar under it is '
+    + token[1] + ', so there is a strip across the top of the window');
+
+  // And every page agrees with the manifest, including the offline one.
+  for (const p of ['/', '/offline']) {
+    const meta = /<meta name="theme-color" content="([^"]+)"/.exec(await (await get(p)).text());
+    assert.ok(meta, p + ' declares no theme colour');
+    assert.strictEqual(norm(meta[1]), norm(manifest.theme_color),
+      p + ' declares ' + meta[1] + ' where the manifest says ' + manifest.theme_color);
+  }
+
+  /* `black-translucent` draws the page under the status bar and paints its
+     text white. On a white app bar that is white on white - invisible, on the
+     one strip that carries the time and the battery. */
+  for (const p of ['/', '/offline']) {
+    const style = /<meta name="apple-mobile-web-app-status-bar-style" content="([^"]+)"/
+      .exec(await (await get(p)).text());
+    assert.ok(style, p + ' does not say how iOS should draw the status bar');
+    assert.notStrictEqual(style[1], 'black-translucent',
+      p + ': white status bar text on a white app bar is invisible');
+  }
+});
+
 test('the worker is served as script, and never from a stale cache', async () => {
   const r = await get('/sw.js');
   assert.strictEqual(r.status, 200);

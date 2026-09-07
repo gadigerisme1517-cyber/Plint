@@ -155,14 +155,28 @@ const LOGO = `<svg width="22" height="22" viewBox="0 0 32 32" fill="none" aria-l
 <path d="M14.2 8.6V15h4.6a3.2 3.2 0 0 0 0-6.4h-4.6Z" fill="#FFF"/>
 <rect x="5.4" y="8.6" width="6.4" height="6.4" rx="1.6" fill="var(--brand)"/></svg>`;
 
+/* Two of these decide what an installed app looks like before a line of the
+   page is drawn.
+
+   `theme-color` paints the installed window's title bar, and the app bar sits
+   directly under it. At #0A2540 that was a near-black strip above a white bar
+   with a hard seam between them, across the top of every window - the one part
+   of an installed app that is meant to disappear. It was reported from a
+   desktop install. The colour is `--paper` now, the same as `.appbar`, and a
+   test reads both sides and fails if they drift apart again.
+
+   `apple-mobile-web-app-status-bar-style` is `default` rather than
+   `black-translucent` for the same reason from the other end: translucent
+   draws the page under the status bar and paints its text white, which on a
+   white app bar is white on white. */
 const HEAD = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Plint</title>
-<meta name="theme-color" content="#0A2540">
+<meta name="theme-color" content="#FFFFFF">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Plint">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
