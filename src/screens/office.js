@@ -464,33 +464,41 @@ ${body}
      the buyer's is "Sanction not recorded". The heading here is the sentence
      that says which of those to open, and it carries the money with it,
      because "six villas" and "two crore" are different sizes of problem. */
+  /* Column headings now, not section headings. A column is about 290px and
+     "Waiting on the certifying engineer" wraps to three lines of it; the
+     board's own heading says these are all things being waited on, so each
+     column only has to name who. */
   const HOLDER = {
-    engineer: 'Waiting on the certifying engineer',
-    lender:   'Waiting on the lender',
-    office:   'Waiting on head office',
-    buyer:    'Waiting on the buyer',
+    engineer: 'The engineer',
+    lender:   'The lender',
+    office:   'This office',
+    buyer:    'The buyer',
   };
 
   function stuckByHolder(rows) {
     if (!rows.length) return '';
     const by = {};
     for (const x of rows) (by[x.holder_role] ||= []).push(x);
-    return ['engineer', 'lender', 'office', 'buyer'].filter(k => by[k]).map(k => {
-      const g = by[k].sort((a, b) => b.age - a.age);
+    return UI.board(['engineer', 'lender', 'office', 'buyer'].map(k => {
+      const g = (by[k] || []).sort((a, b) => b.age - a.age);
+      if (!g.length) return null;
       const sum = g.reduce((n, x) => n + x.value, 0);
-      return `<div class="tools"><span class="rescount s">${esc(HOLDER[k])} &middot;
-${g.length} villa${g.length === 1 ? '' : 's'} &middot; ${M.crore(sum)}</span><div class="g"></div></div>
-<div class="wl">${g.map(x => wrow({
-  href: '/office/buyer/' + encodeURIComponent(x.code),
-  code: x.code,
-  title: x.stage_name,
-  detail: esc(x.reason) + ' &middot; sitting with ' + esc(x.holder),
-  days: x.age + 'd',
-  daysAge: x.age,
-  chip: ageChip(x.age, ['Open', 'Ageing', 'Overdue']),
-  amount: M.crore(x.value),
-})).join('')}</div><div class="gap"></div>`;
-    }).join('');
+      const oldest = g[0].age;
+      return {
+        label: HOLDER[k],
+        note: M.crore(sum) + ' &middot; oldest ' + oldest + ' days',
+        cards: g.map(x => ({
+          href: '/office/buyer/' + encodeURIComponent(x.code),
+          code: x.code,
+          title: x.stage_name,
+          detail: esc(x.reason),
+          days: x.age + 'd',
+          daysAge: x.age,
+          chip: ageChip(x.age, ['Open', 'Ageing', 'Overdue']),
+          amount: M.crore(x.value),
+        })),
+      };
+    }));
   }
 
   function today(sess, d, msg) {
@@ -562,7 +570,8 @@ ${UI.head('Today',
 ${flash(msg)}
 ${questions ? `<div class="blk"><p class="k">Buyers have asked you something</p></div>
 <div class="wl">${questions}</div><div class="gap"></div>` : ''}
-${stuckByHolder(b) || `<div class="blk"><p class="k">Stuck money</p></div>
+${b.length ? `<div class="blk"><p class="k">Stuck money, by who is holding it up</p></div>
+${stuckByHolder(b)}` : `<div class="blk"><p class="k">Stuck money</p></div>
 <div class="wl">${empty('No stage is blocked anywhere on the project.')}</div>`}
 </div>`);
   }

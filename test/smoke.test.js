@@ -93,7 +93,10 @@ const get = (p, cookie) => fetch(BASE + p, { headers: cookie ? { cookie } : {}, 
      shortcuts to the other destinations as villas. */
   const rows = (o.match(/href="\/office\/buyer\//g) || []).length;
   ok(rows === 48, 'the worklist shows all 48 villas (' + rows + ')');
-  ok(/Waiting on the certifying engineer/.test(o) && /Waiting on the lender/.test(o),
+  /* Columns now, one per party being waited on, so the headings are just who:
+     a 290px column cannot carry "Waiting on the certifying engineer". */
+  ok(/class="board"/.test(o), 'the stuck money is not a board');
+  ok(/>The engineer</.test(o) && />The lender</.test(o),
      'grouped by who is holding each one up');
   /* Stuck money is the headline figure and it is red. It is `.summary .fig`
      now, from the shared dashboard furniture, rather than a `.kpin` this

@@ -408,6 +408,85 @@ body { padding: 0; margin: 0; background: var(--paper); }
    It is on the Find screen instead, which the menu reaches. */
 @media (max-width: 900px) { .ab-find { display: none; } }
 
+/* ------------------------------------------------------------- the board
+
+   A worklist as columns, one per state. The office's stuck money is already
+   grouped by who is holding it up and was four sections stacked down the page:
+   stacked you read it, in columns you see it. Where the backlog sits is a
+   shape, and forty-eight rows in one column is the shape being withheld.
+
+   The cards are their own object rather than a `.wrow` squeezed into 290px.
+   Three lines and never more: villa and stage, why, then money and age. */
+
+.board { display: grid; grid-template-columns: 1fr; gap: 12px; }
+@media (min-width: 901px) {
+  /* Four columns in 375px is 90px each, so this shape is for a screen that
+     has the width for it and the page stacks below that. */
+  .board { grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); }
+}
+
+.bcol {
+  background: var(--paper);
+  border: 1px solid var(--hair);
+  border-radius: var(--r-card);
+  box-shadow: var(--card-shadow);
+  min-width: 0;
+  display: flex; flex-direction: column;
+}
+.bhead { padding: 13px 14px 10px; border-bottom: 1px solid var(--hair); }
+.bl {
+  display: flex; align-items: center; gap: 8px;
+  font: 600 13.5px/18px 'Instrument Sans', system-ui, sans-serif; color: var(--ink);
+}
+/* The count beside the heading, in the shape v21 gives a chip. */
+.bn {
+  flex: 0 0 auto; min-width: 22px; text-align: center;
+  padding: 0 7px; border-radius: 999px;
+  background: var(--hair-2); color: var(--ink-2);
+  font: 600 12px/20px 'Instrument Sans', system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.bs {
+  font: 400 12.5px/17px 'Instrument Sans', system-ui, sans-serif;
+  color: var(--ink-3); margin-top: 3px;
+}
+
+/* The column scrolls inside itself rather than making one tall column set the
+   height of the three beside it. */
+.bbody { padding: 6px; overflow-y: auto; max-height: 460px; scrollbar-width: none; }
+.bbody::-webkit-scrollbar { width: 0; }
+
+.bcard {
+  display: block; padding: 11px 10px 10px; border-radius: var(--r-ctl);
+  border: 1px solid transparent;
+}
+.bcard + .bcard { margin-top: 2px; }
+.bcard:hover { background: var(--hair-2); }
+.bc-top { display: flex; align-items: flex-start; gap: 8px; }
+.bc-t {
+  flex: 1 1 auto; min-width: 0;
+  font: 500 13.5px/18px 'Instrument Sans', system-ui, sans-serif; color: var(--ink);
+}
+.bc-d {
+  display: block; margin-top: 3px;
+  font: 400 12.5px/17px 'Instrument Sans', system-ui, sans-serif; color: var(--ink-3);
+  overflow-wrap: anywhere;
+}
+.bc-f {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  margin-top: 8px;
+}
+.bc-f .amt {
+  font: 600 13.5px/18px 'Instrument Sans', system-ui, sans-serif; color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.bc-f .days {
+  font: 400 12.5px/17px 'Instrument Sans', system-ui, sans-serif; color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.bc-f .days.age-warn { color: var(--warn); font-weight: 600; }
+.bc-f .days.age-late { color: var(--hot);  font-weight: 600; }
+
 /* -------------------------------------------------------------- the hero
 
    The first thing on a dashboard, and one object rather than two.

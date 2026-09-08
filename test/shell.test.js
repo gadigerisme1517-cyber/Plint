@@ -602,6 +602,56 @@ test('the skin is a token change, not a rule change', async () => {
     'a colour is typed into a rule instead of coming from a token: ' + hexes.join(', '));
 });
 
+test('the stuck money is a board, and every villa is still on it', async () => {
+  /* Four sections stacked down the page became four columns. Stacked you read
+     it; in columns you see it - where the backlog sits is a shape, and
+     forty-eight rows in one column is that shape being withheld.
+
+     The grouping is the same grouping it always was, so the thing to prove is
+     that nothing was lost in the rendering: every blocked villa is on the
+     board exactly once. */
+  const h = await body('/office', 'office');
+  assert.match(h, /<div class="board"/, 'the stuck money is not a board');
+
+  const cols = (h.match(/<section class="bcol">/g) || []).length;
+  assert.ok(cols >= 2, 'a board with ' + cols + ' column is a list');
+
+  /* One card per blocked villa, counted off the same rows the screen counted.
+     The board drops an empty column rather than drawing a heading over
+     nothing, so the columns vary; the cards must not. */
+  const { asUser } = require('../src/db');
+  const blocked = await asUser({ id: 'u-office', role: 'office' }, c => c.query(
+    'SELECT count(*)::int n FROM blockers')).then(r => r.rows[0].n);
+  const cards = (h.match(/class="bcard"/g) || []).length;
+  assert.strictEqual(cards, blocked,
+    'the board shows ' + cards + ' cards for ' + blocked + ' blocked stages');
+
+  /* Every card leads to the buyer file. A card you cannot open is a tile. */
+  const links = (h.match(/<a class="bcard" href="\/office\/buyer\//g) || []).length;
+  assert.strictEqual(links, cards, 'a card on the board does not open anything');
+
+  // Each column says how many are in it and what they are worth.
+  const counts = (h.match(/class="bn">\d+</g) || []).length;
+  assert.strictEqual(counts, cols, 'a column does not say how many are in it');
+});
+
+test('the board stacks where there is no room for columns', async () => {
+  /* Four columns in 375px is ninety pixels each. The columns are a shape for a
+     screen that has the width for them, and below the sidebar's breakpoint the
+     page stacks - the same rule that decides the sidebar and the menu. */
+  const css = await (await get('/app.css')).text();
+  const base = /\n\.board \{([^}]*)\}/.exec(css);
+  assert.ok(base, 'the board has no rule of its own');
+  assert.match(base[1], /grid-template-columns:\s*1fr/,
+    'the board is columnar before it has the width for it');
+  assert.match(atWidth(css, 'min-width: 901px'), /\.board \{[^}]*repeat\(var\(--cols/,
+    'the board never becomes columns on a screen with the room');
+
+  /* And one tall column must not set the height of the three beside it. */
+  assert.match(css, /\.bbody \{[^}]*overflow-y:\s*auto/,
+    'a column with forty rows makes the board forty rows tall');
+});
+
 // ------------------------------------------------------- responsive rules
 
 test('the sideways-scroll backstop does not cost a scrollbar', async () => {

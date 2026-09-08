@@ -191,6 +191,55 @@ ${t.sub ? `<p class="s">${esc(t.sub)}</p>` : ''}`;
 <div class="cols">${body}</div></div>`;
   }
 
+  // ------------------------------------------------------------------ board
+
+  /**
+   * A worklist as columns, one per state.
+   *
+   * The office's stuck money is already grouped by who is holding it up -
+   * engineer, lender, this office, buyer - and was drawn as four sections
+   * stacked down the page. Stacked, you read it; in columns, you see it. Where
+   * the backlog actually sits is a shape, and forty-eight rows in one column
+   * is the shape being withheld.
+   *
+   * The cards are NOT `wrow`. A row is six fields across a full-width line and
+   * a column here is about 290px, so this is a different object rather than
+   * the same one squeezed: villa and stage on the first line, why on the
+   * second, money and age on the third. Reusing `wrow` and overriding it back
+   * into a card is how one component ends up with two layouts and a media
+   * query holding them apart.
+   *
+   * Below the sidebar's width it stacks. Four columns in 375px is 90px each.
+   *
+   * @param {{label,count,note,tone,cards}[]} cols
+   */
+  function board(cols) {
+    const live = cols.filter(c => c && c.cards.length);
+    if (!live.length) return '';
+    return `<div class="board" style="--cols:${live.length}">${live.map(c => `
+<section class="bcol">
+<div class="bhead"><p class="bl">${esc(c.label)}<span class="bn">${c.cards.length}</span></p>
+${c.note ? `<p class="bs">${c.note}</p>` : ''}</div>
+<div class="bbody">${c.cards.map(card).join('')}</div>
+</section>`).join('')}</div>`;
+  }
+
+  /** One card on the board. Three lines, and never more. */
+  function card(r) {
+    const inner = `
+<span class="bc-top"><span class="bc-t">${r.code ? esc(r.code) + ' &middot; ' : ''}${esc(r.title)}</span>
+${r.chip || ''}</span>
+${r.detail ? `<span class="bc-d">${r.detail}</span>` : ''}
+${r.amount || r.days ? `<span class="bc-f">
+${r.amount ? `<span class="amt n">${r.amount}</span>` : '<span></span>'}
+${r.days ? `<span class="days${r.daysAge == null ? '' : ' ' + (
+  r.daysAge >= AGE.overdue ? 'age-late' : r.daysAge >= AGE.ageing ? 'age-warn' : 'age-ok')}"
+>${r.days}</span>` : ''}</span>` : ''}`;
+    return r.href
+      ? `<a class="bcard" href="${r.href}" style="text-decoration:none;color:inherit">${inner}</a>`
+      : `<div class="bcard">${inner}</div>`;
+  }
+
   // --------------------------------------------------------------- sections
 
   /**
@@ -204,5 +253,5 @@ ${t.sub ? `<p class="s">${esc(t.sub)}</p>` : ''}`;
   const flash = m => m
     ? `<div class="tools"><span class="rescount s">${esc(m)}</span><div class="g"></div></div>` : '';
 
-  return { head, summary, stats, mix, bars, section, flash, ageTone, countTone, AGE };
+  return { head, summary, stats, mix, bars, board, section, flash, ageTone, countTone, AGE };
 };
