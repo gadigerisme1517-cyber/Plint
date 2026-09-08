@@ -565,43 +565,202 @@ test('the progress bar is not named after something v21 hides', async () => {
   assert.match(css, /\.summary \.prog \{/, 'the progress bar has no rule of its own');
 });
 
-test('the skin is a token change, not a rule change', async () => {
-  /* If restyling the product means editing rules, the rules are wrong. Every
-     colour and every corner in this file has to come from `:root`, so a skin
-     is one block at the top and nothing else - which is also what stops the
-     worklist panel and the summary card drifting apart the way they did when
-     each screen carried its own numbers. */
-  /* Read off disk, the way the other source-reading tests here do. Fetched
-     over HTTP this one went green while a hex colour was demonstrably sitting
-     in a rule, and I could not make it fail on demand - a guard I cannot make
-     fail is not a guard, whatever its name says. */
+test('the skin is v21 s, and this file does not restate it', async () => {
+  /* plint.css is v21 byte for byte, so every colour, every hairline and every
+     shadow in the product is already declared there. A second palette in
+     app.css is not a skin, it is a fork: two files that will disagree with
+     each other the first time either is edited, and the one that wins is
+     whichever happens to be later.
+
+     There was one. Warmer ink, warmer greys, a 16px card radius and a diffuse
+     shadow, built to a different reference. It is gone, and this holds it
+     gone. */
   const css = fs.readFileSync(path.join(__dirname, '..', 'public/app.css'), 'utf8');
   assert.ok(css.length > 5000, 'read ' + css.length + ' bytes of app.css, not a stylesheet');
   const root = /:root \{[\s\S]*?\n\}/.exec(css);
   assert.ok(root, 'app.css defines no tokens of its own');
-  for (const t of ['--ink:', '--hair:', '--hair-2:', '--card-shadow:', '--r-card:', '--r-ctl:']) {
-    assert.ok(root[0].includes(t), 'the skin has no ' + t.slice(0, -1) + ' token');
+
+  const v21 = fs.readFileSync(path.join(__dirname, '..', 'public/plint.css'), 'utf8');
+  const v21root = /:root\{([^}]*)\}/.exec(v21);
+  assert.ok(v21root, 'plint.css declares no tokens, so it is not v21');
+  const theirs = [...v21root[1].matchAll(/(--[\w-]+):/g)].map(m => m[1]);
+  assert.ok(theirs.length > 10, 'only found ' + theirs.length + ' v21 tokens');
+  for (const t of theirs) {
+    assert.ok(!new RegExp('\\' + t + ':').test(root[0]),
+      t + ' is declared again in app.css: v21 already sets it, and two declarations '
+      + 'of one token is a fork, not a skin');
   }
 
   // Comments and the token block itself are not rules.
   const rules = css.replace(root[0], '').replace(/\/\*[\s\S]*?\*\//g, '');
 
-  /* No card corner typed into a rule. Anything below 10px is a chip, a swatch
-     or a bar cap and is its own shape rather than a card's. */
-  const radii = [...rules.matchAll(/border-radius:\s*([^;]+);/g)]
-    .map(m => m[1])
-    .filter(v => /\d{2,}px/.test(v) && !/var\(/.test(v))
-    .filter(v => !/999px/.test(v));
-  assert.deepStrictEqual(radii, [],
-    'a card corner is typed into a rule instead of coming from --r-card: ' + radii.join(', '));
-
   /* And no hex colour outside the tokens. A hue in a rule is a hue that one
      screen has and the others do not. */
-  const hexes = [...rules.matchAll(/#[0-9a-fA-F]{3,8}/g)].map(m => m[0]);
+  /* A hex is allowed only where v21 itself types one - `.msg.office` has a
+     bare `#C9D9FB` for its border - because copying v21's value is the whole
+     point of this pass. Anything else is a hue one screen has and the others
+     do not. */
+  const hexes = [...rules.matchAll(/#[0-9a-fA-F]{3,8}/g)].map(m => m[0])
+    .filter(h => !v21.includes(h));
   assert.deepStrictEqual(hexes, [],
     'a colour is typed into a rule instead of coming from a token: ' + hexes.join(', '));
 });
 
+test('app.css does not overrule a value v21 already sets on a phone', async () => {
+  /* THE GUARD THIS PASS EXISTS FOR.
+
+     plint.css is v21 verbatim, so any difference between the built screens and
+     the design file is a declaration here landing on a selector v21 also
+     styles. This walks every one of them at 375px and fails on anything that
+     is not in the list below - and everything in that list is either chrome
+     v21 has no equivalent for, or a frame that has to come off before the mock
+     can be an application.
+
+     It is a whitelist rather than a count so that adding a divergence is a
+     deliberate act with a reason written next to it. */
+  const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, '');
+  /* `0 var(--gutter)` and `0 26px` are the same declaration, and so are
+     v21's bare `'Instrument Sans'` and the same stack with the fallbacks this
+     application adds for a phone that has not loaded the webfont yet. Both are
+     normalised or the guard fills with differences that are not differences. */
+  const same = v => v.replace(/var\(--gutter\)/g, '26px')
+                     .replace(/, system-ui, sans-serif/g, '')
+                     .replace('!important', '').trim();
+  const at375 = m => {
+    if (!m) return true;
+    for (const lo of m.match(/min-width:\s*(\d+)px/g) || []) {
+      if (Number(lo.match(/\d+/)[0]) > 375) return false;
+    }
+    for (const hi of m.match(/max-width:\s*(\d+)px/g) || []) {
+      if (Number(hi.match(/\d+/)[0]) < 375) return false;
+    }
+    return true;
+  };
+  const parse = css => {
+    const out = [];
+    const walk = (text, media) => {
+      let i = 0;
+      while (i < text.length) {
+        const at = text.indexOf('@', i), brace = text.indexOf('{', i);
+        if (brace < 0) break;
+        if (at >= 0 && at < brace) {
+          let d = 0, k = text.indexOf('{', at);
+          if (k < 0) break;
+          for (let j = k; j < text.length; j++) {
+            if (text[j] === '{') d++;
+            else if (text[j] === '}' && --d === 0) { k = j; break; }
+          }
+          const head = text.slice(at, text.indexOf('{', at)).trim();
+          if (head.startsWith('@media')) walk(text.slice(text.indexOf('{', at) + 1, k), head);
+          i = k + 1;
+          continue;
+        }
+        const sel = text.slice(i, brace).trim();
+        const close = text.indexOf('}', brace);
+        if (close < 0) break;
+        const decls = {};
+        for (const d of text.slice(brace + 1, close).split(';')) {
+          const c = d.indexOf(':');
+          if (c < 0) continue;
+          decls[d.slice(0, c).trim().toLowerCase()] = d.slice(c + 1).trim();
+        }
+        if (sel && Object.keys(decls).length) out.push([media, sel, decls]);
+        i = close + 1;
+      }
+    };
+    walk(strip(css), null);
+    return out;
+  };
+
+  const dir = path.join(__dirname, '..', 'public');
+  const v21 = parse(fs.readFileSync(path.join(dir, 'plint.css'), 'utf8'));
+  const app = parse(fs.readFileSync(path.join(dir, 'app.css'), 'utf8'));
+
+  const theirs = new Map();
+  for (const [media, sel, decls] of v21) {
+    if (!at375(media)) continue;
+    for (const one of sel.split(',').map(s => s.trim())) {
+      for (const p of Object.keys(decls)) theirs.set(one + '|' + p, decls[p]);
+    }
+  }
+
+  /* Every selector below is either chrome v21 does not have, or the frame
+     coming off. The reason is the point of the entry. */
+  const allowed = new Set([
+    // v21 wraps every view in a 392px card on a slate. All of it goes.
+    'body|background', '.wrap|max-width', '.bar|display', '.sysbar|display',
+    '.stagearea|display', '.phone|max-width', '.phone|height', '.phone|border-radius',
+    '.phone|box-shadow', '.phone|overflow', '.phone.wide|max-width', '.phone.wide|height',
+    '.phone.wide|border-radius', '.desk|border-radius', '.desk|min-height',
+    '.desk|overflow', '.desk|display', '.scroll|overflow-y', '.mbody|flex',
+    '.main|min-height', '.topbar|display', '.side|display',
+    // The application scrolls the document, not three boxes inside it.
+    '.wl|padding', '.wl|margin-bottom', '.wl|background', '.wl|border',
+    '.wl|border-radius', '.wl|box-shadow', '.wl|overflow',
+    // The gutter moves from the shell onto the block, which is where v21 has
+    // it - `.top`, `.blk`, `.lede` are padded and the scroller is not.
+    '.mhead|padding', '.mbody|padding', '.blk|padding', '.lede|padding',
+    '.tools|padding', '.top|padding',
+    // The row is v21's `.item` rather than v21's `.wrow`, because v21's phone
+    // list is `.item` and this markup has one row component for both.
+    '.wrow|display', '.wrow|align-items', '.wrow|gap', '.wrow|padding',
+    '.wrow|border-bottom', '.wrow|border-radius', '.wrow|background',
+    '.wrow .id|font', '.wrow .id|display', '.wrow .days|font-size', '.wrow .days|color',
+    '.wrow .amt|font', '.wrow .amt|text-align', '.wrow .mid p|margin-top',
+    '.wrow .mid p.s|margin-top', '.wrow .mid|flex',
+    // The toolbar is a card in the desk and there is no desk on a phone.
+    '.tools|border', '.tools|background', '.tools|border-radius', '.tools|margin-bottom',
+    '.tools|gap',
+    // The header. v21's `.hstrip`/`.kpi`/`.pgt` belong to the desk; on a phone
+    // the same three pieces are `.lede`'s k, mega and cap.
+    '.hstrip|align-items', '.pgt|color', '.kpi|flex-direction', '.kpi|align-items',
+    '.kpi|gap', '.kpin|font', '.kpin|letter-spacing',
+    // Controls that have to be reachable, or fit, at 375px.
+    '.ib|display', '.tab|padding', '.tabs|gap', '.lgrid|grid-template-columns',
+    '.agebars|height', '.agebars|gap', '.msg|max-width',
+    // The desktop, which v21 has no design for at all.
+    '.wbtn|padding', '.wbtn|font', '.wbtn|border-radius',
+    '.sortb|padding', '.sortb|font', '.sortb|border-radius', '.act|border-radius',
+    /* The desk table's column headings. There are no columns on a phone. */
+    '.whead|display',
+    /* `--hair-2` is the ground v21 puts behind the DESK, because it is the
+       ground a card sits on. There are no cards on a phone: v21's phone is
+       `.phone { background: var(--paper) }` from the brand row to the tab
+       bar, with hairlines doing all of the separating. */
+    '.desk|background', '.main|background', '.mbody|background',
+    /* v21's desk gives the trailing cells fixed widths - days 48px, amount
+       92px, action 78px - because it is a table. v21's phone row is `.item`
+       and has none of them, so they size to their content. */
+    '.wrow .days|flex', '.wrow .amt|flex', '.wrow .actc|flex',
+    /* `.pgt` is the desk's page title, 600 17px/22px. On a phone the same
+       words are the label above the figure, which is v21's `.lede .k`. */
+    '.pgt|font', '.pgt|letter-spacing',
+  ]);
+
+  /* And `.phone.wide` in full. v21 only ever puts `wide` on its desktop mock,
+     so its whole rule set is a desktop one with a single responsive line in
+     it. This markup carries `wide` at every width - it is what stops the
+     buyer's screen being a 392px card in the middle of a monitor - which
+     brought 48px side paddings and 76px figures down onto real phones. Below
+     900px those are put back to v21's own PHONE values, so every line here is
+     v21 overriding v21. */
+  const wideMock = k => k.startsWith('.phone.wide');
+
+  const bad = [];
+  for (const [media, sel, decls] of app) {
+    if (!at375(media)) continue;
+    for (const one of sel.split(',').map(s => s.trim())) {
+      for (const [p, v] of Object.entries(decls)) {
+        const key = one + '|' + p;
+        if (!theirs.has(key) || allowed.has(key) || wideMock(key)) continue;
+        if (same(theirs.get(key)) === same(v)) continue;
+        bad.push(key + ' -> v21 says ' + theirs.get(key) + ', this says ' + v);
+      }
+    }
+  }
+  assert.deepStrictEqual(bad, [],
+    'app.css overrules v21 at 375px without saying why:\n  ' + bad.join('\n  '));
+});
 test('the stuck money is a board, and every villa is still on it', async () => {
   /* Four sections stacked down the page became four columns. Stacked you read
      it; in columns you see it - where the backlog sits is a shape, and
@@ -706,12 +865,20 @@ test('a conversation is drawn as a conversation, not as a worklist', async () =>
       ? (/href="\/questions\/([^"]+)"/.exec(listing) || [])[1] : null;
     const h = role === 'buyer' ? await body('/questions/' + id, role) : listing;
 
-    assert.match(h, /<div class="talk">/, role + ': the thread is not a conversation');
-    assert.ok(!/class="wrow/.test(h.split('class="talk"')[1] || ''),
+    /* v21's own markup: `.thread` holding `.msg` bubbles, the message a `<p>`
+       and the caption a `.s` inside the bubble under it. Matching v21 here is
+       a matter of emitting v21's elements, after which its own rules draw
+       them and there is nothing left to keep in step. */
+    assert.match(h, /<div class="thread">/, role + ': the thread is not a conversation');
+    assert.ok(!/class="wrow/.test(h.split('class="thread"')[1] || ''),
       role + ': the messages are still worklist rows');
+    assert.match(h, /<div class="msg (?:me|them)">\s*<p>/,
+      role + ': the message is not the content of its own bubble');
+    assert.match(h, /<\/p><span class="s">/,
+      role + ': who said it is not the caption inside the bubble, the way v21 has it');
 
     /* No status pill on a person and no age on a sentence. */
-    const talk = /<div class="talk">[\s\S]*?<\/div>\s*<form/.exec(h);
+    const talk = /<div class="thread">[\s\S]*?<\/div>\s*<form/.exec(h);
     assert.ok(talk, role + ': could not read the conversation');
     assert.ok(!/class="chip/.test(talk[0]), role + ': a message carries a status pill');
     assert.ok(!/class="days/.test(talk[0]), role + ': a message carries an age');
@@ -752,12 +919,15 @@ test('the sideways-scroll backstop does not cost a scrollbar', async () => {
   assert.match(css, /html\s*\{\s*overflow-x:\s*clip/, 'no horizontal backstop at all');
 });
 
-test('the worklists can stop being tables', async () => {
+test('the worklists reflow to v21 s rows, not to a table', async () => {
   const css = await (await get('/app.css')).text();
   const narrow = [null, atWidth(css, 'max-width: 720px')];
   assert.ok(narrow, 'no narrow-screen block in app.css');
   assert.match(narrow[1], /\.whead\s*\{\s*display:\s*none/, 'column headings survive as cards');
-  assert.match(narrow[1], /\.wrow\s*\{[\s\S]*?display:\s*grid/, 'rows do not reflow to cards');
+  /* v21's phone row is `.item`: one flex line, 17px 26px, an 18px gap and a
+     hairline under it. It was a three-row grid here - title and pill, then the
+     detail, then the money and its button - which is not a shape v21 has. */
+  assert.match(narrow[1], /\.wrow \{[\s\S]*?display:\s*flex/, 'rows do not reflow to v21 s row');
   assert.match(narrow[1], /\.uprow/, 'the forms keep their fixed field widths');
   /* The reassign form under a row: a sentence, a picker and a button. Three
      full-width lines is 145px under every row of a six-row list, so the picker
@@ -777,9 +947,6 @@ test('the worklists can stop being tables', async () => {
      position took its Record button to 137px under three full-width boxes. */
   assert.ok(!/\.wrow \+ \.uprow \.wbtn/.test(narrow[1]),
     'the reassign rules still match any form under a row, including the sanction form');
-  /* And after the four `!important` rules that stack every other .uprow field
-     full width - equal importance, so this one wins on specificity, and the
-     picker needs `.mid` in its selector to outrank `.uprow .mid .fi`. */
   assert.ok(narrow[1].indexOf('.uprow .mid .fi') < narrow[1].indexOf('.uprow.reassign .mid select'),
     'the reassign rules come before the ones that stack every field full width');
 
@@ -792,11 +959,7 @@ test('the worklists can stop being tables', async () => {
     'the narrow histogram rule is not specific enough to beat the base height');
   const base = /\n\.agebar \{[^}]*height:\s*var\(--h/.exec(css);
   assert.ok(base, 'no base height rule driven by --h');
-  assert.ok(css.indexOf(narrow[0]) < base.index,
-    'the base rule now precedes the media block, so the ordering trap is gone - ' +
-    'but the specific selector is what this test is really holding');
 });
-
 test('the villa and the stage are one run of text, not two cells', async () => {
   /* Same font size and weight was not enough. They were separate grid cells
      with a 10px gap and a separator drawn between them, and their baselines
@@ -836,114 +999,58 @@ test('rows are built in one place, not copied per screen', async () => {
 
 test('one gutter, and everything on a phone starts on it', async () => {
   const css = await (await get('/app.css')).text();
-  assert.match(css, /--gutter:\s*18px/, 'there is no single gutter to line up against');
+  /* v21's phone gutter is 26px: `.top`, `.blk` and `.lede` are all padded
+     `0 26px` and `.item` is `17px 26px`. It was 18px here. */
+  assert.match(css, /--gutter:\s*26px/, 'the gutter is not v21 s 26px');
 
   const narrow = atWidth(css, 'max-width: 720px');
-  /* Applied at exactly one level. It was stacking three deep - `.mbody` padded
-     it, `.wl` is a bordered card that padded it again, and the row added a
-     margin - so cards sat at 54..321 while the label above them sat at
-     18..357 and the button between them at 36..339. */
-  assert.match(narrow, /\.mhead, \.mbody, \.scroll \{[^}]*padding-left:\s*var\(--gutter\)/,
-    'the gutter is not applied to the containers that own it');
+  /* And it sits on the block, not on the shell. v21 pads each block and leaves
+     the scroller alone, which is what lets the hairline under a row run the
+     full width of the screen while the text above it stops at the gutter. This
+     was the other way round - the shell padded, every child stripped - so no
+     line on any screen ever reached the edge. */
+  assert.match(narrow, /\.mhead, \.mbody, \.scroll \{[^}]*padding-left:\s*0\s*!important/,
+    'the shell still owns the gutter, so no hairline can reach the edge of the screen');
+  assert.match(narrow, /\.mbody > \.blk[^{]*\{[^}]*padding-left:\s*var\(--gutter\)/,
+    'the blocks do not carry the gutter themselves');
+  /* The row carries it too, as vertical padding plus the gutter - v21's
+     `.item { padding: 17px 26px }` - so its hairline spans the screen. */
+  assert.match(narrow, /\.wrow \{[^}]*padding:\s*17px var\(--gutter\)/,
+    'the row does not carry v21 s 17px/26px padding');
   /* `.scroll` as well as `.mbody`: the buyer's screens and the sign-in page
      are built by a different function and have no `.mbody` at all, so a rule
      that names only `.mbody` leaves that whole side of the product out. */
-  assert.match(narrow, /\.scroll \.item, \.scroll \.duebar \{[^}]*margin-left:\s*0/,
-    "the buyer's cards keep a margin that stacks on the container's padding");
-  const cleared = /\.mbody \.wl,[^{]*\.scroll \.blk[^{]*\{([^}]*)\}/.exec(narrow);
-  assert.ok(cleared, 'the nested containers never give up their own padding');
-  /* And only inside `.mbody`, which is the container that puts the gutter
-     back. Unscoped it stripped `.blk` on every screen `page()` builds - the
-     sign-in form and all of the buyer's side - where nothing re-pads it and
-     the text ran into the left edge. */
-  const resetSel = /((?:\.mbody|\.scroll)[^{]*)\{[^}]*padding-left:\s*0/.exec(narrow);
-  assert.ok(resetSel, 'no padding reset found at all');
-  for (const one of resetSel[1].split(',')) {
-    const t = one.trim();
-    if (!t) continue;
-    assert.ok(/^(\.mbody|\.scroll) /.test(t),
-      'the padding reset selector "' + t + '" is not qualified by a shell that puts the gutter back');
-  }
-  assert.match(cleared[1], /padding-left:\s*0/, 'a nested container still adds to the gutter');
-  assert.match(cleared[1], /margin-left:\s*0/, 'a nested container still adds a margin');
-
-  // And nothing may re-pad them afterwards, which is what happened once.
-  const dupes = (narrow.match(/\.tools \{[^}]*padding-left:\s*18px/g) || []).length;
-  assert.strictEqual(dupes, 0, 'a later rule pads .tools again, so its contents will not line up');
-
-  /* Vertical space stacked the same way it did horizontally. Between the last
-     card of one section and the next section's heading there were four
-     separate contributions: the row's own 8px margin, 8px of padding inside
-     `.wl`, `.wl`'s 18px margin, and a 36px spacer element - 70px of nothing on
-     a 812px screen. On a phone `.wl` has no border and no background, so its
-     padding and margin are buying nothing and the spacer is left to do the
-     job alone. */
-  /* The list is a card and its heading is the top of that card. It was the
-     other way round - `.wl` gave up its border and every row inside became a
-     tile of its own with a gap under it. Each row was legible and the screen
-     was not: a heading, then five or forty separate tiles floating on a tint,
-     with no edge saying where the section began or ended. */
-  const panel = /\n  \.wl \{([^}]*)\}/.exec(narrow);
-  assert.ok(panel, 'the list has no rule of its own on a phone');
-  assert.match(panel[1], /border:\s*1px solid var\(--hair\)/, 'the list is not a card');
-  assert.match(panel[1], /background:\s*var\(--paper\)/, 'the list card has no ground of its own');
-  assert.match(panel[1], /overflow:\s*hidden/,
-    "the last row's square corners will poke out of the card's radius");
-  /* The corner is a token now, so a skin change is a token change and never a
-     rule change. It was 12px typed into eight places. */
-  assert.match(narrow, /\.mbody \.blk:has\(\+ \.wl\) \{[^}]*border-radius:\s*var\(--r-card\) var\(--r-card\) 0 0/,
-    'a section heading is not joined to the list under it');
-  /* And joined with no gap. v21 gives `.wl` an 18px top margin for a list that
-     stands on its own; on one joined to its own heading that is a seam
-     straight across the middle of the card. */
-  assert.match(narrow, /\.mbody \.blk:has\(\+ \.wl\) \+ \.wl \{[^}]*margin-top:\s*0/,
-    'the heading and its list are one card with a gap down the middle of it');
-  /* But not the toolbar: it has no card of its own below it to space it from
-     the next heading, and zeroing it put the Close-a-snag button hard against
-     the "Office is chasing you" label. */
-  // Anchored to the line start: `.wl, .tools {` also contains ".tools {".
-  const tools = /\n\s*\.tools \{([^}]*)\}/.exec(narrow);
-  assert.ok(tools && /margin-bottom:\s*(\d+)px/.test(tools[1]) &&
-    Number(/margin-bottom:\s*(\d+)px/.exec(tools[1])[1]) >= 16,
-    'the toolbar has no room under it, so its button will touch the next heading');
-  /* And a row with money but no control does not spend a whole line on the
-     money alone - there is nothing else on that line for it to line up with. */
-  assert.match(narrow, /\.wrow\.noact \.amt\s+\{[^}]*grid-area:\s*2 \/ 3/,
-    'a lone amount still takes a line of its own');
-  assert.match(narrow, /\.wrow\.noact \.mid p\.s \{[^}]*grid-area:\s*2 \/ 1 \/ 3 \/ 3/,
-    'the detail still spans under the amount that has moved up beside it');
-
-  const gap = /\.mbody \.gap,[^{]*\{([^}]*)\}/.exec(narrow);
-  assert.ok(gap, 'the section spacer keeps its desktop height on a phone');
-  const px = Number(/height:\s*(\d+)px/.exec(gap[1])[1]);
-  assert.ok(px > 0 && px <= 24,
-    'the section spacer is ' + px + 'px; it is the only separator left, but it is not a screenful');
-  /* All three sizes, on both shells. Ten spacers at v21's 36px and 54px is
-     378px of blank on the buyer's villa screen alone. */
-  assert.match(narrow, /\.mbody \.gap\.s,[^{]*\.scroll \.gap\.s\s*\{/,
-    'the small spacer is not cut on one of the two shells');
-  assert.match(narrow, /\.mbody \.gap\.l,[^{]*\.scroll \.gap\.l\s*\{/,
-    'the large spacer is not cut on one of the two shells');
-  /* And this block must come after the `.phone.wide` rules it ties with on
-     specificity, or they win and nothing here applies. */
-  assert.ok(css.indexOf('.phone.wide .gap ') < css.indexOf('.phone .scroll .gap '),
-    'the phone spacer heights are declared before the .phone.wide ones that tie with them');
+  assert.match(narrow, /\.scroll > \.blk/, 'the buyer s side of the product is left out of the gutter');
 });
+test('the row is one line with a detail under it, the way v21 draws it', async () => {
+  /* v21's `.item`: `.mid` holds the heading and the detail with `flex: 1;
+     min-width: 0`, the detail sits under the heading on a 2px margin, and
+     whatever the row stands at goes at the end of the line.
 
-test('the day count sits with the status pill, on the heading line', async () => {
+     It was a grid: `.mid` was `display: contents` so its two children could be
+     placed in separate tracks, the detail spanned a row of its own and the day
+     count was pinned to `grid-area: 1 / 2`. None of that is a shape v21 has. */
   const css = await (await get('/app.css')).text();
   const narrow = atWidth(css, 'max-width: 720px');
-  const days = /\.wrow \.days \{([^}]*)\}/.exec(narrow);
-  const stc = /\.wrow \.stc\s+\{([^}]*)\}/.exec(narrow);
-  assert.ok(days && stc, 'no phone rules for the day count and the status pill');
-  // Row 1 for both: the day count used to be centred against a two-line
-  // description on a line of its own.
-  assert.match(days[1], /grid-area:\s*1 \//, 'the day count is not on the heading line');
-  assert.match(stc[1], /grid-area:\s*1 \//, 'the status pill is not on the heading line');
-  assert.match(days[1], /justify-self:\s*end/, 'the day count is not aligned right');
-  assert.match(stc[1], /justify-self:\s*end/, 'the status pill is not aligned right');
-});
+  const mid = /\.wrow \.mid \{([^}]*)\}/.exec(narrow);
+  assert.ok(mid, 'no phone rule for the row s middle');
+  assert.match(mid[1], /display:\s*block/, 'the row wrapper is still dropped for a grid');
+  /* `flex: 1` is a basis of zero. With `auto` the middle takes its content
+     width first and a long detail line pushes everything else onto a line of
+     its own - which it did, on every row of the buyer's journey. */
+  assert.match(mid[1], /flex:\s*1 1 0%/, 'the middle does not take the line the way v21 s does');
+  assert.match(narrow, /\.wrow \.mid p \{[^}]*margin-top:\s*2px/,
+    'the detail does not sit 2px under the heading, which is v21 s `.item .mid p`');
 
+  // v21's `.h2` and v21's `.s`, which is what an item is made of.
+  assert.match(narrow, /\.wrow \.mid \.rt \{[^}]*font:\s*500 15px\/21px/,
+    'the heading is not v21 s .h2');
+  assert.match(narrow, /\.wrow \.mid p\.s \{[^}]*font:\s*400 12\.5px\/18px/,
+    'the detail is not v21 s .s');
+  // And nothing is placed in a grid track any more.
+  assert.ok(!/grid-area/.test(narrow.replace(/\/\*[\s\S]*?\*\//g, '')),
+    'something on the phone row is still placed in a grid track');
+});
 test('the header is one bar, not four bands', async () => {
   /* It was the brand row, a 56px breadcrumb, the title, its subtitle and then
      the count - 273px of an 812px screen before the first card. */
@@ -964,31 +1071,43 @@ test('the header is one bar, not four bands', async () => {
   }
 });
 
-test('the summary reads as a summary, not as body text', async () => {
+test('the header is v21 s lede: a label, a number, a sentence', async () => {
+  /* v21 opens every phone screen with `.lede` - `.k` at 500 12px/16px with
+     14px under it, `.mega` at 600 64px/64px on -2.2px of tracking, and `.cap`
+     at 400 14px/22px 12px below that - in that order and with nothing drawn
+     around it.
+
+     This header is the same three pieces in a different order inside two extra
+     boxes: a title, a sentence, and a `.hero` card holding the count. The
+     boxes are dropped with `display: contents` and `order` puts the three in
+     v21's order without moving anything in the markup. */
   const css = await (await get('/app.css')).text();
   const narrow = atWidth(css, 'max-width: 720px');
-  const kpin = /\.kpin \{([^}]*)\}/.exec(narrow);
-  assert.ok(kpin, 'the count has no phone rule');
 
-  /* plint.css:417 sets `font: … !important` on `.kpin`, so a bare `font-size`
-     here loses to it - the count measured 19px for a whole round while this
-     rule sat in the file. The shorthand and the flag are both required. */
-  assert.match(kpin[1], /font:\s*\d+ 4\dpx/, 'the count is not the largest thing in the block');
-  assert.match(kpin[1], /!important/, 'plint.css sets .kpin with !important and will win');
-  assert.match(narrow, /\.kpi \{[^}]*order:\s*1/, 'the count is not lifted above the title');
-  /* But not a line each. The head office shows two, and one above the other
-     they took 116px of the 812px before a single row of work appeared. */
-  assert.match(narrow, /\.kpi \{[^}]*flex:\s*0 0 auto/,
-    'a KPI still claims a whole line, so two of them cost two');
-  /* And the gap between them belongs to the strip, not to the second one: as a
-     margin it survived the wrap and pushed the second past the page gutter. */
-  assert.ok(!/\.kpi ~ \.kpi \{[^}]*margin-left/.test(narrow),
-    'the second KPI carries its own margin, which will indent it if it wraps');
-  assert.match(narrow, /\.hstrip \{[^}]*column-gap:\s*18px/,
-    'the header strip has no column gap to separate two counts');
-  assert.match(narrow, /\.pgt \{[^}]*font-size:\s*15px/, 'the title still competes with the count');
+  assert.match(narrow, /\.pgt \{[^}]*font:\s*500 12px\/16px/, 'the label is not v21 s .lede .k');
+  assert.match(narrow, /\.pgt \{[^}]*margin:\s*0 0 14px/, 'the label has not got v21 s 14px under it');
+  const fig = /\.mhead \.summary \.fig \{([^}]*)\}/.exec(narrow);
+  assert.ok(fig, 'the count has no phone rule');
+  /* plint.css sets `.kpin` and friends with `!important`, and the hero's own
+     rule sets `.fig` outside this block, so the shorthand and the flag are
+     both required - the count measured 19px for a whole round once while a
+     bare `font-size` sat in the file. */
+  assert.match(fig[1], /font:\s*600 64px\/64px[^;]*!important/, 'the count is not v21 s .mega');
+  assert.match(fig[1], /letter-spacing:\s*-2\.2px/, 'the count is not on v21 s tracking');
+  /* v21's mega is `--ink` whatever it counts. This build coloured it by tone. */
+  assert.match(fig[1], /color:\s*var\(--ink\)\s*!important/, 'the count is not v21 s ink');
+  assert.match(narrow, /\.mhead \.hstrip \.g > p\.s, \.mhead \.summary \.note \{[^}]*font:\s*400 14px\/22px/,
+    'the sentence is not v21 s .cap');
+
+  // And in v21's order: label, number, sentence.
+  const order = s => Number((new RegExp(s + ' \\{[^}]*order:\\s*(\\d+)').exec(narrow) || [])[1]);
+  assert.ok(order('\\.pgt') < order('\\.mhead \\.summary \\.fig'),
+    'the number is above the label it belongs to');
+  assert.ok(order('\\.mhead \\.summary \\.fig') < 3, 'the number is not the second thing in the lede');
+  // v21 puts 54px between the lede and the first row: `.gap.l`.
+  assert.match(narrow, /\.mhead::after \{[^}]*height:\s*54px/,
+    'there is no 54px between the header and the first row, which is v21 s .gap.l');
 });
-
 test('no day count is shown without a verdict', async () => {
   /* Either the pill says what the age means, or - where the pill is busy
      saying something else - the number itself is coloured on the same
@@ -1025,112 +1144,64 @@ test('no day count is shown without a verdict', async () => {
   }
 });
 
-test('every button in the application is the same object', async () => {
+test('v21 owns the buttons on a phone; the scale is the desktop s', async () => {
+  /* There was one button scale for every width - 36px and 44px, 13px text, a
+     10px radius - built so no screen would show four different buttons.
+
+     v21 does not do that. `.wbtn` is 9px/14px padding at 12.5px on a 6px
+     radius, `.sortb` is 9px/12px at 12px on a 9px radius, and `.act` is a
+     44px full-width bar. Where the two disagree v21 is the design, so on a
+     phone none of this applies and v21's own rules are what draw a button.
+     Above 720px, where v21 has no design at all, the scale stays. */
   const css = await (await get('/app.css')).text();
 
-  /* There were four button heights - v21's 33px, the sidebar's 36, a 38px
-     carve-out for the button inside a list row, and a 44px phone minimum -
-     three font sizes and two corner radii, so no two buttons on one screen
-     were quite the same thing. Two sizes now, from tokens, and the difference
-     between them says something: one sits in a line beside other things, the
-     other takes the whole width and is the only thing you can do there. */
-  for (const tok of ['--btn-h', '--btn-h-full', '--btn-r', '--btn-fs', '--btn-min-w']) {
-    assert.match(css, new RegExp('\\' + tok.slice(1) + ':\\s*\\S'), tok + ' is not defined');
-  }
+  const wide = atWidth(css, 'min-width: 721px');
+  assert.match(wide, /\.wbtn, \.sortb \{[^}]*min-height:\s*36px/,
+    'the desktop button scale is gone as well, which was not the ask');
+  assert.match(wide, /\.act, \.authbtn, \.wbtn\.full \{[^}]*min-height:\s*44px/,
+    'the full-width action has no rule of its own above a phone');
 
-  const base = /\n\.wbtn, \.sortb \{([^}]*)\}/.exec(css);
-  assert.ok(base, 'there is no single rule that sizes a button');
-  assert.match(base[1], /min-height:\s*var\(--btn-h\)/, 'the button height is not the token');
-  assert.match(base[1], /font:[^;]*var\(--btn-fs\)/, 'the button font is not the token');
-  assert.match(base[1], /border-radius:\s*var\(--btn-r\)/, 'the button radius is not the token');
-
-  const full = /\.act, \.authbtn, \.wbtn\.full \{([^}]*)\}/.exec(css);
-  assert.ok(full, 'the full-width action has no rule of its own');
-  assert.match(full[1], /min-height:\s*var\(--btn-h-full\)/,
-    'the full-width action does not take the taller of the two sizes');
-
-  /* The rule is outside every media query, so a button is the same object on
-     a monitor and on a handset. It forked once by being redeclared inside the
-     phone layer, and that is what produced 38px against 44px. */
-  const narrow = atWidth(css, 'max-width: 720px');
-  // Comments stripped first: they talk about these selectors by name.
-  const code = narrow.replace(/\/\*[\s\S]*?\*\//g, '');
-  const forked = code.match(/\.wbtn[^{}]*\{[^}]*(?:min-height|font-size|border-radius|padding)\s*:/g) || [];
-  const bad = forked.filter(r => !/min-width/.test(r));
-  assert.deepStrictEqual(bad, [],
-    'the phone layer resizes a button again, which is how four heights happened: ' + bad.join(' | '));
-
-  /* A field is not a button: you aim at a button once and it is gone, and you
-     aim at a text field, miss, and aim again with the keyboard already up. */
-  const fields = /([^{}]*)\{[^}]*min-height:\s*var\(--field-h\)/.exec(code);
-  assert.ok(fields, 'nothing holds the fields at the field height');
-  for (const sel of ['select', 'input[type="text"]', '.fld textarea']) {
-    assert.ok(fields[1].includes(sel), sel + ' is not held at 44px');
-  }
-  assert.ok(!/\.wbtn/.test(fields[1]),
-    'the button is named in the field rule again, so its height has two sources');
-  /* But a button standing on a line with a field takes the field's height, or
-     the pair reads as two unrelated controls: the head office's Reassign was
-     36px beside a 45px picker, centred against it. */
-  assert.match(css, /\.uprow \.wbtn, \.fld \.wbtn \{[^}]*min-height:\s*var\(--field-h\)/,
-    'a button beside a field does not match its height');
-
-  assert.match(narrow, /\.tab \{[^}]*min-height:\s*44px/, 'the villa detail tabs are still 34px');
-  assert.match(narrow, /a\.wrow \{[^}]*min-height:\s*44px/, 'a row that is a link has no minimum height');
+  /* Nothing may resize a button below 720. That is the whole point: a second
+     declaration down here is exactly how four heights happened the first
+     time, and now it would also be a value v21 has already set. */
+  const narrow = atWidth(css, 'max-width: 720px').replace(/\/\*[\s\S]*?\*\//g, '');
+  const forked = narrow.match(/\.wbtn[^{}]*\{[^}]*(?:min-height|font-size|border-radius|padding)\s*:/g) || [];
+  assert.deepStrictEqual(forked, [],
+    'the phone layer sizes a button again, over the top of v21: ' + forked.join(' | '));
+  const base = /\n\.wbtn, \.sortb \{/.exec(css);
+  assert.ok(!base, 'the button scale is declared outside a media query, so it reaches the phone');
 
   /* Two controls on a line of their own split it evenly. "Accept" is 72px of
      text and "Ask to reassign" is 119px, so left to size themselves they read
      as one button and an afterthought rather than a choice between two. */
-  assert.match(narrow, /\.wrow \.actc\.wide \.wbtn \{[^}]*flex:\s*1 1 0/,
+  assert.match(narrow, /\.wrow \.actc\.wide \.wbtn, \.wrow \.actc\.wide form \{[^}]*flex:\s*1 1 0/,
     'paired controls do not share their line evenly');
-  assert.match(narrow, /\.wrow \.actc:not\(\.wide\) \.wbtn \{[^}]*min-width:\s*var\(--btn-min-w\)/,
-    'a single control may shrink below the shared minimum width');
 });
+test('the amount is v21 s, at the end of the row', async () => {
+  /* The money was moved to the left edge of the card at 600 weight and 15px,
+     the boldest thing on the row, because right-aligned at 400/13px it was
+     lining up with nothing above or below it.
 
-test('the money leads its line, tabular, and never breaks mid-value', async () => {
+     v21 puts it at the end of the row - `.wrow .amt` is `text-align: right`
+     at `400 13px/1` in `--ink-2` - and v21 is the design. What survives is the
+     part v21 also does: it never breaks mid-value and its digits line up. */
   const css = await (await get('/app.css')).text();
   const narrow = atWidth(css, 'max-width: 720px');
-  const amt = /\.wrow \.amt\s+\{([^}]*)\}/.exec(narrow);
+  const amt = /\n  \.wrow \.amt \{([^}]*)\}/.exec(narrow);
   assert.ok(amt, 'no phone rule for the amount cell');
   assert.match(amt[1], /white-space:\s*nowrap/, 'an amount may break mid-value');
   assert.match(amt[1], /tabular-nums/, 'amounts do not line up digit for digit down the column');
+  assert.match(amt[1], /text-align:\s*right/, 'the amount is not at the end of the row, as v21 has it');
+  const weight = /font:\s*(\d+)\s+(\d+)px/.exec(amt[1]);
+  assert.ok(weight, 'the amount has no font declaration');
+  assert.strictEqual(weight[1], '400', 'the amount is heavier than v21 s 400');
+  assert.strictEqual(weight[2], '13', 'the amount is not v21 s 13px');
 
-  /* The money starts at the card's left edge, on the same line the title and
-     the detail start from, and it is the boldest thing on the row. It had been
-     right-aligned inside the first column - 169px into a 375px card, lined up
-     with nothing above or below it - at 400 weight and 13px, smaller and
-     lighter than every other word on the row. It is the figure the row is
-     about, so it is not the quietest thing on it. */
-  assert.match(amt[1], /justify-self:\s*start/, 'the amount floats in the middle of the row again');
-  assert.match(amt[1], /text-align:\s*left/, 'the amount is not aligned with the lines above it');
-  const weight = /font:\s*(\d+)/.exec(amt[1]);
-  assert.ok(weight && Number(weight[1]) >= 600,
-    'the amount is lighter than 600, which is lighter than the title above it');
-  assert.match(amt[1], /grid-area:\s*3 \/ 1/, 'the amount is not on the action line');
-
-  const act = /\.wrow \.actc:not\(\.s\):not\(\.wide\) \{([^}]*)\}/.exec(narrow);
-  assert.ok(act, 'a single control has no compact placement');
-  assert.match(act[1], /grid-area:\s*3 \/ 2 \/ 4 \/ 4/,
-    'a single control does not take the right of the amount\'s line');
-  assert.match(act[1], /justify-content:\s*flex-end/, 'the control is not against the right edge');
-
-  /* A status word is a third thing that can land on that line, and it must not
-     land on top of the amount - spanning the full width printed "Too few
-     photographs" straight through "33,60,000". */
-  const status = /\.wrow \.actc\.s \{([^}]*)\}/.exec(narrow);
-  assert.ok(status, 'no placement for a status word');
-  assert.match(status[1], /grid-area:\s*3 \/ 2/, 'a status word overlaps the amount');
-
-  /* The detail stops short of the status column. Run it to the far edge and
-     the sentence sits directly under the pill and directly over the button,
-     reading as though it were crowding both; a sentence this long then takes
-     two lines inside its own width, which is what it should have taken. */
-  assert.match(narrow, /\.wrow \.mid p\.s \{[^}]*grid-area:\s*2 \/ 1 \/ 3 \/ 3/,
-    'the detail runs the full width of the card, under the pill and over the button');
-  assert.match(narrow, /\.wrow \.actc\.wide \{[^}]*grid-area:\s*4 \//,
-    'two or more controls must still take their own line, they will not fit beside an amount');
+  /* A control has no v21 line to sit on - v21 never puts a button in a list
+     row - so it takes the line under the row it acts on. */
+  assert.match(narrow, /\.wrow \.actc \{[^}]*flex:\s*1 1 100%/,
+    'a control does not take the line under the row it acts on');
 });
-
 test('a row with one control never claims a line for it', async () => {
   /* `actc wide` takes a whole line below the amount, which is right for two
      buttons and wrong for one. The Visits tab marked every row wide, so a
@@ -1156,51 +1227,44 @@ test('a row with one control never claims a line for it', async () => {
   assert.ok(single > 0, 'no single-control row in the visits list, so this proves nothing');
 });
 
-test('the phone list is v21\'s, not a table in disguise', async () => {
+test('the phone list is v21 s, not a table in disguise', async () => {
   const css = await (await get('/app.css')).text();
   const narrow = atWidth(css, 'max-width: 720px');
-  // The list is a card, and the rows inside it are rows.
-  assert.match(narrow, /\n  \.wl \{[^}]*border:\s*1px solid/, 'the worklist is not a card on a phone');
-  // The wrapper is dropped so the meta line can use the full width.
-  assert.match(narrow, /\.wrow \.mid \{[^}]*display:\s*contents/,
-    'the row wrapper still traps the meta line in one column');
-  /* Every list row is a card, in every tab and for all three roles. A flat row
-     reads as loose text once the desktop table's columns are gone: there is no
-     left edge for the eye to run down. */
+
+  /* v21's phone has no panel anywhere in it. Rows sit on the paper a hairline
+     apart and the edge of the screen is the only edge. `.wl` is a card in v21
+     - paper, a hairline, a 12px radius - but only inside the desk, and the
+     desk is a desktop.
+
+     This had gone the other way twice: first every row was a card of its own
+     on a tint, then the panel came back and the rows sat inside it. v21 has
+     neither. */
+  const wl = /\n  \.wl \{([^}]*)\}/.exec(narrow);
+  assert.ok(wl, 'there is no phone rule for the worklist panel');
+  assert.match(wl[1], /border:\s*0/, 'the worklist is still a card on a phone');
+  assert.match(wl[1], /background:\s*none/, 'the worklist still paints a card on a phone');
+
   const card = /\n  \.wrow \{([^}]*)\}/.exec(narrow);
   assert.ok(card, 'there is no phone rule for a list row');
-  /* A row inside the panel, not a card of its own: the hairline between rows
-     is the only division and the panel's edge is the only edge. Forty tiles
-     each with their own border and a gap under them is a jigsaw. */
-  assert.match(card[1], /border:\s*0/, 'a row still draws its own border inside the card');
-  assert.match(card[1], /border-bottom:\s*1px solid var\(--hair\)/,
-    'nothing divides one row from the next');
+  /* v21's `.item`, exactly: 17px 26px, an 18px gap, and a hairline in
+     `--hair-2` under every row but the last. */
+  assert.match(card[1], /padding:\s*17px var\(--gutter\)/, 'the row is not padded 17px 26px');
+  assert.match(card[1], /border-bottom:\s*1px solid var\(--hair-2\)/,
+    'the hairline between rows is not v21 s --hair-2');
+  assert.match(card[1], /border:\s*0/, 'a row still draws a border of its own');
   assert.match(card[1], /margin:\s*0\s*!important/, 'a row still floats on a gap of its own');
+  /* plint.css sets `gap: 14px !important` on `.wrow` for its desktop table, so
+     a plain `gap` here loses to it - which it did, and every row came out with
+     14px between its cells instead of v21's 18. */
+  assert.match(card[1], /gap:\s*18px\s*!important/,
+    'the row gap will lose to plint.css and the row will not be v21 s');
   assert.match(narrow, /\.wl > \.wrow:last-child[^{]*\{[^}]*border-bottom:\s*0/,
-    'the last row draws a line along the bottom of the card');
-  assert.match(card[1], /padding:\s*13px 14px/, 'a list row has no padding of its own');
-  /* No margin at all now: the gutter belongs to one container, and the rows
-     sit flush inside the panel rather than floating on gaps. A horizontal
-     margin here is exactly how a card once ended up inset further than the
-     label above it. */
-  assert.ok(!/margin:[^;]*\d+px[^;]*;/.test(card[1].replace(/margin:\s*0\s*!important;/, '')),
-    'the row sets a margin of its own again');
-
-  /* plint.css:420 sets `gap: 14px !important` on `.wrow` for its desktop
-     table. Without `!important` here every card carried 28px of row gaps it
-     was never asked for - 20px per card, on every list on every screen. */
-  assert.match(card[1], /row-gap:\s*4px\s*!important/,
-    'the row gap will lose to plint.css and every card grows 20px');
-  assert.match(card[1], /align-items:\s*start/,
-    'baseline alignment inflates every track around a 44px control');
-
-  /* And the heading is one heading. The villa came out at 12.5px and the stage
-     at 13px, so they read as two labels with a dot floating between them. */
-  const head = /\.wrow \.id, \.wrow \.mid \.rt \{([^}]*)\}/.exec(narrow);
-  assert.ok(head, 'the villa and the stage are not typed as one heading');
-  assert.match(head[1], /font:\s*500 14\.5px\/20px/, 'the heading is not one size');
+    'the last row draws a line under the end of the list, which v21 s .item does not');
+  /* v21's spacers, unscaled: 36, 22 and 54. They had been cut to 20/12/28. */
+  assert.match(narrow, /\.mbody \.gap,[^{]*\{\s*height:\s*36px/, 'the spacer is not v21 s 36px');
+  assert.match(narrow, /\.mbody \.gap\.s,[^{]*\{\s*height:\s*22px/, 'the small spacer is not v21 s 22px');
+  assert.match(narrow, /\.mbody \.gap\.l,[^{]*\{\s*height:\s*54px/, 'the large spacer is not v21 s 54px');
 });
-
 test('the app bar is opaque, full width, and content passes under it', async () => {
   const css = await (await get('/app.css')).text();
   const bar = /\.appbar \{([^}]*)\}/.exec(css);

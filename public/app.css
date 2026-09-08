@@ -10,81 +10,62 @@
    ========================================================================= */
 
 :root {
+  /* --------------------------------------------------------------- TOKENS
+
+     v21 is the design. Its palette, its depth and its shape are declared in
+     plint.css and nothing here may restate them: a value repeated in two
+     files is a value that will disagree with itself.
+
+     There was a second palette here - a warmer ink, warmer greys, a large
+     card radius, a diffuse shadow and one button scale - built to a different
+     reference. It is gone. Where the two disagreed, v21 is right by
+     definition, because v21 is the design being built.
+
+     What is left is only what v21 has no opinion about, because v21 draws a
+     phone inside a frame on a slate and never has to be an application: the
+     bar at the top of a real window, the bar at the bottom of a real phone,
+     the inset a real phone's home indicator needs, and the ground a chart
+     segment uses for a quantity that is not there yet. */
+
   --appbar-h: 52px;
-
-  /* One button scale, for every button on every screen at every width.
-
-     There were four heights in the application - v21's 33px, the sidebar's
-     36, a 38px carve-out for the button inside a list row and a 44px phone
-     minimum - three font sizes and two corner radii, so no two buttons on the
-     same screen were quite the same object. Two sizes now, and the difference
-     between them says something: `--btn-h` is a button that sits in a line of
-     other things, `--btn-h-full` is one that takes the whole width and is the
-     only thing you can do on that screen. */
-  /* ------------------------------------------------------------ THE SKIN
-
-     Everything about how this application looks is these values and nothing
-     else. A skin is a token change: if the rules below need editing to restyle
-     the product then the rules are wrong, not the skin.
-
-     v21's own palette is a Stripe-ish one - #0A2540 ink on #F6F9FC, hard 1px
-     hairlines, and a fairly heavy drop shadow. This is the softer surface
-     treatment: a warmer, quieter ground, hairlines light enough to read as
-     edges rather than as lines, a larger card radius, and depth carried by a
-     diffuse shadow instead of by a border. The hues stay Plint's. */
-
-  /* Ink. Nearer black than v21's navy, which reads as ink rather than as a
-     colour, and two greys under it that are warm rather than blue. */
-  --ink:    #14171F;
-  --ink-2:  #59616E;
-  --ink-3:  #99A1AE;
-
-  /* Surfaces. `--hair-2` is the ground the cards sit on and it is warm rather
-     than blue-tinted; `--hair` is the edge, light enough that the shadow does
-     most of the work of separating a card from it. */
-  --hair:   #EAEAE7;
-  --hair-2: #F5F5F2;
-
-  /* Depth. v21's shadow is a 0.18 alpha at 5px, which on a white card against
-     a white bar reads as a line. These are diffuse and nearly invisible until
-     three of them stack, which is what makes a screen of cards look layered
-     rather than drawn. */
-  --shadow:    0 1px 2px rgba(16, 24, 40, .04), 0 1px 3px rgba(16, 24, 40, .05);
-  --shadow-lg: 0 2px 4px rgba(16, 24, 40, .04), 0 12px 28px rgba(16, 24, 40, .07);
-  --card-shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 4px 14px rgba(16, 24, 40, .05);
-
-  /* Shape. One radius for a card, one for a control, so a corner is never a
-     number typed into a rule. */
-  /* The ground a chart segment uses for "nothing has happened here yet" - a
-     step darker than the hairline, so it reads as a bar rather than as the
-     track behind one. */
-  --rest:   #C7D2E4;
-
-  --r-card: 16px;
-  --r-ctl:  10px;
-
-  --btn-h: 36px;
-  --btn-h-full: 44px;
-  /* A field is not a button. You aim at a button once and it is gone; you aim
-     at a text field, miss, and aim again with the keyboard already up. */
-  --field-h: 44px;
-  --btn-r: var(--r-ctl);
-  --btn-fs: 13px;
-  /* Short labels next to long ones - "Accept" beside "Ask to reassign" - read
-     as an accident rather than a pair. Nothing narrower than this. */
-  --btn-min-w: 96px;
-  --tabbar-h: 56px;
+  --tabbar-h: 58px;                          /* v21 `.nav`: flex 0 0 58px */
   --safe-b: env(safe-area-inset-bottom, 0px);
 
-  /* One page gutter. Every block on a phone starts and ends on it: the header,
-     the section labels, the cards, the buttons, the forms.
+  /* v21's phone gutter. `.top`, `.blk`, `.lede` and `.item` are all padded
+     0 26px, so 26px is the left edge of every screen, and everything on a
+     phone starts on it. It is applied at exactly one level or it stacks. */
+  --gutter: 26px;
 
-     It has to be applied at exactly one level or it stacks. It was stacking:
-     `.mbody` padded 18, `.wl` is itself a bordered card with 18 more, and the
-     row carried an 18px margin on top of that - so cards sat at 54..321 while
-     the section label above them sat at 18..357 and the button between them at
-     36..339. Three different left edges on one screen. */
-  --gutter: 18px;
+  /* No v21 equivalent: v21's charts have no empty state. A step darker than
+     the hairline, so it reads as a bar and not as the track behind one. */
+  --rest: #C7D2E4;
+
+  /* Shape, from v21's own rules rather than from a scale of this build's:
+     v21 rounds a block of content 13px (`.tdcard`, `.ownbig`), a cell or a
+     bubble 11px (`.sumcell`, `.lgb`, `.msg`) and a control 9px (`.fi`,
+     `.sortb`). These are what the pieces v21 has no name for are drawn with,
+     so a corner on a phone is always one of v21's three.
+
+     They were scoped to widths above a phone for a while and every rule that
+     used one computed to `border-radius: 0` below it - an invalid `var()`
+     leaves the property at its initial value rather than falling back - which
+     took the corners off the head office's tiles. */
+  --r-card: 13px;
+  --r-ctl:  9px;
+  --card-shadow: none;
+}
+
+/* Above a phone, v21 has nothing to say - it draws a 392px mock and a desk,
+   and the desk is a different design from the one this application needed. So
+   the shape and depth the desktop was built with stay, scoped to widths v21
+   never described. Below 721px every one of these is v21's own literal, in
+   v21's own rules, and none of it applies. */
+@media (min-width: 721px) {
+  :root {
+    --card-shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 4px 14px rgba(16, 24, 40, .05);
+    --r-card: 16px;
+    --r-ctl:  10px;
+  }
 }
 
 /* ------------------------------------------------------- 1. no frame, ever
@@ -154,7 +135,8 @@ body { padding: 0; margin: 0; background: var(--hair-2); }
 }
 .ab-brand { display: flex; align-items: center; gap: 7px; text-decoration: none; color: var(--ink); }
 .ab-mark { display: flex; }
-.ab-name { font: 600 15px/1 'Instrument Sans', system-ui, sans-serif; letter-spacing: -.2px; }
+/* v21's `.appbrand`: 600 13px/1 with -.2px of letter spacing. It was 15px. */
+.ab-name { font: 600 13px/1 'Instrument Sans', system-ui, sans-serif; letter-spacing: -.2px; }
 .ab-ctx  { font-size: 12.5px; color: var(--ink-3); white-space: nowrap;
            overflow: hidden; text-overflow: ellipsis; }
 .ab-g    { flex: 1; }
@@ -225,14 +207,18 @@ body { padding: 0; margin: 0; background: var(--hair-2); }
    One rule, every card surface, so the treatment cannot drift between the
    worklist panel and the summary card the way it did when each screen drew
    its own. */
-.wl, .summary, .stat, .chart, .mbody .blk:has(+ .wl), .mbody .tools:has(+ .wl) {
-  box-shadow: var(--card-shadow);
+@media (min-width: 721px) {
+  .wl, .summary, .stat, .chart, .mbody .blk:has(+ .wl), .mbody .tools:has(+ .wl) {
+    box-shadow: var(--card-shadow);
+  }
 }
 /* The heading and the list it is joined to are one card, so only the pair
    casts a shadow - not each half of it. */
-.mbody .blk:has(+ .wl) { box-shadow: 0 -1px 0 rgba(16, 24, 40, .01); }
-.mbody .blk:has(+ .wl) + .wl,
-.mbody .tools:has(+ .wl) + .wl { box-shadow: var(--card-shadow); }
+@media (min-width: 721px) {
+  .mbody .blk:has(+ .wl) { box-shadow: 0 -1px 0 rgba(16, 24, 40, .01); }
+  .mbody .blk:has(+ .wl) + .wl,
+  .mbody .tools:has(+ .wl) + .wl { box-shadow: var(--card-shadow); }
+}
 
 /* ------------------------------------------------- the dashboard furniture
 
@@ -428,31 +414,22 @@ body { padding: 0; margin: 0; background: var(--hair-2); }
    The message is the content here and everything else is a caption. Mine and
    theirs are told apart by side and by ground rather than by a label. */
 
-.talk { padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+.thread { padding: 14px; }
 .talkempty {
   font: 400 13.5px/19px 'Instrument Sans', system-ui, sans-serif;
   color: var(--ink-3); padding: 6px 2px;
 }
 
-.msg { max-width: 82%; min-width: 0; }
-.msg.them { align-self: flex-start; }
-.msg.me   { align-self: flex-end; }
+/* v21 draws the bubble itself - `.msg` is 11px 14px on an 11px radius, its
+   `<p>` is 13px/1.5, and `.msg .s` is the caption inside it, 5px under the
+   text in `--ink-3`. All of that is in plint.css and applies as it stands.
 
-.who {
-  font: 400 11.5px/16px 'Instrument Sans', system-ui, sans-serif;
-  color: var(--ink-3); margin: 0 0 4px 2px;
-}
-.msg.me .who { text-align: right; margin: 0 2px 4px 0; }
-
-.say {
-  font: 400 14px/20px 'Instrument Sans', system-ui, sans-serif;
-  color: var(--ink);
-  padding: 10px 13px;
-  border-radius: var(--r-card);
-  overflow-wrap: anywhere;
-}
-.msg.them .say { background: var(--hair-2); border-bottom-left-radius: 5px; }
-.msg.me   .say { background: var(--brand-soft); border-bottom-right-radius: 5px; }
+   What v21 names by role - `.msg.buyer` grey on the left, `.msg.office` in
+   brand-soft on the right - is named here by who is reading, because the
+   buyer's end of the same thread has to mirror it and v21 only ever drew the
+   office's end. The two declarations are v21's, value for value. */
+.msg.them { background: var(--hair-2);   border: 1px solid var(--hair); align-self: flex-start; }
+.msg.me   { background: var(--brand-soft); border: 1px solid #C9D9FB;  align-self: flex-end; }
 
 /* ------------------------------------------------------------- the notice
 
@@ -745,9 +722,11 @@ body { padding: 0; margin: 0; background: var(--hair-2); }
     border-top: 1px solid var(--hair);
     padding-bottom: var(--safe-b);
   }
+  /* v21's `.nav` is `flex: 0 0 58px` with a 1px top border inside that 58,
+     so the bar is 58px on the screen and not 58 plus its own line. */
   .tabbar a {
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 3px; height: var(--tabbar-h); text-decoration: none;
+    gap: 3px; height: calc(var(--tabbar-h) - 1px); text-decoration: none;
     color: var(--ink-3); font: 500 11px/1 'Instrument Sans', system-ui, sans-serif;
   }
   .tabbar a svg { width: 21px; height: 21px; }
@@ -824,24 +803,20 @@ body { padding: 0; margin: 0; background: var(--hair-2); }
    a handset. v21 draws `.wbtn` at 33px with 12.5px text and a 6px radius and
    `.sortb` at 12px text with a 9px radius; this is the one place the two are
    reconciled rather than carried forward separately. */
-.wbtn, .sortb {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-height: var(--btn-h);
-  padding: 0 16px;
-  font: 600 var(--btn-fs)/1 'Instrument Sans', system-ui, sans-serif;
-  border-radius: var(--btn-r);
-}
+@media (min-width: 721px) {
+  .wbtn, .sortb {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-height: 36px;
+    padding: 0 16px;
+    font: 600 13px/1 'Instrument Sans', system-ui, sans-serif;
+    border-radius: 10px;
+  }
 /* A button that takes the whole width is the only thing you can do on that
-   screen, so it is the taller of the two sizes. */
-.act, .authbtn, .wbtn.full {
-  min-height: var(--btn-h-full);
-  border-radius: var(--btn-r);
-  font-size: var(--btn-fs);
+     screen, so it is the taller of the two sizes. */
+  .act, .authbtn, .wbtn.full { min-height: 44px; border-radius: 10px; font-size: 13px; }
+  /* And a button standing on a line with a field takes the field's height. */
+  .uprow .wbtn, .fld .wbtn { min-height: 44px; }
 }
-/* And a button standing on a line with a field takes the field's height. The
-   head office's Reassign was 36px beside a 45px picker, centred against it, so
-   the pair read as two unrelated controls that happened to land together. */
-.uprow .wbtn, .fld .wbtn { min-height: var(--field-h); }
 
 /* ------------------------------------------- 4. `wide` is a desktop rendering
 
@@ -863,7 +838,7 @@ body { padding: 0; margin: 0; background: var(--hair-2); }
   .phone.wide .appbrand   { padding: 2px 24px 10px; font-size: 13px; border-bottom: 0; }
   .phone.wide .top        { padding: 10px var(--gutter) 0; min-height: 48px; }
   .phone.wide .blk        { padding: 0 var(--gutter); }
-  .phone.wide .item       { padding: 17px 16px; gap: 18px; }
+  .phone.wide .item       { padding: 17px var(--gutter); gap: 18px; }
   .phone.wide .gap        { height: 36px; }
   /* `.gap.s` too, or this rule flattens it: three classes beats v21's two, so
      every small spacer on the buyer's screens was rendering at the full 36px
@@ -876,10 +851,11 @@ body { padding: 0; margin: 0; background: var(--hair-2); }
   .phone.wide .lede .k    { margin-bottom: 14px; }
   .phone.wide .lede .cap  { margin-top: 12px; min-width: 0; max-width: none; }
 
-  /* Sized from the space it has, not from the viewport: 78px of that viewport
-     is body and card padding, and the figure is about five times its font
-     size wide. v21's flat 64px overflows the gutter under about 400px. */
-  .phone.wide .lede .mega { font-size: min(64px, calc((100vw - 80px) / 5)); line-height: 1; }
+  /* v21's flat 64px/64px. It had been clamped against the viewport, on the
+     reasoning that a five-character figure wants more width than 375px minus
+     two gutters leaves it - but v21 says 64px, and a figure that is too long
+     for the line is a figure to shorten rather than a size to invent. */
+  .phone.wide .lede .mega { font-size: 64px; line-height: 64px; }
 }
 /* ------------------------------------ 5. the worklists stop being tables
 
@@ -893,355 +869,338 @@ body { padding: 0; margin: 0; background: var(--hair-2); }
    that carry actions and leaves lists flat, but a flat row here reads as loose
    text against the page: once the desktop table's columns are gone there is no
    left edge for the eye to run down. One shape, every tab, all three roles. */
+/* v21's brand row is `.appbrand`: 28px tall, padded 2px 24px 10px, with no
+   rule under it, holding a logo and the word Plint and nothing else. This bar
+   also holds the search field, the menu and Sign out - which v21's phone has
+   nowhere, because a mock does not have to sign anybody out - so it keeps the
+   52px those controls need. Its gutter and its type are v21's, and the line
+   under it is not, so the line goes. */
 @media (max-width: 720px) {
-  .whead { display: none; }
+  .appbar { padding-left: 24px; padding-right: 24px; border-bottom: 0; }
+}
 
-  /* A SECTION IS ONE CARD, NOT A PILE OF THEM.
+@media (max-width: 720px) {
+  /* ==========================================================================
+     v21'S PHONE, AT v21'S NUMBERS.
 
-     This was the other way round: `.wl` gave up its border and every `.wrow`
-     inside it became a card of its own with a gap under it. Each row was
-     legible and the screen was not - a heading, then five or forty separate
-     tiles floating on a tint, with no edge saying where the section began or
-     ended. It reads as a jigsaw, which is how it was described.
+     Everything in this block is a value taken from plint.css, which is v21
+     byte for byte. Nothing here is chosen. Where a value is not v21's it is
+     because v21 has no such thing on a phone, and it says so.
 
-     So the panel comes back. The section heading is the top of the card, the
-     rows sit inside it separated by a hairline, and the card's own border is
-     the only edge on the screen. That is v21's own `.wl` on a desktop, and it
-     is what every list on a phone looks like: one container, rows within it. */
-  /* The gutter, applied once. Everything inside gives up its own horizontal
-     padding, borders and margins so there is a single left edge down the page.
-     `.wl` and `.tools` are bordered cards in v21's desktop shell; on a phone
-     the rows are the cards, so those two become plain containers. */
-  /* Two shells own the gutter, one each. `.mhead` and `.mbody` are the head
-     office's and the engineer's; `.scroll` is the buyer's and the sign-in
-     page's, which are built by a different function and have no `.mbody` at
-     all. Both are listed here so the rule below can be written once. */
+     v21 draws a phone for two roles - the site engineer's `site()` and the
+     buyer's `buyer()` - inside a 392px frame. Both are built from one small
+     vocabulary, and these are its measurements:
+
+       .appbrand  600 13px/1, ls -.2, pad 2px 24px 10px
+       .top       pad 10px 26px 0, gap 14px, min-height 48px
+       .lede      pad 0 26px;  .k 500 12px/16px ink-3, mb 14px
+                  .mega 600 64px/64px ls -2.2 ink
+                  .cap  400 14px/22px ink-2, mt 12px
+       .blk       pad 0 26px
+       .gap       36px    .gap.s 22px    .gap.l 54px
+       .item      flex, gap 18px, pad 17px 26px, border-bottom 1px hair-2
+                  .mid .h2  500 15px/21px ls -.1
+                  .mid p.s  400 12.5px/18px ink-3, mt 2px
+                  .end      12px ink-3
+       .nav       58px, border-top 1px hair;  .dest 500 11px/1 ink-3
+
+     v21's office is a desk and has no phone at all: at 375px it is 375px of
+     viewport over 731px of content. There is nothing to match it against, so
+     the office keeps what was built for it, drawn from the same vocabulary.
+     ====================================================================== */
+
+  .whead { display: none; }             /* the desk table's column headings */
+
+  /* THE GROUND IS PAPER.
+
+     v21's phone is `.phone { background: var(--paper) }` from the brand row to
+     the tab bar - white, with hairlines doing all of the separating. The tint
+     under it here is `--hair-2`, which is v21's, but v21 puts it behind the
+     DESK: it is the ground a card sits on, and there are no cards on a phone. */
+  body, .desk, .main, .mbody, .scroll { background: var(--paper); }
+
+  /* THE GUTTER IS ON THE BLOCK, NOT ON THE SHELL.
+
+     v21 pads `.top`, `.blk` and `.lede` 0 26px and `.item` 17px 26px, and the
+     scroller itself carries none. That is what lets the hairline between two
+     rows run the full width of the screen while the text above it stops at
+     the gutter - which was the other way round here, with the shell padded
+     and every child stripped, so no line ever reached the edge. */
   .mhead, .mbody, .scroll {
-    padding-left: var(--gutter) !important;
-    padding-right: var(--gutter) !important;
-  }
-  /* Scoped to those two, because they are the containers that put the gutter
-     back. Unscoped, this stripped `.blk` on every screen built by `page()`
-     and left its text running into the left edge with nothing padding it. */
-  .mbody .wl, .mbody .tools, .mbody .blk, .mbody .lede,
-  .scroll .wl, .scroll .tools, .scroll .blk, .scroll .lede, .scroll .top {
     padding-left: 0 !important;
     padding-right: 0 !important;
+  }
+  .mbody > .blk, .mbody > .lede, .mbody > .tools, .mbody > .top, .mbody > .notice,
+  .scroll > .blk, .scroll > .lede, .scroll > .tools, .scroll > .top, .scroll > .notice,
+  .mbody > .gap + .blk, .mhead > .hstrip {
+    padding-left: var(--gutter) !important;
+    padding-right: var(--gutter) !important;
     margin-left: 0 !important;
     margin-right: 0 !important;
   }
-  /* A card keeps its own padding - that is what makes it a card - but not its
-     horizontal margin, which was stacking on top of the container's. The
-     buyer's two document cards sat at 36px while everything above them sat at
-     18px: an 18px margin of their own inside an 18px-padded block. */
-  .scroll .item, .scroll .duebar { margin-left: 0 !important; margin-right: 0 !important; }
-  /* The toolbar is not a panel - it holds buttons, not rows. */
-  .tools {
-    border: 0 !important; border-radius: 0; background: none; box-shadow: none;
-    padding-top: 0 !important; padding-bottom: 0 !important;
-    margin-bottom: 20px !important;
-  }
 
-  /* The list is a card. `overflow: hidden` so the last row's corners are the
-     card's corners rather than square ones poking out of a 12px radius. */
+  /* THE LIST IS NOT A CARD.
+
+     v21's phone has no panel anywhere in it. Rows sit on the paper, a hairline
+     apart, and the edge of the screen is the only edge. `.wl` and `.tools` are
+     cards in v21 - paper, a 1px hairline, a 12px radius - but only in the
+     desk, which is a desktop and is not this. */
   .wl {
-    background: var(--paper) !important;
-    border: 1px solid var(--hair) !important;
-    border-radius: var(--r-card);
+    background: none !important;
+    border: 0 !important;
+    border-radius: 0;
     box-shadow: none;
     padding: 0 !important;
-    margin-bottom: 0 !important;
-    overflow: hidden;
-  }
-
-  /* A heading immediately above a list is that list's heading, so it becomes
-     the top of the same card. `:has()` rather than new markup: the pairing is
-     already there in every screen of every role - a `.blk` with the label in
-     it, then the `.wl` with the rows - and a second way of writing it would
-     have to be applied in three modules and remembered in a fourth. */
-  .mbody .blk:has(+ .wl) {
-    background: var(--paper);
-    border: 1px solid var(--hair);
-    border-bottom: 0;
-    border-radius: var(--r-card) var(--r-card) 0 0;
-    padding: 13px 14px 10px !important;
-  }
-  /* And no gap between the two halves of one card. v21 gives `.wl` an 18px top
-     margin for a list that stands on its own; a list joined to its own heading
-     is not standing on its own, and 18px there is a seam straight across the
-     middle of the card. A list with no heading above it keeps the margin. */
-  .mbody .blk:has(+ .wl) + .wl {
-    border-radius: 0 0 var(--r-card) var(--r-card); border-top: 0 !important; margin-top: 0 !important;
-  }
-
-  /* Same for the count line the head office puts above a group of villas. */
-  .mbody .tools:has(+ .wl) {
-    background: var(--paper); border: 1px solid var(--hair); border-bottom: 0;
-    border-radius: var(--r-card) var(--r-card) 0 0;
-    padding: 13px 14px 10px !important;
-    margin-bottom: 0 !important;
-  }
-  .mbody .tools:has(+ .wl) + .wl {
-    border-radius: 0 0 var(--r-card) var(--r-card); border-top: 0 !important; margin-top: 0 !important;
-  }
-  /* No control on the row means the money has no one to share row three
-     with, so it goes up onto the detail's line instead of taking a line of
-     its own. Worth 28px on every row of a list that is only ever read. */
-  .wrow.noact .mid p.s { grid-area: 2 / 1 / 3 / 3; }
-  /* Right-aligned here, because on this row it shares its line with the detail
-     rather than having one to itself - the two would collide at the left. */
-  .wrow.noact .amt { grid-area: 2 / 3; align-self: center;
-                     justify-self: end !important; text-align: right !important; }
-
-  /* Which leaves the spacer as the one thing separating two sections.
-
-     The buyer's screens need the same cut: ten spacers at 36px and 54px is
-     378px of blank in a 3257px page. `.phone` is in the selector to outrank
-     the `.phone.wide` rules above, which are three classes to `.scroll .gap`'s
-     two - it ties them instead, and this block comes later. */
-  .mbody .gap,     .phone .scroll .gap      { height: 20px; }
-  .mbody .gap.s,   .phone .scroll .gap.s    { height: 12px; }
-  .mbody .gap.l,   .phone .scroll .gap.l    { height: 28px; }
-
-  .wrow {
-    display: grid !important;
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    /* Not `baseline`. Baseline alignment across a row that contains a 44px
-       control inflates every track to find a common baseline - tracks of
-       25.7 / 18 / 44 came out as a 141px card. */
-    align-items: start;
-    /* plint.css:420 sets `gap: 14px !important` on `.wrow` for the desktop
-       table, so a plain `row-gap` here loses to it and every card carried 28px
-       of gaps it was never asked for - 20px per card, on every list. The third
-       rule of this file's kind that plint.css was quietly winning. */
-    column-gap: 10px !important;
-    row-gap: 4px !important;
-    /* A row inside the panel, not a card of its own: no border of its own, no
-       radius, no gap under it. The hairline between rows is the only division,
-       and the panel's own edge is the only edge. */
     margin: 0 !important;
-    padding: 13px 14px !important;
+    overflow: visible;
+  }
+  /* A heading above a list is v21's `.blk` with a `.k` in it, then a 22px gap
+     - `<div class="blk"><p class="k">Due this week</p></div><div class="gap s">`
+     - so the two are not joined into one object, they are a label and the
+     rows it labels. */
+  .mbody .blk:has(+ .wl), .mbody .tools:has(+ .wl) {
+    background: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+  .mbody .blk:has(+ .wl) + .wl,
+  .mbody .tools:has(+ .wl) + .wl { margin-top: 22px !important; }
+
+  /* v21's spacers, unscaled. They were cut to 20/12/28 to save a screenful of
+     blank on a long list; v21 says 36/22/54 and v21 is the design. `.phone` is
+     in the second selector to outrank the `.phone.wide` rules, which are three
+     classes to `.scroll .gap`'s two. */
+  .mbody .gap,     .phone .scroll .gap      { height: 36px; }
+  .mbody .gap.s,   .phone .scroll .gap.s    { height: 22px; }
+  .mbody .gap.l,   .phone .scroll .gap.l    { height: 54px; }
+
+  /* ------------------------------------------------------------ the row
+
+     v21's `.item`: one flex line, the title and its detail on the left, and
+     whatever the row is standing at on the right, quiet and small.
+
+     It was a three-row grid - title and pill on line one, the detail across
+     line two, the money and its button on line three - built to stop a long
+     detail line fighting a status pill. v21 does not do that: the detail is
+     `.mid p.s` under the heading inside `.mid`, and the right of the row is
+     one `.end`. Where the two disagree, this is v21's. */
+  .wrow {
+    display: flex !important;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 18px !important;
+    row-gap: 10px !important;
+    width: 100%;
+    margin: 0 !important;
+    padding: 17px var(--gutter) !important;
     border: 0 !important;
-    border-bottom: 1px solid var(--hair) !important;
+    border-bottom: 1px solid var(--hair-2) !important;
     border-radius: 0;
     background: none;
   }
   .wl > .wrow:last-child, .wl > a.wrow:last-child { border-bottom: 0 !important; }
-  /* A row that carries a form under it owns the hairline instead, or there are
-     two lines between one row and the next. */
+  /* A row that carries a form under it owns the hairline instead, or there
+     are two lines between one row and the next. */
   .wrow:has(+ .uprow) { border-bottom: 0 !important; }
-  .wrow > * { flex: none !important; min-width: 0; }
+  .wrow > * { flex: 0 0 auto !important; min-width: 0; }
 
-  /* The buyer's screens are built from v21's `.item`, not from the worklist
-     row, so they need the same card or that role keeps flat rows while the
-     other two get cards. `.drow2` is deliberately left alone: it is the
-     checklist of papers the bank will ask for, which is a form and reads as
-     one. */
-  .scroll .item {
-    margin: 0 var(--gutter) 10px;
-    padding: 14px 16px !important;
-    border: 1px solid var(--hair) !important;
-    border-radius: var(--r-card);
-    background: var(--paper);
-    width: auto;
+  /* `.mid` holds the heading and the detail, exactly as v21's `.item .mid`
+     does: `flex: 1; min-width: 0`, and the detail sits under the heading with
+     a 2px margin rather than being promoted into a grid track of its own. */
+  /* v21's `.item .mid` is `flex: 1`, which is a basis of ZERO: the middle
+     shrinks to share the line and the detail wraps inside it. With a basis of
+     `auto` the middle takes its content width first, so a long detail line
+     filled the row and pushed the pill and the money onto a line of their
+     own, left-aligned under it - which is what the buyer's journey did. */
+  .wrow .mid {
+    display: block;
+    flex: 1 1 0% !important;
+    min-width: 0;
   }
-  .scroll .item:last-of-type { border-bottom: 1px solid var(--hair) !important; }
+  .wrow .mid p { margin-top: 2px; }
 
-  /* `.mid` wraps the title and the meta line together, which on a phone traps
-     both in one narrow column - "J. Kulkarni · marked by Suresh Kumar on 31
-     Aug 2026" came out five lines deep beside a chip. `display: contents`
-     drops the wrapper so its two children take their own places in the grid,
-     which is how v21 gets the meta across the full width. */
-  .wrow .mid { display: contents; }
-
-  /* Line one is ONE heading: "A-04 · Plastering", one run of text.
-
-     Same size and weight was not enough. The code and the stage were separate
-     grid cells with a 10px column gap and a separator drawn between them by a
-     pseudo-element, and their baselines sat 3px apart - so it read as two
-     labels with a dot floating in the space. The code is inside the heading
-     now (`.rcode`, from src/screens/rows.js) and the standalone cell is only
-     for the desktop table, where the villa really is its own column. */
-  .wrow.hascode .id { display: none; }
+  /* The villa code is inside the heading on a phone - "A-04 · Plastering" is
+     one run of text - and the standalone column is the desk's. */
+  .wrow .id, .wrow.hascode .id { display: none; }
   .wrow.hascode .rcode { display: inline; }
   .wrow.hascode .rcode::after { content: ' · '; color: var(--ink-3); }
-  .wrow:not(.hascode) .id { grid-area: 1 / 1; align-self: center; }
-  .wrow:not(.hascode) .mid .rt { grid-area: 1 / 1; }
-  .wrow .id, .wrow .mid .rt {
-    grid-area: 1 / 1;
-    font: 500 14.5px/20px 'Instrument Sans', system-ui, sans-serif;
+  .wrow:not(.hascode) .id { display: none; }
+
+  /* v21's `.h2` and v21's `.s`, which is what an `.item` is made of. */
+  .wrow .mid .rt {
+    font: 500 15px/21px 'Instrument Sans', system-ui, sans-serif;
+    letter-spacing: -.1px;
     color: var(--ink);
-    /* The title carries a 3px top margin from the desktop table, which pushed
-       its line box 3px below the day count and the pill sharing the track. */
     margin-top: 0;
   }
+  .wrow .mid p.s {
+    font: 400 12.5px/18px 'Instrument Sans', system-ui, sans-serif;
+    color: var(--ink-3);
+    margin-top: 2px;
+  }
 
-  /* Top right, on the heading's line: how long, and where it stands. */
-  /* The day count and the pill are smaller than the title they sit beside.
-     With the row top-aligned they hung above its cap height, so both are
-     given the title's own 20px line box and centre inside it. */
-  .wrow .days { grid-area: 1 / 2; justify-self: end; white-space: nowrap;
-                color: var(--ink-2); font-variant-numeric: tabular-nums;
-                font-size: 13px; line-height: 20px; }
+  /* THE RIGHT OF THE ROW.
+
+     v21 has one `.end` here, 12px in ink-3, holding either a word or a chip.
+     These rows carry more than v21's ever do - a status pill, a day count, a
+     sum of money and sometimes a button - because these screens do more than
+     the mock did. The row's own geometry is v21's; what stands inside the
+     end of it has no v21 value to copy, and the 10px between those cells is
+     the one number in this block that v21 did not supply. */
+  .wrow .stc, .wrow .days, .wrow .amt {
+    flex: 0 0 auto !important;
+    align-self: center;
+  }
+  .wrow .stc + .days, .wrow .days + .amt { margin-left: -8px; }
+  .wrow .days {
+    font: 400 12px/18px 'Instrument Sans', system-ui, sans-serif;
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    text-align: right;
+  }
   /* Where the pill is busy saying something else, the number carries the
      verdict, on the same thresholds the pill would have used. */
   .wrow .days.age-warn { color: var(--warn); font-weight: 600; }
   .wrow .days.age-late { color: var(--hot);  font-weight: 600; }
   .wrow .days b { display: inline; }
-  .wrow .stc  { grid-area: 1 / 3; justify-self: end; text-align: right;
-                line-height: 20px; }
-
-  /* Line two: the detail is a sentence, so it gets a line of its own.
-
-     It used to share the line with the amount and the action, which left it
-     162px of a 393px screen: "N. Prasad · marked by Suresh Kumar on 31 Aug
-     2026" folded into a narrow column with the amount stranded beneath it,
-     and the card came out 110px against 84px for a row without an action.
-
-     Columns one and two rather than all three: run it to the far edge and the
-     sentence sits directly under the status pill and directly over the Review
-     button, reading as though it were crowding both. Stopping short of the
-     pill's column gives it a right edge of its own, and a sentence this long
-     then takes the two lines it should have taken. */
-  .wrow .mid p.s { grid-area: 2 / 1 / 3 / 3; margin-top: 3px; }
-
-  /* Then the money and the control that acts on it.
-
-     The money goes to the left edge of the card, on the same line the title
-     and the detail start from, and it is the boldest thing on the row. It had
-     been right-aligned inside the first column, which put it 169px into a
-     375px card - lined up with nothing above or below it - at 400 weight and
-     13px, smaller and lighter than everything around it. It is the figure the
-     row is about. */
-  .wrow .amt  { grid-area: 3 / 1 / 4 / 2; align-self: center; justify-self: start;
-                text-align: left; white-space: nowrap;
-                font: 600 15px/20px 'Instrument Sans', system-ui, sans-serif;
-                color: var(--ink);
-                font-variant-numeric: tabular-nums; }
-
-  /* A single control belongs on the amount's line, compact and hard right - a
-     full-width row for one "Review" button cost a whole line per card and read
-     as more important than the row it acts on. Two or more controls will not
-     fit beside an amount, so those still take their own line; the row says
-     which through `actc wide`. */
-  /* Nothing here. The button inside a row is the same button as everywhere
-     else - it used to be its own size, 38px against 44, which is how a reader
-     ends up seeing four different buttons on one screen. */
-  .wrow .actc:not(.s):not(.wide) {
-    grid-area: 3 / 2 / 4 / 4;
-    display: flex; align-items: center; justify-content: flex-end;
-    align-self: center;
+  .wrow .stc { text-align: right; line-height: 1; }
+  .wrow .amt {
+    font: 400 13px/18px 'Instrument Sans', system-ui, sans-serif;
+    color: var(--ink-2);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    text-align: right;
   }
-  .wrow .actc.wide {
-    grid-area: 4 / 1 / 5 / 4;
+  /* A control takes the line under the row it acts on. v21 has no button in a
+     list row at all, so there is no v21 line to put it on. */
+  .wrow .actc {
+    flex: 1 1 100% !important;
     display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end;
-    margin-top: 8px;
   }
-  /* Two controls on a line of their own split it evenly. "Accept" is 72px of
-     text and "Ask to reassign" is 119px, so left to size themselves they read
-     as one button and an afterthought rather than a choice between two. */
-  .wrow .actc.wide .wbtn { flex: 1 1 0; min-width: var(--btn-min-w); }
-  .wrow .actc.wide form { flex: 1 1 0; display: flex; }
-  .wrow .actc.wide form .wbtn { width: 100%; }
-  /* And a single control never shrinks below the shared minimum. */
-  .wrow .actc:not(.wide) .wbtn { min-width: var(--btn-min-w); }
-  /* A status line rather than a control - "Too few photographs". */
-  /* A status word rather than a control. It sits beside the amount, not on top
-     of it: spanning the whole line printed "Too few photographs" straight
-     through "₹33,60,000". */
-  .wrow .actc.s { grid-area: 3 / 2 / 4 / 4; justify-self: end; text-align: right; }
-  /* But when the whole row is a link, a word saying "Open" is furniture. */
+  .wrow .actc.s { flex: 0 0 auto !important; color: var(--ink-3); font-size: 12px; }
   a.wrow .actc.s { display: none; }
-  .wrow .actc:not(.s) form { display: flex; gap: 8px; flex-wrap: wrap; }
+  .wrow .actc form { display: flex; gap: 8px; flex-wrap: wrap; }
+  .wrow .actc.wide .wbtn, .wrow .actc.wide form { flex: 1 1 0; }
+  .wrow .actc.wide form .wbtn { width: 100%; }
 
-  /* A form that belongs to the card above it reads as part of that card, not
-     as three loose boxes underneath. `:has()` closes the join where the browser
-     supports it; where it does not, the panel simply butts against a rounded
-     card, which still reads as one thing. */
-  .wrow + .uprow {
+  /* The buyer's screens are built from the same row, so `.item` never renders
+     - but v21's own `.item` rules are what the row is being matched to, and a
+     card treatment on top of them would put it back where it started. */
+  .scroll .item {
     margin: 0 !important;
-    padding: 0 14px 14px !important;
+    padding: 17px var(--gutter) !important;
     border: 0 !important;
-    border-bottom: 1px solid var(--hair) !important;
+    border-bottom: 1px solid var(--hair-2) !important;
     border-radius: 0;
     background: none;
-    /* The sentence, the picker and the button were three full-width lines,
-       145px under every row of a six-row list. The sentence keeps its line -
-       it is a sentence - and the picker and the button share the next one.
-       The button aligns to the bottom of the pair because it sits outside the
-       span that holds them, so centring it would float it against both. */
+    width: 100%;
+  }
+
+  /* A form that belongs to the row above it reads as part of that row. */
+  .wrow + .uprow {
+    margin: 0 !important;
+    padding: 0 var(--gutter) 17px !important;
+    border: 0 !important;
+    border-bottom: 1px solid var(--hair-2) !important;
+    border-radius: 0;
+    background: none;
     flex-wrap: wrap;
   }
 
-  /* ------------------------------------------------------ the hero summary
+  /* --------------------------------------------------------- the lede
 
-     This block was reading as body text: a 17px title, a sentence under it,
-     and the count at 19px below that - three lines of prose where the count
-     is the thing the reader came for. It is now one tight block with the
-     number as the largest thing on the screen, sitting on the paper with a
-     rule under it so it separates from the cards rather than merging into
-     them. */
+     v21's phone opens with `.lede`: a 12px label, a 64px number, and one
+     sentence at 14px/22px under it. In that order, and with nothing drawn
+     around it.
+
+     This header is built as a title, a sentence, and a `.hero` card holding a
+     summary - so the pieces are the same pieces in a different order inside
+     two extra boxes. `display: contents` drops the boxes and `order` puts the
+     three in v21's order without moving anything in the markup, where the
+     summary belongs after the heading it summarises. */
   .mhead {
-    padding-top: 14px !important;
-    padding-bottom: 14px !important;
-    background: var(--paper);
-    border-bottom: 1px solid var(--hair);
+    display: flex;
+    flex-direction: column;
+    padding-top: 10px !important;
+    padding-bottom: 0 !important;
+    background: none;
+    border-bottom: 0;
   }
-  /* A column gap rather than a margin on the second KPI: if the two are too
-     wide to share the line the second wraps, and a margin would then indent it
-     past the page gutter. It did, by 18px, on the head office dashboard. */
-  .hstrip { flex-wrap: wrap; column-gap: 18px; row-gap: 0; align-items: baseline; }
-  .hstrip .g { flex: 1 1 100%; order: 2; }
-  .pgt { font-size: 15px; line-height: 20px; color: var(--ink-2); font-weight: 500; }
-  .mhead .s { font-size: 12.5px; line-height: 17px; margin-top: 4px !important; }
-
-  /* The number first and biggest. `order` puts it above the title without
-     moving it in the markup, where it belongs after the heading it counts. */
-  /* `flex: 0 0 auto` rather than a full line each: the head office shows two
-     of these and they were taking 116px of an 812px screen between them, one
-     above the other. `.g` still starts a new line because its basis is 100%. */
-  .kpi { order: 1; flex: 0 0 auto; flex-direction: row; align-items: baseline;
-         gap: 8px; margin: 2px 0 2px; }
-  /* plint.css:417 sets `font: 400 19px/24px … !important` on `.kpin`, so a
-     plain `font-size` here loses to it. The whole shorthand, and `!important`
-     to match - which is why the count kept measuring 19px while this rule was
-     sitting right there. */
-  .kpin { font: 500 44px/46px 'Instrument Sans', system-ui, sans-serif !important;
-          font-variant-numeric: tabular-nums; letter-spacing: -1px; }
-  .kpi .k { font-size: 12px; }
-  /* The second is quieter than the first: the first is the screen's headline
-     figure, the second is context for it. */
-  .kpi ~ .kpi .kpin { font-size: 30px !important; line-height: 46px !important; }
-
-
-  /* ------------------------------------------------ 5b. tap targets
-
-     A field is not a button. You aim at a button once and it is gone; you aim
-     at a text field, miss, and aim again with the keyboard already up. So the
-     fields keep 44px while the buttons take the shared scale above - which is
-     also why this list no longer names `.wbtn` or `.sortb`: their height comes
-     from one place now, and a second rule here is how it forked before. */
-  .lgb, .ib, .dest,
-  .uprow .fi, .uprow select, .fld input, .fld textarea,
-  input[type="text"], input[type="email"], input[type="password"], select {
-    min-height: var(--field-h);
+  .mhead .hstrip, .mhead .hstrip .g, .mhead .hero, .mhead .hero .summary {
+    display: contents;
   }
-  /* The back arrow is an icon with nothing around it - about 20px of target. */
-  .ib { min-width: 44px; display: inline-flex; align-items: center; justify-content: center; }
+  /* The label. v21's `.lede .k`. */
+  .pgt {
+    order: 1;
+    font: 500 12px/16px 'Instrument Sans', system-ui, sans-serif;
+    letter-spacing: 0;
+    color: var(--ink-3);
+    margin: 0 0 14px !important;
+    padding: 0 var(--gutter);
+  }
+  /* The number. v21's `.mega`. */
+  .mhead .summary .fig {
+    order: 2;
+    /* v21's `.mega` is `--ink` whatever it counts. This build coloured the
+       figure by tone - red for a count somebody is waiting on - so urgency
+       would be visible from the top of the screen. v21 does not, and v21 is
+       the design. */
+    color: var(--ink) !important;
+    font: 600 64px/64px 'Instrument Sans', system-ui, sans-serif !important;
+    letter-spacing: -2.2px;
+    font-variant-numeric: tabular-nums;
+    padding: 0 var(--gutter);
+    margin: 0 !important;
+  }
+  /* The sentence. v21's `.lede .cap`, which is a `.b` - 14px/22px in ink-2. */
+  .mhead .hstrip .g > p.s, .mhead .summary .note {
+    order: 3;
+    font: 400 14px/22px 'Instrument Sans', system-ui, sans-serif !important;
+    color: var(--ink-2);
+    margin: 12px 0 0 !important;
+    padding: 0 var(--gutter);
+  }
+  /* v21's lede has one label, so the summary's own does not draw: the screen
+     already said what the number counts. */
+  .mhead .summary > .cap { display: none; }
+  /* And what v21's lede has no equivalent for goes under it, in order. */
+  .mhead .summary .split { order: 4; padding: 0 var(--gutter); margin-top: 18px; }
+  .mhead .summary .prog, .mhead .summary .progline {
+    order: 5; margin-left: var(--gutter); margin-right: var(--gutter);
+  }
+  .mhead .stats { order: 6; padding: 0 var(--gutter); margin-top: 18px; }
+  /* The ways out of a screen sit above the label, on one line. */
+  .mhead .kpi { order: 0; flex-direction: row; align-items: center; gap: 8px;
+                margin: 0 0 14px; padding: 0 var(--gutter); }
+  /* The header is the last thing before the list, and v21 puts 54px there. */
+  .mhead::after { content: ''; order: 9; display: block; height: 54px; }
 
-  /* The app bar's own links. "Sign out" measured 16px tall: it is a line of
-     text with no box around it, and it is the control someone reaches for on a
-     shared phone. The bar is 52px, so a 44px target fits inside it. */
-  .appbar a { min-height: 44px; display: inline-flex; align-items: center; }
-  .uprow .fi, .uprow select { padding: 11px 12px !important; font-size: 15px; }
-  .tabs { gap: 20px; }
-  .tab { padding: 14px 0; min-height: 44px; font-size: 14px; }
-  /* A row that is itself a link has to be reachable, not just visible. */
-  a.wrow { min-height: 44px; }
+  /* ----------------------------------------------------- the rest of it
 
-  /* ---------------------------------------- 5c. filters and sort controls
-     Full width and stacked, rather than a desktop row squeezed onto a phone. */
-  .tools { flex-wrap: wrap; gap: 10px; background: none; border: 0; }
+     v21's own values where it has one, and where it has none the rules that
+     stop a desktop control from overflowing 375px of screen. */
+
+  /* v21: `.tabs` gap 26px, pad 6px 26px 0; `.tab` 500 13px/1, pad 10px 0. */
+  .tabs { gap: 26px; padding: 6px var(--gutter) 0; }
+  .tab { padding: 10px 0; font: 500 13px/1 'Instrument Sans', system-ui, sans-serif; }
+
+  /* v21: `.fi` is 12px/14px at 14px text, which is 40px tall, and `.ib` is a
+     40px square. Neither is the 44px minimum this was built to; v21 is the
+     design, so 44 is gone and 40 is what a control is. */
+  .uprow .fi, .uprow select { padding: 12px 14px !important; font-size: 14px; }
+
+  /* The toolbar is not a card here. v21's `.tools` is one - paper, hairline,
+     10px radius - but only inside the desk, and the desk is a desktop. */
+  .tools {
+    flex-wrap: wrap; gap: 8px;
+    border: 0 !important; border-radius: 0; background: none; box-shadow: none;
+    padding-top: 0 !important; padding-bottom: 0 !important;
+    margin-bottom: 22px !important;
+  }
   .tools .g { display: none; }
   .tools .wbtn, .tools .sortb, .tools a.wbtn { flex: 1 1 auto; }
   .tools .rescount { flex: 1 1 100%; }
@@ -1258,53 +1217,32 @@ body { padding: 0; margin: 0; background: var(--hair-2); }
 
   /* The reassign form under a stuck-money row is the exception: it is one
      sentence, one picker and one button, and full width each made it 145px
-     under every row of a six-row list.
-
-     Two things stood in the way. The sentence and the picker are wrapped in a
-     span with the button outside it, so while that span was a box the
-     sentence's full-width line made the span full width too and the button
-     was pushed off whatever else was done - `display: contents` promotes all
-     three to children of the form so they wrap against one another. And these
-     selectors have to outrank the four rules above, which are `!important`;
-     `.uprow .mid .fi` in particular is three classes, so the picker needs
-     `.mid` in its selector to beat it even though `.mid` no longer draws.
-
-     Hooked on a class rather than on `.wrow + .uprow`, because the sanction
-     form sits under a row too and it is three text fields that do want the
-     full width - matching by position took its Record button down to 137px
-     under three full-width boxes. */
+     under every row of a six-row list. The sentence and the picker are
+     wrapped in a span with the button outside it, so `display: contents`
+     promotes all three to children of the form and they wrap against one
+     another. These have to outrank the four rules above, which are
+     `!important`. */
   .uprow.reassign .mid { display: contents !important; }
   .uprow.reassign .mid .s { flex: 1 1 100% !important; }
-  /* Basis 0, not auto. With `auto` the picker's flex base is its own content
-     width, that base plus the button exceeded the line, and the two wrapped
-     before any shrinking was considered - the button ended up on a third line
-     at its correct width, which looked like the rule had done nothing. */
+  /* Basis 0, not auto: with `auto` the picker's base is its content width,
+     that base plus the button exceeds the line, and the two wrap before any
+     shrinking is considered. */
   .uprow.reassign .mid select { flex: 1 1 0% !important; width: auto !important; }
-  /* And it stays against the right edge when it wraps to a line of its own.
-     On the office's reassign row the picker grows to fill, so the margin
-     resolves to nothing; on the buyer's visit form, where two full-width
-     fields push the button down, it is what stops it sitting alone on the
-     left of an empty line. */
   .uprow.reassign .wbtn { flex: 0 0 auto !important; margin-left: auto; }
 
   /* v21's two-column tile grid, used by the site log. `1fr` has an automatic
      minimum of min-content, so a tile whose label will not break forces its
-     column wider than the share it was given and the second column runs off
-     the screen - which is what happened at 375px: two columns of 208px and
-     182px inside a 323px box. `minmax(0, 1fr)` lets a column be narrower than
-     its content, and the tiles wrap their text instead. */
+     column wider than its share and the second runs off the screen - two
+     columns of 208px and 182px inside a 323px box, measured at 375px.
+     `minmax(0, 1fr)` lets a column be narrower than its content. */
   .lgrid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .lgb { min-width: 0; }
   .lgb .h2, .lgb .s { overflow-wrap: anywhere; }
 
   /* The ageing histogram is a sparkline beside a KPI on a desktop. Given the
      full width of a phone it hit its 74px per-bar cap and became four slabs.
-
-     Selector is `.agebars .agebar`, not `.agebar`. At equal specificity the
-     later rule wins, and the base rule below is later in this file - so the
-     first version of this scaled the width and not the height, and the live
-     phone view still showed slabs. Being one class more specific makes it
-     independent of where in the file it sits. */
+     Selector is `.agebars .agebar`, not `.agebar`: at equal specificity the
+     later rule wins and the base rule is later in this file. */
   .agebars { height: 72px; gap: 8px; max-width: 280px; }
   .agebars .agebar { max-width: 46px; height: calc(var(--h, 8px) * .62); }
 }

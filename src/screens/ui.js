@@ -262,11 +262,18 @@ ${r.days ? `<span class="days${r.daysAge == null ? '' : ' ' + (
    * @param {string} whenEmpty
    */
   function talk(msgs, whenEmpty) {
-    if (!msgs.length) return `<div class="talk"><p class="talkempty">${esc(whenEmpty)}</p></div>`;
-    return `<div class="talk">${msgs.map(m => `
+    if (!msgs.length) return `<div class="thread"><p class="talkempty">${esc(whenEmpty)}</p></div>`;
+    /* v21's own markup, so there is nothing left to match: `.thread` holds
+       `.msg` bubbles, the message is a `<p>` and who said it and when is a
+       `.s` INSIDE the bubble under the text - not a caption above it, which
+       is where this had put it.
+
+       `.thread` is `column-reverse`, so the list is reversed here and comes
+       out oldest first. That is v21's, and it is also what puts the newest
+       message at the bottom of a box that scrolls. */
+    return `<div class="thread">${msgs.slice().reverse().map(m => `
 <div class="msg ${m.mine ? 'me' : 'them'}">
-<p class="who">${esc(m.who)}${m.when ? ' &middot; ' + esc(m.when) : ''}</p>
-<p class="say">${esc(m.body)}</p>
+<p>${esc(m.body)}</p><span class="s">${esc(m.who)}${m.when ? ' &middot; ' + esc(m.when) : ''}</span>
 </div>`).join('')}</div>`;
   }
 
