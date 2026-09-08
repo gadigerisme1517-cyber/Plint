@@ -524,6 +524,59 @@ test('every row on every office screen leads somewhere', async () => {
   }
 });
 
+test('search is scoped by the policy, not by a clause in the screen', async () => {
+  /* The field runs its query under `asUser`, so row-level security decides who
+     sees what rather than a WHERE clause somebody can forget. The proof is
+     that the same search returns different villas to the two roles who have
+     it, and nothing at all to the one who does not. */
+  const office = await get('office', '/find?q=a');
+  assert.strictEqual(office.status, 200, 'the office cannot search');
+  const officeHits = (office.html.match(/href="\/office\/buyer\/([A-Z]-\d\d)"/g) || []).length;
+  assert.ok(officeHits > 0, 'the office searched and found none of forty-eight villas');
+
+  const eng = await get('engineer', '/find?q=a');
+  assert.strictEqual(eng.status, 200, 'the engineer cannot search');
+  const engHits = (eng.html.match(/href="\/engineer\/villa\/([A-Z]-\d\d)"/g) || []).length;
+  assert.ok(engHits > 0, 'the engineer searched and found none of their own villas');
+
+  /* The engineer holds a share of the project, so a search that matches
+     everything must return them fewer villas than it returns the office.
+
+     This is the screen's rule and not the policy's: `un_read` on units is
+     `true` for both staff roles, because an engineer certifying a stage works
+     across the project. This assertion is what caught the route claiming the
+     database was doing it - the engineer was getting all forty. */
+  assert.ok(engHits < officeHits,
+    'the engineer sees ' + engHits + ' villas and the office ' + officeHits
+    + " - the search is not scoped to the engineer's own work");
+
+  /* And a villa that is not this engineer's cannot be reached through it,
+     however specifically it is asked for. */
+  const { asUser } = require('../src/db');
+  /* By assignment, not by what the policy lets them read - reading `units` as
+     the engineer returns all forty-eight, which is the whole point above. */
+  const notTheirs = await asUser({ id: 'u-office', role: 'office' }, c => c.query(
+    `SELECT code FROM units
+      WHERE assigned_engineer_id IS DISTINCT FROM 'u-eng-ram' ORDER BY code LIMIT 1`))
+    .then(r => r.rows[0] && r.rows[0].code);
+  assert.ok(notTheirs, 'this engineer holds every villa, so this proves nothing');
+  const probe = await get('engineer', '/find?q=' + encodeURIComponent(notTheirs));
+  assert.ok(!probe.html.includes('/engineer/villa/' + notTheirs),
+    'an engineer found ' + notTheirs + ', which is not theirs');
+});
+
+test('the buyer has no search, and cannot reach one', async () => {
+  /* They have one villa. Searching it would be searching for the screen they
+     are standing on, and a field that can only ever return that is a field
+     that invites somebody to try a neighbour's code. */
+  const villa = await get('buyer', '/villa/B-14');
+  assert.ok(!/class="ab-find"/.test(villa.html), 'the buyer is offered a search field');
+
+  const direct = await get('buyer', '/find?q=A-11');
+  assert.notStrictEqual(direct.status, 200,
+    'a buyer reached the search screen directly: HTTP ' + direct.status);
+});
+
 test('a buyer cannot reach any engineer screen', async () => {
   for (const p of ['/engineer', '/engineer/villas', '/engineer/visits',
                    '/engineer/log', '/engineer/certs', '/engineer/snags',

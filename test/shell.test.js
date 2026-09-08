@@ -72,6 +72,24 @@ const get = (p, role) =>
   fetch(BASE + p, { headers: role ? { cookie: cookies[role] } : {}, redirect: 'manual' });
 const body = async (p, role) => (await get(p, role)).text();
 
+/**
+ * Every rule at a breakpoint, from every block that declares it.
+ *
+ * These tests used to read `/@media \(max-width: 900px\) \{...\}/` and take the
+ * first block the regex found. A stylesheet may declare a breakpoint as many
+ * times as it likes, and three separate times in this project adding a second
+ * block silently moved a rule out of what a test was reading - the test went
+ * red, the rule was fine, and the half hour went on the wrong thing. Read all
+ * of them, joined.
+ */
+function atWidth(css, query) {
+  // Nothing in a media query is a regex metacharacter, so nothing to escape.
+  const re = new RegExp('@media \\(' + query + '\\) \\{([\\s\\S]*?)\\n\\}', 'g');
+  const blocks = [...css.matchAll(re)].map(m => m[1]);
+  assert.ok(blocks.length, 'no @media (' + query + ') block in the stylesheet');
+  return blocks.join('\n');
+}
+
 /** Every screen in the app, including the two nobody signs in to reach. */
 function everyScreen() {
   const all = [];
@@ -375,7 +393,7 @@ test('a phone has one scroll, not three nested ones', async () => {
      starting inside them scrolled nothing and the gesture had to be repeated.
      It was reported as scrolling being broken, which is what it feels like. */
   const css = await (await get('/app.css')).text();
-  const narrow = /@media \(max-width: 900px\) \{([\s\S]*?)\n\}/.exec(css)[1];
+  const narrow = atWidth(css, 'max-width: 900px');
 
   for (const [sel, why] of [['\\.desk', 'the card clips the page'],
                             ['\\.mbody', 'the body pane is its own scroller']]) {
@@ -439,7 +457,7 @@ test('the menu layer is hidden until it is asked for, and never on a desktop', a
     'the layer is hidden with display, which cannot animate');
   /* And on a monitor the sidebar is already the menu, so `#menu` in a
      bookmarked URL must not black out the screen. */
-  const wide = /@media \(min-width: 901px\) \{([\s\S]*?)\n\}/.exec(css);
+  const wide = [null, atWidth(css, 'min-width: 901px')];
   assert.ok(wide && /\.drawer:target \{[^}]*visibility:\s*hidden/.test(wide[1]),
     'a bookmarked #menu opens the layer over a desktop screen that already lists all fifteen');
 });
@@ -600,7 +618,7 @@ test('the sideways-scroll backstop does not cost a scrollbar', async () => {
 
 test('the worklists can stop being tables', async () => {
   const css = await (await get('/app.css')).text();
-  const narrow = /@media \(max-width: 720px\) \{([\s\S]*?)\n\}/.exec(css);
+  const narrow = [null, atWidth(css, 'max-width: 720px')];
   assert.ok(narrow, 'no narrow-screen block in app.css');
   assert.match(narrow[1], /\.whead\s*\{\s*display:\s*none/, 'column headings survive as cards');
   assert.match(narrow[1], /\.wrow\s*\{[\s\S]*?display:\s*grid/, 'rows do not reflow to cards');
@@ -684,7 +702,7 @@ test('one gutter, and everything on a phone starts on it', async () => {
   const css = await (await get('/app.css')).text();
   assert.match(css, /--gutter:\s*18px/, 'there is no single gutter to line up against');
 
-  const narrow = /@media \(max-width: 720px\) \{([\s\S]*?)\n\}/.exec(css)[1];
+  const narrow = atWidth(css, 'max-width: 720px');
   /* Applied at exactly one level. It was stacking three deep - `.mbody` padded
      it, `.wl` is a bordered card that padded it again, and the row added a
      margin - so cards sat at 54..321 while the label above them sat at
@@ -778,7 +796,7 @@ test('one gutter, and everything on a phone starts on it', async () => {
 
 test('the day count sits with the status pill, on the heading line', async () => {
   const css = await (await get('/app.css')).text();
-  const narrow = /@media \(max-width: 720px\) \{([\s\S]*?)\n\}/.exec(css)[1];
+  const narrow = atWidth(css, 'max-width: 720px');
   const days = /\.wrow \.days \{([^}]*)\}/.exec(narrow);
   const stc = /\.wrow \.stc\s+\{([^}]*)\}/.exec(narrow);
   assert.ok(days && stc, 'no phone rules for the day count and the status pill');
@@ -794,7 +812,7 @@ test('the header is one bar, not four bands', async () => {
   /* It was the brand row, a 56px breadcrumb, the title, its subtitle and then
      the count - 273px of an 812px screen before the first card. */
   const css = await (await get('/app.css')).text();
-  const phone = /@media \(max-width: 900px\) \{([\s\S]*?)\n\}/.exec(css)[1];
+  const phone = atWidth(css, 'max-width: 900px');
   assert.match(phone, /\.topbar \{ display: none/, 'the breadcrumb band still takes a row of its own');
   assert.match(phone, /\.ab-screen \{[\s\S]*?display: block/, 'the bar does not name the screen');
 
@@ -812,7 +830,7 @@ test('the header is one bar, not four bands', async () => {
 
 test('the summary reads as a summary, not as body text', async () => {
   const css = await (await get('/app.css')).text();
-  const narrow = /@media \(max-width: 720px\) \{([\s\S]*?)\n\}/.exec(css)[1];
+  const narrow = atWidth(css, 'max-width: 720px');
   const kpin = /\.kpin \{([^}]*)\}/.exec(narrow);
   assert.ok(kpin, 'the count has no phone rule');
 
@@ -898,7 +916,7 @@ test('every button in the application is the same object', async () => {
   /* The rule is outside every media query, so a button is the same object on
      a monitor and on a handset. It forked once by being redeclared inside the
      phone layer, and that is what produced 38px against 44px. */
-  const narrow = /@media \(max-width: 720px\) \{([\s\S]*?)\n\}/.exec(css)[1];
+  const narrow = atWidth(css, 'max-width: 720px');
   // Comments stripped first: they talk about these selectors by name.
   const code = narrow.replace(/\/\*[\s\S]*?\*\//g, '');
   const forked = code.match(/\.wbtn[^{}]*\{[^}]*(?:min-height|font-size|border-radius|padding)\s*:/g) || [];
@@ -935,7 +953,7 @@ test('every button in the application is the same object', async () => {
 
 test('the money leads its line, tabular, and never breaks mid-value', async () => {
   const css = await (await get('/app.css')).text();
-  const narrow = /@media \(max-width: 720px\) \{([\s\S]*?)\n\}/.exec(css)[1];
+  const narrow = atWidth(css, 'max-width: 720px');
   const amt = /\.wrow \.amt\s+\{([^}]*)\}/.exec(narrow);
   assert.ok(amt, 'no phone rule for the amount cell');
   assert.match(amt[1], /white-space:\s*nowrap/, 'an amount may break mid-value');
@@ -1004,7 +1022,7 @@ test('a row with one control never claims a line for it', async () => {
 
 test('the phone list is v21\'s, not a table in disguise', async () => {
   const css = await (await get('/app.css')).text();
-  const narrow = /@media \(max-width: 720px\) \{([\s\S]*?)\n\}/.exec(css)[1];
+  const narrow = atWidth(css, 'max-width: 720px');
   // The list is a card, and the rows inside it are rows.
   assert.match(narrow, /\n  \.wl \{[^}]*border:\s*1px solid/, 'the worklist is not a card on a phone');
   // The wrapper is dropped so the meta line can use the full width.

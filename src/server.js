@@ -251,6 +251,9 @@ function appbar(sess, current, inlineNav, screen) {
 ${screen ? `<span class="ab-screen">${esc(screen)}</span>` : ''}
 ${inlineNav && dests.length > 1 ? `<nav class="ab-nav">${dests.map(([href, label]) =>
   `<a href="${href}"${current === href ? ' aria-current="page"' : ''}>${esc(label)}</a>`).join('')}</nav>` : ''}
+${sess && sess.role !== 'buyer' ? `<form class="ab-find" method="get" action="/find" role="search">
+<input class="fi" type="search" name="q" placeholder="Find a villa, a buyer, a stage"
+ aria-label="Find a villa, a buyer or a stage" autocomplete="off"></form>` : ''}
 <div class="ab-g"></div>
 ${dests.length > BAR_FITS ? `<a class="ab-menu" href="#menu"
  aria-label="Open the menu" style="text-decoration:none">Menu</a>` : ''}
@@ -480,6 +483,7 @@ const ROW = require('./screens/rows')({ esc });
 const ENG = require('./screens/engineer')({ esc, desk, M, asUser, schedules, stageTotal, LOGO });
 const BUY = require('./screens/buyer')({ esc, desk, M, asUser });
 const OFF = require('./screens/office')({ esc, desk, M, asUser, schedules, stageTotal });
+const FIND = require('./screens/find')({ esc, desk, M });
 
 /** Certification. The only place a demand is created. */
 async function certify(sess, stageId) {
@@ -699,6 +703,45 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (!sess) { res.writeHead(302, { location: '/' }); return res.end(); }
+
+    /* --------------------------------------------------------------- find
+
+       One field, across the villas this person should be looking at.
+
+       TWO DIFFERENT THINGS DO THE SCOPING, and it matters which is which.
+
+       Row-level security is what keeps a buyer out: `un_read` on units is
+       `buyer_user_id = current_user_id()` for that role, so a buyer cannot
+       read another villa whatever any query asks for. That is also why the
+       buyer has no field - they have one villa, and a field that can only
+       return the screen you are standing on invites somebody to try a
+       neighbour's code.
+
+       Among staff the policy does not partition: it is `true` for both the
+       engineer and the office, because an engineer certifying a stage works
+       across the project and `assigned_engineer_id` is a work assignment
+       rather than a confidentiality boundary. So "my villas" is the screen's
+       rule, not the database's, and it is written here where it can be seen -
+       the same rule the engineer's own Villas tab uses. A test asserts the
+       two roles get different answers, which is what caught this comment
+       claiming the policy did it. */
+    if (p === '/find' && req.method === 'GET' && sess.role !== 'buyer') {
+      const q = (url.searchParams.get('q') || '').trim().slice(0, 60);
+      const mine = sess.role === 'engineer';
+      const hits = q ? await asUser(sess, async c => (await c.query(
+        `SELECT u.code, u.buyer_name, u.bank, u.agreement_value_paise,
+                w.display_name engineer_name,
+                (SELECT t.name FROM unit_stages s
+                   JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
+                  WHERE s.unit_id = u.id AND s.status <> 'paid'
+                  ORDER BY t.seq LIMIT 1) stage
+           FROM units u LEFT JOIN users w ON w.id = u.assigned_engineer_id
+          WHERE (u.code ILIKE $1 OR u.buyer_name ILIKE $1 OR coalesce(u.bank,'') ILIKE $1)
+            ${mine ? 'AND u.assigned_engineer_id = $2' : ''}
+          ORDER BY u.code LIMIT 40`,
+        mine ? ['%' + q + '%', sess.id] : ['%' + q + '%'])).rows) : [];
+      return html(200, FIND.screen(sess, q, hits));
+    }
 
     /* ------------------------------------------------------------ the buyer
 

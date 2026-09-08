@@ -197,19 +197,10 @@ body { padding: 0; margin: 0; background: var(--paper); }
      one measure and the sidebar keeps its own width beside it. */
   .mhead, .mbody { max-width: 1320px; }
 
-  /* THE DASHBOARD IS TWO COLUMNS. The summary and the tiles beside each other
-     is what makes it read as a dashboard rather than as a phone screen that
-     has been stretched: the headline figure and the four things to act on are
-     one glance instead of two. */
-  .mhead:has(.stats) {
-    display: grid;
-    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-    gap: 0 18px;
-    align-items: start;
-  }
-  .mhead:has(.stats) .hstrip { grid-column: 1 / -1; }
-  .mhead:has(.stats) .summary { margin-bottom: 18px; }
-  .mhead:has(.stats) .stats { grid-template-columns: 1fr 1fr; margin-bottom: 18px; }
+  /* The tiles sit in one row inside the hero, which is the dashboard shape:
+     the headline figure, and under it the four things to act on, all in one
+     object rather than a column of panels. */
+  .hero .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 
   /* A worklist row on a wide screen is a table row: the columns v21 draws for
      it, rather than the phone's three-track card grid stretched across it. */
@@ -394,6 +385,59 @@ body { padding: 0; margin: 0; background: var(--paper); }
   font: 400 11.5px/14px 'Instrument Sans', system-ui, sans-serif;
   color: var(--ink-3); text-align: center; overflow-wrap: anywhere;
 }
+
+/* ------------------------------------------------------------ the search
+
+   One field in the bar, on every screen the office and the engineer open.
+   It is a plain GET form: typing and pressing enter navigates, which is what
+   makes it work with no JavaScript and what makes a result a URL somebody can
+   send to a colleague. */
+.ab-find { flex: 1 1 320px; max-width: 420px; margin-left: 14px; min-width: 0; }
+.ab-find .fi {
+  width: 100%; margin: 0;
+  min-height: 34px; padding: 0 12px;
+  border: 1px solid var(--hair); border-radius: var(--r-ctl);
+  background: var(--hair-2); color: var(--ink);
+  font: 400 13.5px/1 'Instrument Sans', system-ui, sans-serif;
+}
+.ab-find .fi::placeholder { color: var(--ink-3); }
+.ab-find .fi:focus { outline: 2px solid var(--brand-soft); outline-offset: 0; background: var(--paper); }
+
+/* Below the sidebar's width the bar carries the screen name, the menu button
+   and the way out, and a search field as well would leave none of them room.
+   It is on the Find screen instead, which the menu reaches. */
+@media (max-width: 900px) { .ab-find { display: none; } }
+
+/* -------------------------------------------------------------- the hero
+
+   The first thing on a dashboard, and one object rather than two.
+
+   It was a summary card and then a grid of tiles below it - two panels doing
+   one job, which on a laptop stacked into half a viewport of header. They are
+   one card now: the figure that matters, what it is made of, how far along it
+   is, and then the four things to act on, inside the same edge.
+
+   The wash across it is the only gradient in the application and it is nearly
+   nothing - white until two thirds of the way over, then the faintest of the
+   brand. It is there to say "this is the summary, not another panel", which a
+   flat white card next to other flat white cards cannot say. */
+.hero {
+  background: linear-gradient(104deg,
+    var(--paper) 0%, var(--paper) 58%, var(--brand-soft) 140%);
+  border: 1px solid var(--hair);
+  border-radius: var(--r-card);
+  box-shadow: var(--card-shadow);
+  padding: 18px 16px 16px;
+  margin-bottom: 12px;
+}
+/* Inside the hero the summary is not a card of its own - the hero is the card. */
+.hero .summary {
+  background: none; border: 0; box-shadow: none;
+  border-radius: 0; padding: 0; margin: 0;
+}
+.hero .stats { margin: 16px 0 0; }
+/* The tiles keep their own ground so they read against the wash. */
+.hero .stat { background: var(--paper); }
 
 /* ------------------------------------------------------------- the tiles
 

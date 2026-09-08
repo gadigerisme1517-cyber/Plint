@@ -60,10 +60,14 @@ module.exports = function ui({ esc }) {
    *                        destination rather than being one. In the header
    *                        rather than the body, because a Back that scrolls
    *                        away is a Back nobody finds.
-   * @param {string} extra  the summary card, the tiles, or both - they belong
-   *                        to the header rather than to the body, so the
-   *                        gutter and the ground behind them come from one
-   *                        container instead of from each screen.
+   * @param {string} extra  the summary and the tiles. They go inside one
+   *                        `.hero` card rather than sitting as two cards
+   *                        stacked: the headline figure and the four things to
+   *                        act on are one object on the screen, which is what
+   *                        makes a dashboard read as a dashboard instead of as
+   *                        a column of panels. They belong to the header
+   *                        rather than to the body, so the gutter and the
+   *                        ground behind them come from one container.
    */
   const head = (title, sub, extra, back) => `
 <div class="mhead"><div class="hstrip"><div class="g">
@@ -71,7 +75,7 @@ module.exports = function ui({ esc }) {
 ${sub ? `<p class="s" style="margin-top:2px">${sub}</p>` : ''}
 </div>${back ? `<div class="kpi"><a class="wbtn st" href="${back.href}"
  style="text-decoration:none">${esc(back.label || 'Back')}</a></div>` : ''}
-</div>${extra || ''}</div>`;
+</div>${extra ? `<div class="hero">${extra}</div>` : ''}</div>`;
 
   // ---------------------------------------------------------------- summary
 
