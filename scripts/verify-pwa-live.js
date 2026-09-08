@@ -32,10 +32,12 @@ const SCREENS = {
              '/bank', '/loan', '/agreement', '/choices', '/questions', '/documents'],
   engineer: ['/engineer', '/engineer/villas', '/engineer/visits', '/engineer/log',
              '/engineer/certs', '/engineer/snags'],
-  office:   ['/office', '/office/owner', '/office/handoff', '/office/packs',
-             '/office/query', '/office/chase', '/office/signoff', '/office/silent',
-             '/office/wait', '/office/escrow', '/office/choices', '/office/warranty',
-             '/office/evidence', '/office/qpr', '/office/possession'],
+  office:   ['/office', '/office/packs', '/office/wait', '/office/query',
+             '/office/chase', '/office/stages', '/office/evidence', '/office/silent',
+             '/office/signoff', '/office/villas', '/office/documents', '/office/choices',
+             '/office/visits', '/office/warranty', '/office/rera', '/office/escrow',
+             '/office/possession', '/office/schedule', '/office/lenders',
+             '/office/logins', '/office/settings', '/office/help'],
 };
 
 const ICONS = [
@@ -148,9 +150,12 @@ const get = (path, role) =>
       if (!/viewport-fit=cover/.test(h)) miss.push('viewport-fit=cover');
       if (miss.length) { ok(false, path + ' is missing: ' + miss.join(', ')); bad++; }
 
-      // The shell each role's pages link. All three must ask for the same one,
-      // or an install made by one role fetches a stylesheet the others do not.
-      const css = (h.match(/\/app\.[a-f0-9]+\.css/) || [])[0];
+      /* The shell each role's pages link. There are two visual systems: v21's,
+         which the buyer and the engineer share, and the head office console's
+         own - so a role links exactly one build, and the whole product links
+         two. Both are in the worker's shell, checked below, or an install made
+         in one role fetches a stylesheet the other never gets offline. */
+      const css = (h.match(/\/(?:app|office)\.[a-f0-9]+\.css/) || [])[0];
       (shell[role] = shell[role] || new Set()).add(css);
 
       // And the page itself must never be stored: it is one person's money.
@@ -178,7 +183,13 @@ const get = (path, role) =>
     ok(list.length === 1, role + ' links exactly one stylesheet build: ' + list.join(', '));
   }
   const all = new Set(sets.flatMap(([, l]) => l));
-  ok(all.size === 1, 'all three roles link the same shell: ' + [...all].join(', '));
+  ok(all.size === 2, 'the product links two shells, one per visual system: ' + [...all].join(', '));
+  const build = [...all].map(u => (u.match(/\.([a-f0-9]+)\.css/) || [])[1]);
+  ok(new Set(build).size === 1, 'both shells come from one build: ' + build.join(', '));
+  for (const u of all) {
+    const r = await fetch(BASE + u);
+    ok(r.status === 200, u + ' is served: HTTP ' + r.status);
+  }
   if (all.size === 1) {
     const href = [...all][0];
     ok(swBody.includes(href), 'and the worker caches exactly that file: ' + href);

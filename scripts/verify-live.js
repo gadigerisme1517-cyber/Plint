@@ -27,10 +27,12 @@ const SCREENS = {
   buyer:    ['/villa/B-14', '/documents'],
   engineer: ['/engineer', '/engineer/villas', '/engineer/visits', '/engineer/log',
              '/engineer/certs', '/engineer/snags', '/engineer/log/material'],
-  office:   ['/office', '/office/owner', '/office/handoff', '/office/packs',
-             '/office/query', '/office/chase', '/office/signoff', '/office/silent',
-             '/office/wait', '/office/escrow', '/office/choices', '/office/warranty',
-             '/office/evidence', '/office/qpr', '/office/possession'],
+  office:   ['/office', '/office/packs', '/office/wait', '/office/query',
+             '/office/chase', '/office/stages', '/office/evidence', '/office/silent',
+             '/office/signoff', '/office/villas', '/office/documents', '/office/choices',
+             '/office/visits', '/office/warranty', '/office/rera', '/office/escrow',
+             '/office/possession', '/office/schedule', '/office/lenders',
+             '/office/logins', '/office/settings', '/office/help'],
 };
 
 let failures = 0;
