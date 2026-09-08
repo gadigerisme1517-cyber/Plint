@@ -195,6 +195,14 @@ module.exports = function office(ctx) {
     + `<div class="rt"><b>${esc(title)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</div>`
     + `${right}</div>`;
 
+  /* A write on a row: one form, one hidden field per value, one button. */
+  const act = (action, fields, label, o = {}) =>
+    `<form method="post" action="${action}">`
+    + Object.entries(fields).map(([k, v]) =>
+      `<input type="hidden" name="${esc(k)}" value="${esc(String(v))}">`).join('')
+    + `<button class="btn${o.plain ? '' : ' dark'}" type="submit">`
+    + (o.icon ? ic(o.icon) : '') + ' ' + esc(label) + '</button></form>';
+
   const note = t => `<div class="note">${t}</div>`;
   const empty = t => `<div class="empty">${esc(t)}</div>`;
 
@@ -209,9 +217,13 @@ module.exports = function office(ctx) {
     + '</div>').join('')}</div>`;
 
   const villaHref = code => '/office/villa/' + encodeURIComponent(code);
-  const who = (name, sub) =>
+  /* A villa in a table cell. `href` makes the name itself the link, for the
+     tables whose rows carry an action: a form inside an anchor is not valid
+     HTML and the browser will not submit it, so those rows are not links. */
+  const who = (name, sub, href) =>
     `<div class="cellav"><div class="miniav">${esc(initials(name))}</div>`
-    + `<div class="who"><b>${esc(name)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</div></div>`;
+    + `<div class="who"><b>${href ? `<a href="${href}">${esc(name)}</a>` : esc(name)}</b>`
+    + `${sub ? `<span>${esc(sub)}</span>` : ''}</div></div>`;
   const initials = n => String(n || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
   const num = t => `<span class="num">${esc(t)}</span>`;
 
@@ -438,7 +450,13 @@ module.exports = function office(ctx) {
                   (SELECT t.name FROM unit_stages s
                      JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
                     WHERE s.unit_id = u.id AND s.status = 'pending'
-                    ORDER BY t.seq LIMIT 1) next_stage
+                    ORDER BY t.seq LIMIT 1) next_stage,
+                  (SELECT max(l.logged_at) FROM site_log l
+                    WHERE l.unit_id = u.id AND l.kind = 'photo')            asked_at,
+                  (SELECT w2.display_name FROM site_log l
+                     LEFT JOIN users w2 ON w2.id = l.logged_by
+                    WHERE l.unit_id = u.id AND l.kind = 'photo'
+                    ORDER BY l.logged_at DESC LIMIT 1)                      asked_by
              FROM units u LEFT JOIN users w ON w.id = u.assigned_engineer_id
             ORDER BY u.code`)).rows,
         engineers: (await c.query(
@@ -730,17 +748,18 @@ ${pill('over', b.age + 'd')}</a>`).join('')
         + 'qualified signature. The lender still sends its own technical officer — '
         + 'the pack does not stand in for that visit.')
       + filters('packlist', [['All', '*'], ['With a lender', 'bank'], ['Self funded', 'self']])
-      + table(['Villa', 'Stage', 'Lender', 'Queued', 'Amount'],
+      + table(['Villa', 'Stage', 'Lender', 'Queued', 'Amount', ''],
         queued.map(r => [
-          who(r.code, r.buyer_name),
+          who(r.code, r.buyer_name, villaHref(r.code)),
           esc(r.stage_name),
           esc(r.bank || 'self funded'),
           num(days(r.queued_at) + 'd ago'),
           `<span class="num" style="font-weight:700">${esc(r.total_paise ? M.crore(r.total_paise) : '—')}</span>`,
+          act('/office/send', { id: r.id }, 'Send', { icon: 'report' }),
         ]),
-        '1.6fr 1.3fr 1.1fr .8fr .9fr',
+        '1.5fr 1.2fr 1fr .7fr .8fr auto',
         {
-          id: 'packlist', href: i => villaHref(queued[i].code),
+          id: 'packlist',
           tags: i => (queued[i].bank ? 'bank' : 'self'),
           empty: 'Every certified stage has gone out.',
         });
@@ -760,21 +779,30 @@ ${pill('over', b.age + 'd')}</a>`).join('')
         { l: 'Money out there', icon: 'growth', v: esc(M.crore(value)), n: 'sent and unpaid' },
         { l: 'Oldest', icon: 'cockpit', v: out.length ? Math.max(...out.map(r => days(r.delivered_at))) + 'd' : '—', n: 'since delivery' },
       ])
-      + filters('waitlist', [['All', '*'], ['Past ' + PACK_LATE_DAYS + ' days', 'late'], ['Inside ' + PACK_LATE_DAYS, 'ok']])
-      + table(['Villa', 'Stage', 'Lender', 'With them', 'Amount'],
+      + filters('waitlist', [['All', '*'], ['Past ' + PACK_LATE_DAYS + ' days', 'late'],
+        ['Inside ' + PACK_LATE_DAYS, 'ok'], ['Never chased', 'unchased']])
+      + table(['Villa', 'Stage', 'Lender', 'With them', 'Chased', 'Amount', ''],
         out.map(r => [
-          who(r.code, r.buyer_name),
+          who(r.code, r.buyer_name, villaHref(r.code)),
           esc(r.stage_name),
           esc(r.bank || 'self funded'),
           days(r.delivered_at) > PACK_LATE_DAYS
             ? pill('over', days(r.delivered_at) + ' days')
             : pill('due', days(r.delivered_at) + ' days'),
+          /* One attempt is the delivery itself, so a pack that has been chased
+             has more than one. Saying "chased 3 times, last on Tuesday" is the
+             difference between chasing and chasing again. */
+          r.attempts > 1
+            ? num((r.attempts - 1) + '× · ' + M.longDate(r.last_attempt_at))
+            : `<span style="color:var(--faint)">not yet</span>`,
           `<span class="num" style="font-weight:700">${esc(r.total_paise ? M.crore(r.total_paise) : '—')}</span>`,
+          act('/office/chase-pack', { id: r.id }, 'Chase', { icon: 'comms' }),
         ]),
-        '1.6fr 1.3fr 1.1fr 1fr .9fr',
+        '1.4fr 1.1fr .9fr .9fr 1.1fr .8fr auto',
         {
-          id: 'waitlist', href: i => villaHref(out[i].code),
-          tags: i => (days(out[i].delivered_at) > PACK_LATE_DAYS ? 'late' : 'ok'),
+          id: 'waitlist',
+          tags: i => (days(out[i].delivered_at) > PACK_LATE_DAYS ? 'late' : 'ok')
+            + (out[i].attempts > 1 ? '' : ' unchased'),
           empty: 'Nothing is sitting with a lender.',
         });
   };
@@ -827,10 +855,12 @@ ${pill('over', b.age + 'd')}</a>`).join('')
 <span>${u.lender_chosen_at ? 'lender chosen ' + esc(M.longDate(u.lender_chosen_at)) : 'no date recorded for the choice'}</span></div></div>
 <form method="post" action="/office/sanction" style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap">
 <input type="hidden" name="unit" value="${esc(u.unit_id)}">
-<input class="chip" name="amount" required inputmode="numeric" placeholder="Sanctioned amount in rupees"
- style="flex:1 1 200px;min-width:0;cursor:text;font-family:var(--body)">
-<input class="chip" name="ref" maxlength="60" placeholder="Sanction letter reference"
- style="flex:1 1 200px;min-width:0;cursor:text;font-family:var(--body)">
+<input class="chip" name="sanction" required inputmode="numeric" placeholder="Sanctioned amount in rupees"
+ style="flex:1 1 180px;min-width:0;cursor:text;font-family:var(--body)">
+<input class="chip" name="own" required inputmode="numeric" placeholder="Buyer's own contribution"
+ style="flex:1 1 180px;min-width:0;cursor:text;font-family:var(--body)">
+<input class="chip" name="letter" required maxlength="60" placeholder="Sanction letter reference"
+ style="flex:1 1 180px;min-width:0;cursor:text;font-family:var(--body)">
 <button class="btn dark" type="submit">${ic('attend')} Record the sanction</button></form>
 </div></div>`).join('') : empty('Every file with a lender has its sanction on record.'));
   };
@@ -903,15 +933,23 @@ ${pill('over', b.age + 'd')}</a>`).join('')
         { l: 'Villas quiet', icon: 'bell', v: String(quiet.length), n: 'over ' + QUIET_DAYS + ' days' },
         { l: 'Never photographed', icon: 'risk', v: String(quiet.filter(r => !r.last_shot).length), n: 'nothing on record at all' },
         { l: 'Longest silence', icon: 'cockpit', v: quiet.filter(r => r.last_shot).length ? Math.max(...quiet.filter(r => r.last_shot).map(r => days(r.last_shot))) + 'd' : '—', n: 'since the last photograph' },
-        { l: 'Engineers involved', icon: 'hr', v: String(new Set(quiet.map(r => r.engineer_name).filter(Boolean)).size), n: 'on these villas' },
+        { l: 'Asked for a photograph', icon: 'comms', v: String(quiet.filter(r => r.asked_at).length), n: 'and still waiting' },
       ])
+      + note('Asking does not take a villa off this list. It leaves when a '
+        + 'photograph arrives from site, which is the only thing that answers '
+        + 'the question the list is asking.')
       + (quiet.length ? quiet.map(u => `<div class="card" style="margin-bottom:12px">
 <div class="ch"><div class="ct">${esc(u.code)} · ${esc(u.buyer_name)}</div>
 ${u.last_shot ? pill('over', days(u.last_shot) + ' days quiet') : pill('over', 'never photographed')}</div>
 <div class="cb">
 <div class="row"><div class="rico">${ic('growth')}</div><div class="rt"><b>${esc(u.next_stage || 'No stage pending')}</b>
 <span>${esc(u.engineer_name || 'no engineer assigned')}</span></div>
-<a class="btn" href="${villaHref(u.code)}">Open the villa</a></div>
+<a class="btn" href="${villaHref(u.code)}">Open the villa</a>
+${act('/office/ask', { unit: u.unit_id }, 'Ask for a photograph', { icon: 'bell' })}</div>
+${u.asked_at ? `<div class="row"><div class="rico">${ic('comms')}</div>
+<div class="rt"><b>Asked ${days(u.asked_at)} day${days(u.asked_at) === 1 ? '' : 's'} ago</b>
+<span>${esc(u.asked_by || 'this office')} · it stays here until a photograph arrives</span></div>
+${pill('accent', 'asked')}</div>` : ''}
 <form method="post" action="/office/assign" style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap">
 <input type="hidden" name="unit" value="${esc(u.unit_id)}">
 <input type="hidden" name="from" value="silent">
@@ -1136,7 +1174,7 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
 <div class="cb">
 <form method="post" action="/office/qpr" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
 <input type="hidden" name="id" value="${esc(q.id)}">
-<input class="chip" name="ref" required maxlength="60" placeholder="Acknowledgement reference from the portal"
+<input class="chip" name="reference" required maxlength="60" placeholder="Acknowledgement reference from the portal"
  style="flex:1 1 260px;min-width:0;cursor:text;font-family:var(--body)">
 <button class="btn dark" type="submit">${ic('attend')} Mark it filed</button></form>
 </div></div>`).join('') : '')

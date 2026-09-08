@@ -1148,7 +1148,10 @@ const server = http.createServer(async (req, res) => {
        this office's Today screen and tells the buyer somebody replied. */
     if (p === '/office/answer' && req.method === 'POST' && sess.role === 'office') {
       const f = form(await body(req));
-      const to = '/office/question/' + encodeURIComponent(f.id || '');
+      /* With no id there is no thread to go back to, and `/office/question/`
+         is a 404 - so a failed write threw the reader out of the product for
+         a mistake the product had made. Warranty is where the threads are. */
+      const to = f.id ? '/office/question/' + encodeURIComponent(f.id) : '/office/warranty';
       const back = m => { res.writeHead(302, { location: to + '?m=' + encodeURIComponent(m) }); res.end(); };
       const text = (f.body || '').trim().slice(0, 400);
       if (!text) return back('An empty message says nothing.');
@@ -1170,7 +1173,7 @@ const server = http.createServer(async (req, res) => {
 
     if (p === '/office/close' && req.method === 'POST' && sess.role === 'office') {
       const f = form(await body(req));
-      const to = '/office/question/' + encodeURIComponent(f.id || '');
+      const to = f.id ? '/office/question/' + encodeURIComponent(f.id) : '/office/warranty';
       const r = await asUser(sess, async c => (await c.query(
         `UPDATE queries SET status = 'closed', closed_at = now()
           WHERE id = $1 AND status <> 'closed' RETURNING subject`, [f.id])).rows[0]);
@@ -1200,6 +1203,116 @@ const server = http.createServer(async (req, res) => {
         r ? `${r.code} reassigned to ${r.display_name}. It is on their list now and off the last one's.`
           : 'That villa could not be reassigned.') });
       return res.end();
+    }
+
+    /* ------------------------------------------------- moving a pack along
+
+       Three writes the console named and could not do. Each one was a screen
+       that listed the work and then offered nothing: you could read that
+       forty-seven packs were ready and not send one, that a pack had been with
+       a lender for a month and not chase it, that a villa had gone quiet and
+       not ask the site for a photograph.
+
+       None of them touches money. Sending a pack records that it went, chasing
+       records that somebody asked again, and asking the site writes the
+       engineer a note. The disbursement is the lender's to make. */
+
+    if (p === '/office/send' && req.method === 'POST' && sess.role === 'office') {
+      const f = form(await body(req));
+      const back = m => { res.writeHead(302, { location: '/office/packs?m=' + encodeURIComponent(m) }); res.end(); };
+      if (!f.id) return back('Nothing was named to send.');
+      const r = await asUser(sess, async c => {
+        const d = (await c.query(
+          `UPDATE pack_deliveries
+              SET state = 'delivered', delivered_at = now(),
+                  attempts = attempts + 1, last_attempt_at = now()
+            WHERE id = $1 AND state = 'queued'
+            RETURNING lender, unit_stage_id`, [f.id])).rows[0];
+        if (!d) return null;
+        /* What went, for which villa, and when. The log is the office's own
+           record of having sent it - the lender's receipt is the lender's. */
+        const s = (await c.query(
+          `SELECT u.id unit_id, u.project_id, u.code, t.name stage_name
+             FROM unit_stages st JOIN units u ON u.id = st.unit_id
+             JOIN stage_templates t ON t.code = st.stage_code AND t.project_id = u.project_id
+            WHERE st.id = $1`, [d.unit_stage_id])).rows[0];
+        if (s) {
+          await c.query(
+            `INSERT INTO site_log (id, project_id, unit_id, kind, title, detail, logged_by)
+             VALUES ($1,$2,$3,'pack',$4,$5,$6)`,
+            ['log-' + crypto.randomUUID(), s.project_id, s.unit_id,
+             s.code + ': ' + s.stage_name + ' pack sent to ' + (d.lender || 'the lender'),
+             'Sent by ' + sess.name + '. The lender sends its own technical officer before it releases.',
+             sess.id]);
+        }
+        return { lender: d.lender, code: s && s.code, stage: s && s.stage_name };
+      });
+      return back(r
+        ? (r.code || 'The pack') + ' ' + (r.stage || '') + ' is with '
+          + (r.lender || 'the lender') + '. It is on "At the lender" now.'
+        : 'That pack could not be sent. It may already be with the lender.');
+    }
+
+    if (p === '/office/chase-pack' && req.method === 'POST' && sess.role === 'office') {
+      const f = form(await body(req));
+      const back = m => { res.writeHead(302, { location: '/office/wait?m=' + encodeURIComponent(m) }); res.end(); };
+      if (!f.id) return back('Nothing was named to chase.');
+      const r = await asUser(sess, async c => {
+        const d = (await c.query(
+          `UPDATE pack_deliveries SET attempts = attempts + 1, last_attempt_at = now()
+            WHERE id = $1 AND state = 'delivered'
+            RETURNING lender, attempts, unit_stage_id`, [f.id])).rows[0];
+        if (!d) return null;
+        const s = (await c.query(
+          `SELECT u.id unit_id, u.project_id, u.code, t.name stage_name
+             FROM unit_stages st JOIN units u ON u.id = st.unit_id
+             JOIN stage_templates t ON t.code = st.stage_code AND t.project_id = u.project_id
+            WHERE st.id = $1`, [d.unit_stage_id])).rows[0];
+        if (s) {
+          await c.query(
+            `INSERT INTO site_log (id, project_id, unit_id, kind, title, detail, logged_by)
+             VALUES ($1,$2,$3,'pack',$4,$5,$6)`,
+            ['log-' + crypto.randomUUID(), s.project_id, s.unit_id,
+             s.code + ': chased ' + (d.lender || 'the lender') + ' on ' + s.stage_name,
+             'Asked again by ' + sess.name + '. Attempt ' + d.attempts + '.', sess.id]);
+        }
+        return { lender: d.lender, attempts: d.attempts, code: s && s.code };
+      });
+      return back(r
+        ? (r.code || 'That pack') + ': ' + (r.lender || 'the lender')
+          + ' chased. Attempt ' + r.attempts + ', logged against the villa.'
+        : 'That pack could not be chased. It may not be with a lender.');
+    }
+
+    if (p === '/office/ask' && req.method === 'POST' && sess.role === 'office') {
+      const f = form(await body(req));
+      const back = m => { res.writeHead(302, { location: '/office/silent?m=' + encodeURIComponent(m) }); res.end(); };
+      if (!f.unit) return back('No villa was named.');
+      const r = await asUser(sess, async c => {
+        const u = (await c.query(
+          `SELECT id, project_id, code, buyer_name, assigned_engineer_id
+             FROM units WHERE id = $1`, [f.unit])).rows[0];
+        if (!u) return null;
+        /* The engineer reads this on their own screen. It is a request for a
+           photograph, not an instruction about the work: the office cannot
+           see the site and does not pretend to. */
+        await c.query(
+          `INSERT INTO notifications (id, project_id, for_role, unit_id, severity, title, detail)
+           VALUES ($1,$2,'engineer',$3,'warn',$4,$5)`,
+          ['nt-' + crypto.randomUUID(), u.project_id, u.id,
+           u.code + ': the office has asked for a photograph',
+           'No photograph has reached the office in three weeks. ' + sess.name
+             + ' has asked for one of whatever is standing today.']);
+        await c.query(
+          `INSERT INTO site_log (id, project_id, unit_id, kind, title, detail, logged_by)
+           VALUES ($1,$2,$3,'photo',$4,$5,$6)`,
+          ['log-' + crypto.randomUUID(), u.project_id, u.id,
+           u.code + ': photograph asked for', 'Asked by ' + sess.name + '.', sess.id]);
+        return u;
+      });
+      return back(r
+        ? r.code + ': asked for a photograph. It stays on this list until one arrives.'
+        : 'That villa could not be found.');
     }
 
     if (p === '/office/sanction' && req.method === 'POST' && sess.role === 'office') {

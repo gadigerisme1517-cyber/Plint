@@ -135,8 +135,12 @@ test('the office lists the buyers with no sanction on file', async () => {
     'one record form per buyer without a sanction');
   assert.strictEqual((html.match(/class="pill p-due"/g) || []).length, n,
     'and one lender named per row');
-  assert.match(html, /name="amount"/, 'there is nowhere to type the sanctioned amount');
-  assert.match(html, /name="ref"/, 'there is nowhere to type the letter reference');
+  /* The three the handler reads. The form asked for `amount` and `ref`, which
+     the handler does not read at all, so recording a sanction could never
+     succeed however carefully it was filled in. */
+  assert.match(html, /name="sanction"/, 'there is nowhere to type the sanctioned amount');
+  assert.match(html, /name="own"/, "there is nowhere to type the buyer's own contribution");
+  assert.match(html, /name="letter"/, 'there is nowhere to type the letter reference');
 });
 
 test('recording a sanction stores the amount, the contribution and the letter', async () => {
