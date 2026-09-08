@@ -167,6 +167,59 @@ body { padding: 0; margin: 0; background: var(--paper); }
            padding: 0 12px; min-height: var(--btn-h);
            align-items: center; white-space: nowrap; }
 
+/* ------------------------------------------------- 8. the laptop layout
+
+   Measured at 1440px, where it did not read as an application at all:
+
+     - 108px of chrome before a word of content, because the app bar and the
+       breadcrumb band are two bars saying nearly the same thing. That was
+       fixed for phones and left standing on the machine most of this role's
+       work is done on.
+
+     - The dashboard header 458px tall, half the viewport, because the summary
+       card and the tiles were stacked in one column the way they are on a
+       phone - a 40px figure alone on a 1160px card.
+
+     - Rows 1123px wide, so a title, a chip and an amount sat at the two ends
+       of a line with a hand's width of nothing between them.
+
+   The phone layout is the right one for a phone and was simply never told
+   what to do with the extra width. */
+
+/* ONE BAR. The app bar already names the screen and the project; the
+   breadcrumb band under it repeats both and costs 56px on every page. */
+.topbar { display: none; }
+.ab-screen { display: block; font: 600 15px/1 'Instrument Sans', system-ui, sans-serif;
+             color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+@media (min-width: 901px) {
+  /* A line of text 1123px long is not a line anybody reads. Everything sits in
+     one measure and the sidebar keeps its own width beside it. */
+  .mhead, .mbody { max-width: 1320px; }
+
+  /* THE DASHBOARD IS TWO COLUMNS. The summary and the tiles beside each other
+     is what makes it read as a dashboard rather than as a phone screen that
+     has been stretched: the headline figure and the four things to act on are
+     one glance instead of two. */
+  .mhead:has(.stats) {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    gap: 0 18px;
+    align-items: start;
+  }
+  .mhead:has(.stats) .hstrip { grid-column: 1 / -1; }
+  .mhead:has(.stats) .summary { margin-bottom: 18px; }
+  .mhead:has(.stats) .stats { grid-template-columns: 1fr 1fr; margin-bottom: 18px; }
+
+  /* A worklist row on a wide screen is a table row: the columns v21 draws for
+     it, rather than the phone's three-track card grid stretched across it. */
+  .wl { overflow: visible; }
+
+  /* On a monitor the sidebar is already the menu, so `#menu` in a bookmarked
+     URL must not black out a screen that lists all fifteen down the left. */
+  .drawer, .drawer:target { visibility: hidden; }
+}
+
 /* ---------------------------------------------------------------- depth
 
    A card is separated from the ground by a shadow, not by a line. The border
@@ -464,12 +517,7 @@ body { padding: 0; margin: 0; background: var(--paper); }
 
 /* On a monitor the sidebar is already the menu, so the layer never opens -
    `#menu` in a bookmarked URL must not black out a desktop screen. */
-@media (min-width: 901px) {
-  .drawer, .drawer:target { visibility: hidden; }
-}
-/* The screen name is a phone affordance: on a desktop the breadcrumb in the
-   topbar already names it, and saying it twice is noise. */
-.ab-screen { display: none; }
+
 .ab-who  { font-size: 13px; color: var(--ink-2); white-space: nowrap; }
 .ab-out  { font-size: 13px; color: var(--brand); text-decoration: none; white-space: nowrap; }
 .ab-out:hover { text-decoration: underline; }
