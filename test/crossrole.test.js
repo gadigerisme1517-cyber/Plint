@@ -172,11 +172,16 @@ test('engineer reports a problem: it lands on the office worklist', async () => 
   assert.strictEqual(r.status, 302);
   assert.match(decodeURIComponent(r.location), /Reported/, decodeURIComponent(r.location));
 
-  const office = await get('office', '/office');
+  /* Stages, which lists every one of them and puts whatever has stopped a
+     stage on the row itself. The dashboard carries the longest-blocked eight,
+     which a report made a second ago is not. */
+  const office = await get('office', '/office/stages');
   assert.ok(office.html.includes(code),
     'the office worklist does not show ' + code + ' after a problem was reported on it');
   assert.ok(/Material not delivered/.test(office.html),
     'the office cannot see what the problem is, only that there is one');
+  assert.ok(office.html.includes(detail),
+    'the office sees the headline but not what the engineer actually said');
 });
 
 // ------------------------------------------------------------- the boundary
@@ -408,10 +413,13 @@ test('office answers a buyer: the buyer reads it on their own thread', async () 
 });
 
 test('office picks a file up from sales: it leaves the handover list', async () => {
-  const before = await get('office', '/office/handoff');
+  /* The handover list moved onto Villas: sales handing a file over is the
+     first thing that happens to a villa, and it was a destination of its own
+     for one card. The write is unchanged. */
+  const before = await get('office', '/office/villas');
   const m = /name="id" value="(ho-[^"]+)"/.exec(before.html);
   if (!m) {
-    assert.match(before.html, /Sales have handed nothing over|Picked up/,
+    assert.match(before.html, /New from sales/,
       'nothing is offered for pickup and the screen does not say why');
     return;
   }
@@ -419,7 +427,7 @@ test('office picks a file up from sales: it leaves the handover list', async () 
   assert.strictEqual(r.status, 302, 'the pickup form did not post');
   assert.match(decodeURIComponent(r.location), /is yours/, decodeURIComponent(r.location));
 
-  const after = await get('office', '/office/handoff');
+  const after = await get('office', '/office/villas');
   assert.ok(!new RegExp('name="id" value="' + m[1] + '"').test(after.html),
     'the file is still offered for pickup after being picked up');
 
@@ -428,7 +436,6 @@ test('office picks a file up from sales: it leaves the handover list', async () 
   assert.match(decodeURIComponent(again.location), /could not be picked up/,
     'a file already owned was picked up a second time');
 });
-
 test('office answers a lender: the query stops holding the disbursement', async () => {
   const before = await get('office', '/office/query');
   const m = /name="id" value="(pq-[^"]+)"/.exec(before.html);
@@ -449,7 +456,7 @@ test('office answers a lender: the query stops holding the disbursement', async 
 });
 
 test('office marks a quarter filed: it needs the acknowledgement reference', async () => {
-  const before = await get('office', '/office/qpr');
+  const before = await get('office', '/office/rera');
   const m = /name="id" value="(qpr-[^"]+)"/.exec(before.html);
   if (!m) {
     assert.match(before.html, /No quarter has been opened|Filed/,
@@ -465,53 +472,57 @@ test('office marks a quarter filed: it needs the acknowledgement reference', asy
   const r = await post('office', '/office/qpr', { id: m[1], reference: ref });
   assert.match(decodeURIComponent(r.location), /marked filed/, decodeURIComponent(r.location));
 
-  const after = await get('office', '/office/qpr');
+  const after = await get('office', '/office/rera');
   assert.ok(after.html.includes(ref), 'the reference is not on the screen');
 });
 
-test('every one of the fifteen destinations opens, and none of them is a stub', async () => {
-  /* "A tab whose controls do nothing is not built." Fifteen screens is fifteen
-     chances to ship a heading with nothing under it, so each one is opened and
-     checked for the two things that would mean it is a drawing: no hero count
-     at all, and no list - neither rows nor a sentence saying why there are
-     none. An empty queue is a real state and says so; an empty screen is not. */
-  const KEYS = ['', 'owner', 'handoff', 'packs', 'query', 'chase', 'signoff', 'silent',
-                'wait', 'escrow', 'choices', 'warranty', 'evidence', 'qpr', 'possession'];
+test('every one of the twenty-two destinations opens, and none of them is a stub', async () => {
+  /* "A tab whose controls do nothing is not built." Twenty-two screens is
+     twenty-two chances to ship a heading with nothing under it, so each one is
+     opened and checked for the things that would mean it is a drawing: no
+     title, nothing to read, and no way out. An empty queue is a real state and
+     says so; an empty screen is not. */
+  const KEYS = ['', 'packs', 'wait', 'query', 'chase', 'stages', 'evidence', 'silent',
+                'signoff', 'villas', 'documents', 'choices', 'visits', 'warranty',
+                'rera', 'escrow', 'possession', 'schedule', 'lenders', 'logins',
+                'settings', 'help'];
   for (const k of KEYS) {
     const path = k ? '/office/' + k : '/office';
     const { status, html } = await get('office', path);
     assert.strictEqual(status, 200, path + ' does not open');
-    /* The figure a screen opens with. A worklist puts it in `.summary .fig`
-       through the shared header; nothing draws its own any more. */
-    assert.match(html, /<p class="fig/, path + ' has no headline figure');
-    assert.match(html, /class="pgt"/, path + ' has no title');
-    assert.ok(/class="wrow/.test(html) || /class="emptyrow"/.test(html) || /class="agebar/.test(html),
-      path + ' shows neither rows, nor a reason there are none');
-    assert.ok(/class="sbtn st"/.test(html), path + ' has no navigation out of it');
+    assert.match(html, /<div class="h1">/, path + ' has no title');
+    assert.match(html, /<div class="hsub">/, path + ' does not say what it is for');
+
+    /* Something to read: a table, a card, a board or a hero. And where a list
+       is empty it says why, in `.empty`, which is a real state rather than a
+       blank. */
+    assert.ok(/class="tbl"|class="card"|class="board"|class="hero"/.test(html),
+      path + ' shows nothing at all');
+    if (/class="tbl"/.test(html)) {
+      assert.ok(/class="tr /.test(html) || /class="empty"/.test(html),
+        path + ' shows neither rows, nor a reason there are none');
+    }
+    /* And the way to the other twenty-one is on it. */
+    assert.ok(/class="item /.test(html), path + ' has no navigation out of it');
   }
 });
+test('the sidebar is the five groups, on every one of the twenty-two', async () => {
+  for (const path of ['/office', '/office/stages', '/office/help']) {
+    const { html } = await get('office', path);
+    for (const g of ['Money stuck', 'The site', 'Buyers', 'Compliance', 'Setup']) {
+      assert.ok(html.includes('>' + g + '<'), path + ': the sidebar is missing the group "' + g + '"');
+    }
+    const items = (html.match(/class="item /g) || []).length;
+    assert.strictEqual(items, 22, path + ': the sidebar has ' + items + ' destinations, not 22');
 
-test('the sidebar is the nine groups, on every one of the fifteen', async () => {
-  const { html } = await get('office', '/office');
-  for (const g of ['New from sales', 'Waiting on you', 'Buyer loans', 'Chasing your team',
-                   'Waiting on the bank', 'Your own money', 'Buyer decisions', 'Compliance']) {
-    assert.ok(html.includes(g), 'the sidebar is missing the group "' + g + '"');
+    /* One sidebar, not two. It is the same element at both widths - sticky
+       beside the content on a desktop, and slid in from the left under 860px
+       - so there is no second list to drift out of step with the first. */
+    const sides = (html.match(/<aside class="side"/g) || []).length;
+    assert.strictEqual(sides, 1, path + ': there are ' + sides + ' navigations on one screen');
+    assert.match(html, /class="scrim2"/, path + ': the drawer has nothing behind it on a phone');
   }
-  const items = (html.match(/class="sbtn st"/g) || []).length;
-  assert.strictEqual(items, 15, 'the sidebar has ' + items + ' destinations, not fifteen');
-
-  /* And the phone gets the same nine groups as a layer over the screen it was
-     opened from, rather than a second list. Fifteen tabs in a 375px bar is
-     twenty-five pixels each. */
-  const panel = html.split('<nav class="dpanel"')[1] || '';
-  assert.ok(panel, 'there is no menu layer to open on a phone');
-  for (const g of ['New from sales', 'Compliance']) {
-    assert.ok(panel.includes(g), 'the menu is missing the group "' + g + '"');
-  }
-  const links = (panel.match(/<a href="\/office[^"]*"/g) || []).length;
-  assert.strictEqual(links, 15, 'the menu offers ' + links + ' destinations, not fifteen');
 });
-
 test('every row on every office screen leads somewhere', async () => {
   /* A worklist row that is not a link is a dead end: you can see the villa is
      stuck and there is nothing to press. The buyer file is where they all go. */

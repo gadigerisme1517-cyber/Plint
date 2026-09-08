@@ -1,0 +1,168 @@
+/* ============================================================================
+   The head office console.
+
+   This file is the visual system of inbell_office_dashboard.html, copied
+   value for value. It is not layered on plint.css and it never loads beside
+   it: the office console is its own system - Manrope and Inter, #0C0D10 ink,
+   a #2F6BFF accent - and mixing it with v21's Instrument Sans and navy would
+   give one product two of everything.
+
+   plint.css and app.css still draw the buyer's and the engineer's screens,
+   which are matched to v21. Nothing here reaches them.
+
+   Rules of this file: if the reference has a value, it is that value. Where a
+   component is needed that the reference does not have, it is built out of the
+   reference's own classes rather than invented. The only additions are marked
+   ADDED and each says why - all of them are the difference between a prototype
+   that fakes navigation with onclick and an application with real URLs.
+
+   The font import is a <link> in the document head instead of an @import, from
+   the same Google Fonts URL: an @import inside a stylesheet is not fetched
+   until the stylesheet has parsed, which costs a round trip before any text
+   can be drawn.
+   ========================================================================= */
+
+:root{--ground:#F8F9FB;--surface:#fff;--ink:#0C0D10;--grey:#71737A;--faint:#A6A8AF;--hair:#ECEDF0;--hair2:#F4F5F7;--accent:#2F6BFF;--accsoft:#EAF0FF;--btn:#0F1014;--green:#12855B;--greenbg:#E9F6EF;--amber:#B4530B;--amberbg:#FFF2E8;--red:#B42318;--redbg:#FEEDEC;--redsoft:#FDECEA;--disp:'Manrope',sans-serif;--body:'Inter',sans-serif;--sh:0 1px 2px rgba(12,13,16,.04),0 6px 18px rgba(12,13,16,.05);--sh2:0 14px 44px rgba(12,13,16,.16)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--ground);color:var(--ink);font-family:var(--body);font-size:14px;-webkit-font-smoothing:antialiased}
+.app{display:flex;min-height:100vh}
+/* sidebar */
+.side{width:250px;flex:none;background:var(--surface);border-right:1px solid var(--hair);height:100vh;position:sticky;top:0;display:flex;flex-direction:column;padding:16px 14px}
+.brand{display:flex;align-items:flex-start;gap:10px;padding:6px 8px 16px}
+.logo{width:26px;height:26px;position:relative;flex:none;margin-top:2px}.logo .ring{position:absolute;inset:0;border:5px solid var(--ink);border-radius:50%}.logo .dot{position:absolute;width:9px;height:9px;background:var(--accent);border-radius:50%;top:0;right:0}
+.bname{font-family:var(--disp);font-weight:800;font-size:17px;line-height:1.1}
+.bsub{font-size:10.5px;color:var(--faint);margin-top:1px}
+.nav{flex:1;overflow-y:auto;margin-top:2px}
+.nav::-webkit-scrollbar{width:0}
+.grp{font-family:var(--disp);font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);font-weight:700;padding:14px 10px 5px}
+.item{display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:11px;color:var(--grey);font-weight:500;font-size:13.5px;cursor:pointer;margin-bottom:1px;transition:background .12s,color .12s}
+.item:hover{background:var(--hair2);color:var(--ink)}
+.item.on{background:var(--accsoft);color:var(--accent);font-weight:600}
+.item svg{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fill:none}
+.item .lbl{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.badge{font-family:var(--disp);font-weight:700;font-size:10.5px;background:var(--redsoft);color:var(--red);border-radius:20px;padding:1px 8px}
+.urow{display:flex;align-items:center;gap:10px;border-top:1px solid var(--hair);padding-top:12px;margin-top:6px}
+.uav{width:32px;height:32px;border-radius:50%;background:var(--btn);color:#fff;font-family:var(--disp);font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;flex:none}
+.uinfo{flex:1;min-width:0}.uinfo b{font-size:12.5px;font-weight:600;display:block}.uinfo span{font-size:10.5px;color:var(--faint)}
+.sout{border:none;background:var(--hair2);color:var(--grey);width:28px;height:28px;border-radius:8px;cursor:pointer;font-size:13px}
+/* main */
+.main{flex:1;min-width:0;padding:26px 30px 60px}
+.topbar{display:none}
+.head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+.h1{font-family:var(--disp);font-weight:800;font-size:23px;letter-spacing:-.02em}
+.hsub{color:var(--grey);font-size:12.5px;margin-top:3px}
+.hacts{display:flex;gap:8px}
+.btn{border:1px solid var(--hair);background:#fff;border-radius:10px;padding:9px 15px;font-family:var(--disp);font-weight:700;font-size:12.5px;color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;gap:7px}
+.btn:hover{background:var(--hair2)}
+.btn.dark{background:var(--btn);color:#fff;border-color:var(--btn)}.btn.dark:hover{opacity:.92}
+.btn svg{width:15px;height:15px;stroke:currentColor;stroke-width:1.9;fill:none}
+/* hero */
+.hero{background:var(--surface);border:1px solid var(--hair);border-radius:18px;box-shadow:var(--sh);padding:22px 24px;margin-bottom:12px;display:grid;grid-template-columns:1fr 1fr;gap:28px}
+.hero .eyebrow{font-size:11px;color:var(--grey);font-weight:600;margin-bottom:7px}
+.hero .big{font-family:var(--disp);font-weight:800;font-size:40px;letter-spacing:-.02em;line-height:1}
+.hero .bigsub{color:var(--grey);font-size:12.5px;margin-top:9px}
+.num{font-variant-numeric:tabular-nums}
+.mini-r{display:flex;align-items:flex-end;justify-content:space-between;gap:16px}
+.mini-v{font-family:var(--disp);font-weight:800;font-size:25px;line-height:1}
+.mini-v.g{color:var(--green)}
+.bar{height:9px;background:var(--hair);border-radius:20px;overflow:hidden;margin-top:16px}
+.bar span{display:block;height:100%;background:var(--green);border-radius:20px}
+.barcap{display:flex;justify-content:space-between;gap:12px;margin-top:8px;font-size:11.5px;color:var(--grey)}
+.barcap b{color:var(--ink)}
+/* kpi */
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px}
+.kpi{background:var(--surface);border:1px solid var(--hair);border-radius:14px;box-shadow:var(--sh);padding:15px 16px}
+.kpi .kl{font-size:11.5px;color:var(--grey);display:flex;align-items:center;gap:7px;margin-bottom:9px}
+.kpi .kl svg{width:14px;height:14px;stroke:var(--faint);stroke-width:1.8;fill:none}
+.kpi b{font-family:var(--disp);font-weight:800;font-size:26px;letter-spacing:-.02em;display:block;line-height:1}
+.kpi .kn{font-size:10.5px;color:var(--faint);margin-top:6px}
+/* cards / grid */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
+.card{background:var(--surface);border:1px solid var(--hair);border-radius:16px;box-shadow:var(--sh);overflow:hidden}
+.ch{padding:15px 18px 0;display:flex;align-items:center;justify-content:space-between}
+.ct{font-family:var(--disp);font-weight:700;font-size:14px}
+.cb{padding:8px 18px 16px}
+.row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--hair2)}
+.row:last-child{border-bottom:none}
+.rico{width:34px;height:34px;border-radius:9px;background:var(--hair2);display:flex;align-items:center;justify-content:center;flex:none}
+.rico svg{width:16px;height:16px;stroke:var(--grey);stroke-width:1.8;fill:none}
+.rt{flex:1;min-width:0}.rt b{font-weight:600;font-size:13px}.rt span{display:block;font-size:11.5px;color:var(--faint)}
+.rr{font-family:var(--disp);font-weight:700;font-size:13px;flex:none}
+/* filters + table */
+.filters{display:flex;gap:8px;margin-bottom:14px;overflow-x:auto;padding-bottom:2px}
+.chip{border:1px solid var(--hair);background:#fff;border-radius:9px;padding:7px 13px;font-size:12.5px;color:var(--grey);font-weight:500;cursor:pointer;white-space:nowrap}
+.chip.on{background:var(--btn);color:#fff;border-color:var(--btn);font-weight:600}
+.tbl{background:var(--surface);border:1px solid var(--hair);border-radius:16px;box-shadow:var(--sh);overflow:hidden}
+.tr{display:grid;align-items:center;padding:12px 18px;border-bottom:1px solid var(--hair2);font-size:13px}
+.tr:last-child{border-bottom:none}
+.tr.hd{background:var(--ground);font-family:var(--disp);font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--grey)}
+.tr.click{cursor:pointer}.tr.click:hover{background:var(--hair2)}
+.who b{font-weight:600}.who span{display:block;font-size:11px;color:var(--faint)}
+.miniav{width:30px;height:30px;border-radius:50%;background:var(--hair);color:var(--grey);font-family:var(--disp);font-weight:700;font-size:11px;display:flex;align-items:center;justify-content:center;flex:none}
+.cellav{display:flex;align-items:center;gap:10px}
+.pill{font-family:var(--disp);font-weight:700;font-size:10.5px;padding:3px 9px;border-radius:20px;display:inline-block}
+.p-paid{background:var(--greenbg);color:var(--green)}
+.p-due{background:var(--amberbg);color:var(--amber)}
+.p-over{background:var(--redbg);color:var(--red)}
+.p-accent{background:var(--accsoft);color:var(--accent)}
+.p-grey{background:var(--hair2);color:var(--grey)}
+/* pipeline */
+.board{display:flex;gap:12px;overflow-x:auto;padding-bottom:6px}
+.col{background:var(--hair2);border-radius:14px;padding:11px;min-width:250px;width:250px;flex:none}
+.colh{display:flex;align-items:center;gap:8px;padding:3px 5px 10px}
+.colh .ctt{font-family:var(--disp);font-weight:700;font-size:12.5px}
+.colh .cnt{font-family:var(--disp);font-weight:700;font-size:10.5px;background:#fff;color:var(--grey);border:1px solid var(--hair);border-radius:20px;padding:1px 7px}
+.lcard{background:#fff;border:1px solid var(--hair);border-radius:12px;box-shadow:var(--sh);padding:11px 12px;margin-bottom:8px;cursor:pointer}
+.lcard:hover{box-shadow:0 4px 14px rgba(12,13,16,.08)}
+.lcard b{font-weight:600;font-size:13px}
+.lcard .ls{font-size:11px;color:var(--faint);margin-top:1px}
+.lcard .lt{margin-top:8px;display:flex;gap:6px}
+/* toast */
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--btn);color:#fff;padding:11px 18px;border-radius:11px;font-size:13px;font-weight:600;box-shadow:var(--sh2);opacity:0;pointer-events:none;transition:all .2s;z-index:80}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+.empty{padding:40px;text-align:center;color:var(--faint);font-size:13px}
+.note{background:var(--accsoft);border:1px solid #D8E3FF;border-radius:12px;padding:12px 15px;font-size:12.5px;color:#274690;margin-bottom:14px}
+/* mobile */
+.ham{display:none}
+.scrim2{display:none}
+@media(max-width:860px){
+  .side{position:fixed;left:0;top:0;z-index:70;transform:translateX(-100%);transition:transform .2s;box-shadow:var(--sh2)}
+  .side.open{transform:translateX(0)}
+  .scrim2{display:block;position:fixed;inset:0;background:rgba(12,13,16,.3);z-index:60;opacity:0;pointer-events:none;transition:opacity .2s}
+  .scrim2.on{opacity:1;pointer-events:auto}
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--surface);border-bottom:1px solid var(--hair);padding:12px 16px;position:sticky;top:0;z-index:30}
+  .ham{display:flex;border:1px solid var(--hair);background:#fff;border-radius:9px;width:36px;height:36px;align-items:center;justify-content:center;cursor:pointer}
+  .ham svg{width:18px;height:18px;stroke:var(--ink);stroke-width:2}
+  .main{padding:18px 16px 60px}
+  .hero,.kpis,.g2{grid-template-columns:1fr}
+  .kpis{grid-template-columns:1fr 1fr}
+}
+
+/* ------------------------------------------------------------------- ADDED
+
+   A prototype navigates with `onclick` on a div. An application navigates
+   with a link: it has to work with JavaScript off, honour the back button,
+   open in a new tab, and be announced as a link. So `.item`, `.lcard`, `.tr`
+   and `.btn` are anchors here, and an anchor arrives with an underline and a
+   colour of its own. Nothing below sets a value the reference sets; each rule
+   only stops the browser's own link styling from overriding it. */
+a.item, a.lcard, a.tr, a.btn, a.chip, a.row { text-decoration: none; }
+a.item { color: var(--grey); }
+a.item.on { color: var(--accent); }
+a.lcard, a.tr, a.row { color: inherit; }
+a.btn { color: var(--ink); }
+a.btn.dark { color: #fff; }
+
+/* The nav is the only thing on the page that scrolls inside the sidebar, and
+   the reference hides its scrollbar with a WebKit rule alone. Firefox shows
+   one, which on a 250px column takes the count badges out of alignment. */
+.nav { scrollbar-width: none; }
+
+/* A form is how a real button changes something, and a form is a block. */
+.hacts form, .row form, .tr form { display: contents; }
+
+/* The reference's `.tr` grid columns come from an inline style on every row.
+   Server-rendered rows carry the same inline style, so this is only the
+   fallback for a row that has none. */
+.tr { grid-template-columns: 1fr; }
+

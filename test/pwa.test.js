@@ -207,6 +207,11 @@ test('nothing a signed-in person sees is in the cache list', () => {
   }
 
   for (const p of shell) {
+    /* `/office.<build>.css` is the head office console's stylesheet, not a
+       screen under /office: content-addressed, holding no data, and the second
+       of the product's two visual systems. Everything else beginning with one
+       of these names serves somebody's file. */
+    if (/^\/office\.[a-f0-9]+\.css$/.test(p)) continue;
     assert.ok(!/^\/(villa|office|engineer|doc|evidence|documents|login|logout)\b/.test(p),
       p + ' is under a route that serves buyer data');
     assert.ok(p === '/offline' || /\.(css|js|png|svg|webmanifest)$/.test(p),

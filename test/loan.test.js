@@ -128,11 +128,15 @@ test('the office lists the buyers with no sanction on file', async () => {
     `SELECT count(*)::int n FROM units WHERE bank IS NOT NULL AND sanction_recorded_at IS NULL`)))
     .rows[0].n;
   assert.ok(n > 0, 'the seed leaves some unrecorded, or this screen proves nothing');
-  // Count the chips, not the phrase: the sub-heading says "no sanction" too.
-  assert.strictEqual((html.match(/class="chip [a-z]*">no sanction/g) || []).length, n,
-    'one row per buyer without a sanction');
+  /* Count the forms, not the phrase: the sub-heading says "sanction" too, and
+     the head office console draws one card per file with the lender's name in
+     a `.p-due` pill and the form to record the letter under it. */
   assert.strictEqual((html.match(/name="unit"/g) || []).length, n,
-    'and one record form per row');
+    'one record form per buyer without a sanction');
+  assert.strictEqual((html.match(/class="pill p-due"/g) || []).length, n,
+    'and one lender named per row');
+  assert.match(html, /name="amount"/, 'there is nowhere to type the sanctioned amount');
+  assert.match(html, /name="ref"/, 'there is nowhere to type the letter reference');
 });
 
 test('recording a sanction stores the amount, the contribution and the letter', async () => {

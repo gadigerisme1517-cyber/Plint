@@ -40,11 +40,25 @@ const SCREENS = {
              '/bank', '/loan', '/agreement', '/choices', '/questions', '/documents'],
   engineer: ['/engineer', '/engineer/villas', '/engineer/visits', '/engineer/log',
              '/engineer/certs', '/engineer/snags'],
-  office:   ['/office', '/office/owner', '/office/handoff', '/office/packs',
-             '/office/query', '/office/chase', '/office/signoff', '/office/silent',
-             '/office/wait', '/office/escrow', '/office/choices', '/office/warranty',
-             '/office/evidence', '/office/qpr', '/office/possession'],
+  office:   ['/office', '/office/packs', '/office/wait', '/office/query',
+             '/office/chase', '/office/stages', '/office/evidence', '/office/silent',
+             '/office/signoff', '/office/villas', '/office/documents', '/office/choices',
+             '/office/visits', '/office/warranty', '/office/rera', '/office/escrow',
+             '/office/possession', '/office/schedule', '/office/lenders',
+             '/office/logins', '/office/settings', '/office/help'],
 };
+
+/* THE HEAD OFFICE IS ITS OWN SYSTEM.
+
+   The buyer's and the engineer's screens are v21: plint.css and app.css,
+   Instrument Sans, the app bar and the phone's tab bar. The head office
+   console is inbell_office_dashboard.html's system: office.css alone, Manrope
+   and Inter, a 250px sidebar and an off-canvas drawer under 860px. Neither
+   stylesheet is ever loaded beside the other.
+
+   So a test about the shell has to say which shell it means. This is the two
+   that share v21's; the office is checked against its own. */
+const PHONE_ROLES = ['buyer', 'engineer'];
 
 /* How many destinations each role has, and therefore what navigation it gets.
 
@@ -52,7 +66,7 @@ const SCREENS = {
    five fits a phone. Above five it becomes a menu button, which is the head
    office: fifteen destinations in nine groups are not a bar at any width. */
 const BAR_FITS = 5;
-const DESTINATIONS = { buyer: 5, engineer: 5, office: 15 };
+const DESTINATIONS = { buyer: 5, engineer: 5, office: 22 };
 
 const cookies = {};
 before(async () => {
@@ -103,7 +117,14 @@ test('no screen renders the phone frame', async () => {
   for (const [role, p] of everyScreen()) {
     const h = await body(p, role);
     assert.ok(!/class="sysbar"/.test(h), role + ' ' + p + ' still paints the fake 9:41 status bar');
-    assert.ok(!/class="bar"/.test(h), role + ' ' + p + " still renders the prototype's chrome");
+    /* `.bar` is v21's own prototype chrome and app.css hides it outright, so
+       nothing drawn on v21's stylesheet may use the name. The head office is
+       not drawn on v21's stylesheet: `.bar` there is the reference's progress
+       bar, a real component with a real rule, and office.css never loads
+       beside plint.css. The name is only a collision inside one system. */
+    if (role !== 'office') {
+      assert.ok(!/class="bar"/.test(h), role + ' ' + p + " still renders the prototype's chrome");
+    }
   }
   for (const p of ['/', '/offline']) {
     const h = await body(p);
@@ -148,9 +169,22 @@ test('no screen is ever written to the browser cache', async () => {
 
 // ------------------------------------------------------------- app bar
 
-test('every screen carries the app bar, signed in or not', async () => {
+test('every screen carries the chrome its own system defines', async () => {
+  /* Two systems, two answers. The buyer and the engineer are on v21 and carry
+     its app bar. The head office console is the reference's: a 250px sidebar
+     that is sticky on a desktop and slides in under 860px, with a `.topbar`
+     holding the hamburger at that width. Asking for an app bar on an office
+     screen is asking the wrong question of the wrong system. */
   for (const [role, p] of everyScreen()) {
-    assert.match(await body(p, role), /<header class="appbar">/, role + ' ' + p + ' has no app bar');
+    const h = await body(p, role);
+    if (role === 'office') {
+      assert.match(h, /<aside class="side" id="side">/, p + ' has no sidebar');
+      assert.match(h, /<div class="topbar">/, p + ' has no top bar for narrow widths');
+      assert.match(h, /class="ham"/, p + ' has no hamburger');
+      assert.ok(!/<header class="appbar">/.test(h), p + " carries v21's app bar as well");
+    } else {
+      assert.match(h, /<header class="appbar">/, role + ' ' + p + ' has no app bar');
+    }
   }
   for (const p of ['/', '/offline']) {
     assert.match(await body(p), /<header class="appbar">/, p + ' has no app bar');
@@ -165,8 +199,16 @@ test('a signed-in person always has a way out, and is told who they are', async 
        the signed-in name at once. Two half-labels tell you less than one
        whole one. It is in the markup, so it returns the moment there is room
        and a screen reader has it at every width. */
-    assert.match(h, /class="ab-who"/, role + ' ' + p + ' does not say who is signed in');
-    assert.match(h, /class="ab-out" href="\/logout"/, role + ' ' + p + ' has no sign out');
+    if (role === 'office') {
+      /* The reference's `.urow` at the foot of the sidebar: initials, name,
+         and the button that ends the session. A POST, not a link, because
+         signing out is a write. */
+      assert.match(h, /class="uinfo"><b>/, p + ' does not say who is signed in');
+      assert.match(h, /action="\/logout"[\s\S]{0,120}class="sout"/, p + ' has no sign out');
+    } else {
+      assert.match(h, /class="ab-who"/, role + ' ' + p + ' does not say who is signed in');
+      assert.match(h, /class="ab-out" href="\/logout"/, role + ' ' + p + ' has no sign out');
+    }
   }
   // The sign-in page has neither, because there is no session to name or end.
   const h = await body('/');
@@ -181,15 +223,18 @@ test('each role gets the navigation its number of sections earns', async () => {
     const tabs = (h.match(/<nav class="tabbar"[\s\S]*?<\/nav>/) || [''])[0];
     const count = (tabs.match(/<a href=/g) || []).length;
 
-    if (DESTINATIONS[role] > BAR_FITS) {
-      /* Fifteen tabs in 375px is twenty-five pixels each. Above the bar's five
-         a role gets a menu button and no bar at all - the head office, whose
-         fifteen destinations sit under nine headings that are what make the
-         list navigation rather than a list. */
+    if (role === 'office') {
+      /* Twenty-two destinations in 375px is seventeen pixels each. The office
+         console does not have a bar at any width: it has the reference's
+         sidebar, which is sticky on a desktop and slides in from the left
+         under 860px behind `.scrim2`. */
       assert.strictEqual(tabs, '',
         role + ' has ' + DESTINATIONS[role] + ' destinations squeezed into a bar');
-      assert.match(h, /class="ab-menu"/,
-        role + ' has ' + DESTINATIONS[role] + ' destinations and no menu button');
+      assert.match(h, /class="ham"/, role + ' has no way to open its navigation on a phone');
+      assert.match(h, /class="scrim2"/, role + ' has no scrim behind the drawer');
+      const items = (h.match(/class="item /g) || []).length;
+      assert.strictEqual(items, DESTINATIONS[role],
+        role + ' draws ' + items + ' nav items for ' + DESTINATIONS[role] + ' destinations');
     } else if (DESTINATIONS[role] > 1) {
       assert.ok(tabs, role + ' has ' + DESTINATIONS[role] + ' sections and no tab bar');
       assert.strictEqual(count, DESTINATIONS[role],
@@ -280,18 +325,26 @@ test('the install belongs to the application, not to one role', async () => {
       role + ': the installed app would open on ' + to + ', which does not load');
   }
 
-  /* And all three must ask for the same shell, or an install made by one role
-     precaches a stylesheet the other two never request. */
+  /* Every screen links a content-addressed stylesheet, and there are exactly
+     two of them across the product: v21's, which the buyer and the engineer
+     share, and the head office's own. A third would mean a role had quietly
+     grown a stylesheet of its own again. */
   const sheets = new Set();
   for (const [role, p] of everyScreen()) {
-    const m = (await body(p, role)).match(/\/app\.[a-f0-9]+\.css/);
+    const m = (await body(p, role)).match(/\/(?:app|office)\.[a-f0-9]+\.css/);
     assert.ok(m, role + ' ' + p + ': links no content-addressed stylesheet');
     sheets.add(m[0]);
   }
-  assert.strictEqual(sheets.size, 1,
-    'the three roles link different shells: ' + [...sheets].join(', '));
-});
+  assert.strictEqual(sheets.size, 2,
+    'the product links ' + sheets.size + ' shells: ' + [...sheets].join(', '));
 
+  /* And both are in the worker's shell, or an install made in one role
+     precaches a stylesheet the other never gets offline. */
+  const sw = await (await get('/sw.js')).text();
+  for (const s of sheets) {
+    assert.ok(sw.includes("'" + s + "'"), s + ' is not precached by the service worker');
+  }
+});
 test('the stylesheet parses: no rule is stranded in prose', async () => {
   /* Every other test in this file matches the text of app.css, and text cannot
      tell a live rule from a dead one. A comment that was closed twice - a
@@ -406,45 +459,34 @@ test('a phone has one scroll, not three nested ones', async () => {
     'the desktop card keeps its minimum height on a phone');
 });
 
-test('the office menu is a layer over the screen, not another screen', async () => {
-  /* It was a screen: you tapped Menu, the page navigated, and you arrived
-     somewhere that looked like every other screen in the role - which reads as
-     the menu not having opened, and was reported that way. A menu is a layer.
-     The thing you were reading stays behind it, dimmed, so it is obvious both
-     that something opened and what it is over.
+test('the office navigation is a drawer on a phone and a column on a desktop', async () => {
+  /* The reference's sidebar: 250px, white, sticky beside the content, and
+     under 860px it is `position: fixed` at `translateX(-100%)` with `.scrim2`
+     behind it. The hamburger in `.topbar` slides it in.
 
-     And no JavaScript: the button is a link to `#menu`, `:target` shows the
-     panel, and the back button closes it because the browser's own history is
-     doing the work. */
+     It replaced a `:target` layer that worked with no JavaScript. This one
+     needs a script, which is the reference's own answer and the price of
+     matching it - so the script is inline in the document rather than in a
+     file, and the drawer is the only thing in this console that needs it. */
   const h = await body('/office', 'office');
-  assert.match(h, /<div class="drawer" id="menu">/, 'no menu layer on an office screen');
-  assert.match(h, /class="ab-menu" href="#menu"/, 'the menu button navigates instead of opening a layer');
-  assert.match(h, /<a class="dscrim" href="#"/,
-    'the layer has nothing over the page behind it, and no way to dismiss it');
-  /* Scoped to the layer itself: the service worker registration is a script
-     further down the same document and has nothing to do with this. */
-  const layer = (/<div class="drawer" id="menu">[\s\S]*?<\/nav><\/div>/.exec(h) || [''])[0];
-  assert.ok(layer, 'the menu layer is not a self-contained block');
-  assert.ok(!/<script|onclick|onchange/i.test(layer),
-    'the menu needs script to open, so it will not open before the script runs');
+  assert.match(h, /<aside class="side" id="side">/, 'no sidebar on an office screen');
+  assert.match(h, /<div class="scrim2" id="scrim2"><\/div>/, 'no scrim behind the drawer');
+  assert.match(h, /<button class="ham" id="ham"/, 'no hamburger to open it');
+  assert.match(h, /getElementById\('ham'\)\.addEventListener\('click'/,
+    'the hamburger is not wired to anything');
+  assert.match(h, /classList\.add\('open'\)/, "the drawer never gets the reference's .open class");
 
-  const links = (h.match(/<a href="\/office[^"]*"[^>]*><svg/g) || []).length;
-  assert.strictEqual(links, 15, 'the menu offers ' + links + ' destinations, not fifteen');
-
-  /* Every office screen carries it, or the menu is missing from wherever you
-     happen to be standing - which is every screen but one. */
-  for (const p of ['/office/owner', '/office/chase', '/office/qpr']) {
-    assert.match(await body(p, 'office'), /<div class="drawer" id="menu">/,
-      p + ' has no way into the other fourteen');
+  /* Every office screen carries it, or the navigation is missing from wherever
+     you happen to be standing - which is every screen but one. */
+  for (const p of ['/office/chase', '/office/rera', '/office/help']) {
+    assert.match(await body(p, 'office'), /<aside class="side" id="side">/,
+      p + ' has no way into the other twenty-one');
   }
 
-  // The old URL still works. Somebody's bookmark lands on Today with it open.
+  // The old menu URL still lands somewhere useful.
   const moved = await get('/office/menu', 'office');
   assert.strictEqual(moved.status, 302, '/office/menu is still a screen of its own');
-  assert.strictEqual(moved.headers.get('location'), '/office#menu',
-    '/office/menu does not land anywhere useful');
 });
-
 test('the menu layer is hidden until it is asked for, and never on a desktop', async () => {
   const css = await (await get('/app.css')).text();
   assert.match(css, /\.drawer \{[^}]*visibility:\s*hidden/,
@@ -462,40 +504,38 @@ test('the menu layer is hidden until it is asked for, and never on a desktop', a
     'a bookmarked #menu opens the layer over a desktop screen that already lists all fifteen');
 });
 
-test('the office menu names every destination and counts it', async () => {
-  /* A menu drawn with the same hero, the same cards and a subtitle under every
-     row reads as a sixteenth dashboard - it was reported as the menu not
-     opening at all, because there was nothing to tell it apart from the screen
-     it was opened from. */
+test('the office sidebar names every destination, in its five groups', async () => {
   const h = await body('/office', 'office');
-  const panel = h.split('<nav class="dpanel"')[1] || '';
-  assert.ok(panel, 'the menu layer has no panel in it');
+  const side = (/<nav class="nav">[\s\S]*?<\/nav>/.exec(h) || [''])[0];
+  assert.ok(side, 'the sidebar has no nav in it');
 
   /* Every group heading and every label, so a destination cannot be added to
      the route table and quietly left out of the only way to reach it. */
-  for (const g of ['New from sales', 'Waiting on you', 'Buyer loans', 'Chasing your team',
-                   'Waiting on the bank', 'Your own money', 'Buyer decisions', 'Compliance']) {
-    assert.ok(panel.includes(g), 'the menu is missing the group "' + g + '"');
+  for (const g of ['Money stuck', 'The site', 'Buyers', 'Compliance', 'Setup']) {
+    assert.ok(side.includes('>' + g + '<'), 'the sidebar is missing the group "' + g + '"');
   }
-  for (const label of ['Today', 'The position', 'Waiting for pickup', 'Ready to send',
-                       'Lender asked a question', 'Sanction not recorded', 'Sign-off and evidence',
-                       'Site gone quiet', 'Sent, not yet paid', 'Escrow drawdown',
-                       'Choices not made', 'Warranty claims', 'Evidence certificates',
-                       'Quarterly RERA filing', 'After possession']) {
-    assert.ok(panel.includes(label), 'the menu is missing "' + label + '"');
+  for (const label of ['Dashboard', 'Ready to send', 'At the lender', 'Lender queries',
+                       'Sanction not recorded', 'Stages', 'Evidence certificates',
+                       'Site gone quiet', 'Sign-off queue', 'Villas', 'Documents',
+                       'Choices', 'Visits', 'Warranty', 'RERA filing', 'Escrow drawdown',
+                       'After possession', 'Payment schedule', 'Lenders', 'Logins',
+                       'Settings', 'Help']) {
+    assert.ok(side.includes('>' + label + '</span>'), 'the sidebar is missing "' + label + '"');
   }
 
-  /* An icon each. Fifteen labels with nothing beside them is a wall of text,
-     and the icon is what a destination is recognised by after the second week. */
-  const icons = (panel.match(/<svg /g) || []).length;
-  assert.strictEqual(icons, 15, 'the menu draws ' + icons + ' icons for fifteen destinations');
+  /* An icon each, which is what a destination is recognised by after the
+     second week, and one line each. */
+  const icons = (side.match(/<svg /g) || []).length;
+  assert.strictEqual(icons, 22, 'the sidebar draws ' + icons + ' icons for twenty-two destinations');
+  const items = (side.match(/class="item /g) || []).length;
+  assert.strictEqual(items, 22, 'the sidebar draws ' + items + ' items');
 
-  // One line each. Two lines a row is what made it scroll for two screens.
-  assert.ok(!/<p class="s">/.test(panel), 'a menu row carries a subtitle, so every row is two lines');
-  assert.ok(!/class="wrow/.test(panel), 'the menu is built out of worklist cards');
-  assert.ok(!/class="kpin/.test(panel), 'the menu leads with a count, which is a dashboard doing that');
+  /* The badges are counts of work, so a badge that is not a number, or one on
+     a destination with nothing waiting, is noise. */
+  const badges = [...side.matchAll(/class="badge">(\d+)</g)].map(m => Number(m[1]));
+  assert.ok(badges.length >= 3, 'only ' + badges.length + ' destinations carry a count');
+  for (const b of badges) assert.ok(b > 0, 'a badge reads ' + b + ', which is not work waiting');
 });
-
 test('one platform: the dashboards are composed, not drawn', async () => {
   /* The critique that produced this test: "instead of doing from the rules,
      you are picking each dashboard separately". It was right. There were two
@@ -504,28 +544,33 @@ test('one platform: the dashboards are composed, not drawn', async () => {
      different on every screen, and a change to the design had to be made
      eleven times and remembered a twelfth.
 
-     The buyer, the engineer and the head office are not three products. They
-     are three views of one file and they have to look like it, which means the
-     furniture is defined once and composed, never redrawn. */
+     The rule survives the head office moving to its own visual system: what
+     changed is which vocabulary it composes from, not that it composes. The
+     buyer and the engineer compose from ./ui, which is v21's furniture. The
+     office composes from its own helpers, which are the reference's. Neither
+     writes a header by hand. */
   const src = f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
-  const ROLES = ['src/screens/buyer.js', 'src/screens/engineer.js', 'src/screens/office.js'];
 
-  for (const f of ROLES) {
+  for (const f of ['src/screens/buyer.js', 'src/screens/engineer.js']) {
     assert.match(src(f), /require\('\.\/ui'\)/,
       f + ' does not use the shared dashboard furniture');
-  }
-
-  /* And nothing draws a header of its own. `.mhead` is emitted by `ui.head`,
-     which is the one place that decides what a screen opens with. */
-  for (const f of ROLES) {
     const drawn = (src(f).match(/class="mhead"/g) || []).length;
-    assert.strictEqual(drawn, 0,
-      f + ' hand-writes ' + drawn + ' page header(s) instead of composing one');
+    assert.strictEqual(drawn, 0, f + ' draws ' + drawn + ' headers of its own');
   }
-  assert.match(src('src/screens/ui.js'), /class="mhead"/,
-    'the shared layer does not own the header it is supposed to own');
-});
 
+  /* The office defines each piece once and calls it. A screen there that
+     writes `<div class="head">` by hand is the same mistake in a new alphabet. */
+  const off = src('src/screens/office.js');
+  for (const helper of ['const head =', 'const kpis =', 'function table(', 'const card =',
+                        'const row =', 'const pill =', 'const btn =', 'const board =']) {
+    assert.ok(off.includes(helper), 'the office console has no shared ' + helper.split(/[ (]/)[1]);
+  }
+  const handHead = (off.match(/<div class="head">/g) || []).length;
+  assert.strictEqual(handHead, 1,
+    'the office console writes ' + handHead + ' headers by hand; there is one, inside head()');
+  const handKpi = (off.match(/<div class="kpi">/g) || []).length;
+  assert.strictEqual(handKpi, 1, 'the office console draws a KPI outside kpis()');
+});
 test('urgency is visible, and it is the same urgency everywhere', async () => {
   /* "They are just not bleeding into the background because of the design, and
      they are getting ignored." A screen where a stuck crore and a settled
@@ -545,26 +590,50 @@ test('urgency is visible, and it is the same urgency everywhere', async () => {
       'a hot figure is not drawn in the hot colour: ' + sel.replace(/\\\\/g, ''));
   }
 
-  /* And the head office's own dashboard actually uses it: the money that is
-     not moving is the headline, in red, with tiles under it. */
+  /* The head office says it in the reference's vocabulary rather than v21's:
+     `.p-over` on the red ground for a query or an overdue stage, `.p-due` on
+     amber for something waiting, `.badge` in the sidebar for a count of work
+     that has stopped. Same rule - urgency is a colour with a threshold behind
+     it - in the alphabet that console is drawn in. */
   const h = await body('/office', 'office');
-  assert.match(h, /<p class="fig hot">/, 'the office dashboard has no red headline figure');
-  assert.match(h, /<div class="stats">/, 'the office dashboard has no tiles to scan');
-  assert.match(h, /<div class="prog">/, 'the office dashboard does not say how far along it is');
-  const tiles = (h.match(/class="stat"/g) || []).length;
-  assert.strictEqual(tiles, 4, 'the dashboard shows ' + tiles + ' tiles, not four');
+  const tiles = (h.match(/class="kpi"/g) || []).length;
+  assert.strictEqual(tiles, 4, 'the dashboard shows ' + tiles + ' KPIs, not four');
+  assert.match(h, /<div class="bar"><span style="width:\d+%"/,
+    'the office dashboard does not say how far along it is');
+
+  const office = await (await get('/office.css')).text();
+  for (const [cls, token] of [['p-over', '--red'], ['p-due', '--amber'], ['p-paid', '--green']]) {
+    assert.ok(new RegExp('\\.' + cls + '\\{[^}]*color:var\\(' + token + '\\)').test(office),
+      '.' + cls + ' is not drawn in ' + token);
+  }
+  /* And a badge only ever appears where there is work waiting. */
+  const q = await body('/office/query', 'office');
+  assert.ok(/class="pill p-over"/.test(q) || /class="empty"/.test(q),
+    'the lender queries screen neither shows an open query nor says there are none');
 });
 
-test('the progress bar is not named after something v21 hides', async () => {
-  /* v21 uses `.bar` for the prototype's own chrome and this application hides
-     it outright, so a progress bar called that is `display: none` on every
-     screen. It was, until the frame test caught it. */
-  const h = await body('/office', 'office');
-  assert.ok(!/class="bar"/.test(h), 'the progress bar is using v21\'s hidden chrome class');
+test('nothing on v21 s stylesheet is named after something v21 hides', async () => {
+  /* v21 uses `.bar` for the prototype's own chrome and app.css hides it
+     outright, so a progress bar called that is `display: none` on every screen
+     drawn on that stylesheet. It was, until the frame test caught it, and the
+     summary's bar is `.prog` now.
+
+     The head office is not drawn on that stylesheet. `.bar` there is the
+     reference's own progress bar with the reference's own rule, and office.css
+     never loads beside plint.css, so the name cannot collide. */
+  for (const [role, p] of [['engineer', '/engineer'], ['buyer', '/journey']]) {
+    const h = await body(p, role);
+    assert.ok(!/class="bar"/.test(h), role + ' ' + p + ' uses v21 s hidden chrome class');
+  }
   const css = await (await get('/app.css')).text();
   assert.match(css, /\.summary \.prog \{/, 'the progress bar has no rule of its own');
-});
 
+  // And the office's bar is real: it has a rule and it carries a width.
+  const office = await (await get('/office.css')).text();
+  assert.match(office, /\.bar\{height:9px/, 'the office bar has no rule of its own');
+  assert.match(await body('/office', 'office'), /<div class="bar"><span style="width:\d+%"/,
+    'the office bar draws nothing');
+});
 test('the skin is v21 s, and this file does not restate it', async () => {
   /* plint.css is v21 byte for byte, so every colour, every hairline and every
      shadow in the product is already declared there. A second palette in
@@ -761,39 +830,34 @@ test('app.css does not overrule a value v21 already sets on a phone', async () =
   assert.deepStrictEqual(bad, [],
     'app.css overrules v21 at 375px without saying why:\n  ' + bad.join('\n  '));
 });
-test('the stuck money is a board, and every villa is still on it', async () => {
-  /* Four sections stacked down the page became four columns. Stacked you read
-     it; in columns you see it - where the backlog sits is a shape, and
-     forty-eight rows in one column is that shape being withheld.
-
-     The grouping is the same grouping it always was, so the thing to prove is
-     that nothing was lost in the rendering: every blocked villa is on the
-     board exactly once. */
+test('the board is built out of the reference s own classes', async () => {
+  /* `.board` of `.col`, each with a `.colh` naming it and counting it, holding
+     `.lcard`s. Not a component of this application's invention: the reference
+     has this exact shape for its admissions pipeline, and the rule is to build
+     out of what is there rather than to add. */
   const h = await body('/office', 'office');
-  assert.match(h, /<div class="board"/, 'the stuck money is not a board');
+  const board = (/<div class="board">[\s\S]*$/.exec(h) || [''])[0];
+  assert.ok(board, 'no board on the dashboard');
+  assert.match(board, /<div class="col"><div class="colh"><span class="ctt">/,
+    'a column does not carry the reference s heading');
+  assert.match(board, /<span class="cnt">\d+<\/span>/, 'a column does not count what is in it');
 
-  const cols = (h.match(/<section class="bcol">/g) || []).length;
-  assert.ok(cols >= 2, 'a board with ' + cols + ' column is a list');
-
-  /* One card per blocked villa, counted off the same rows the screen counted.
-     The board drops an empty column rather than drawing a heading over
-     nothing, so the columns vary; the cards must not. */
-  const { asUser } = require('../src/db');
-  const blocked = await asUser({ id: 'u-office', role: 'office' }, c => c.query(
-    'SELECT count(*)::int n FROM blockers')).then(r => r.rows[0].n);
-  const cards = (h.match(/class="bcard"/g) || []).length;
-  assert.strictEqual(cards, blocked,
-    'the board shows ' + cards + ' cards for ' + blocked + ' blocked stages');
-
-  /* Every card leads to the buyer file. A card you cannot open is a tile. */
-  const links = (h.match(/<a class="bcard" href="\/office\/buyer\//g) || []).length;
-  assert.strictEqual(links, cards, 'a card on the board does not open anything');
-
-  // Each column says how many are in it and what they are worth.
-  const counts = (h.match(/class="bn">\d+</g) || []).length;
-  assert.strictEqual(counts, cols, 'a column does not say how many are in it');
+  /* Every card is a link to the villa it is about. A card you cannot open is
+     a picture of work rather than a way into it. */
+  const cards = [...board.matchAll(/<a class="lcard" href="([^"]+)"/g)].map(m => m[1]);
+  assert.ok(cards.length > 0, 'the board has no cards on it');
+  for (const href of cards) {
+    assert.match(href, /^\/office\/villa\//, 'a board card links to ' + href);
+  }
+  /* And each carries a pill saying which state it is in, from the five the
+     reference defines and no others. */
+  const pills = [...board.matchAll(/class="pill (p-[a-z]+)"/g)].map(m => m[1]);
+  assert.ok(pills.length > 0, 'no card says what state it is in');
+  for (const c of pills) {
+    assert.ok(['p-paid', 'p-due', 'p-over', 'p-accent', 'p-grey'].includes(c),
+      c + ' is not one of the five pills');
+  }
 });
-
 test('the board stacks where there is no room for columns', async () => {
   /* Four columns in 375px is ninety pixels each. The columns are a shape for a
      screen that has the width for them, and below the sidebar's breakpoint the
@@ -821,8 +885,10 @@ test('a screen does not draw a box around nothing', async () => {
      own copy of that helper. And a way out of a screen was being put in the
      body when the header already has a place for one. */
   const src = f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
-  for (const f of ['src/screens/buyer.js', 'src/screens/engineer.js',
-                   'src/screens/office.js']) {
+  /* v21's screens only. The head office console reports what a write did as
+     the reference's own toast, which is a fixed element outside the page and
+     cannot be a card around anything. */
+  for (const f of ['src/screens/buyer.js', 'src/screens/engineer.js']) {
     assert.match(src(f), /const flash = UI\.flash;/,
       f + ' has its own flash helper again, which will draw a card around a sentence');
   }
@@ -834,19 +900,23 @@ test('a screen does not draw a box around nothing', async () => {
   assert.match(css, /\n\.tools \{[^}]*background:\s*none\s*!important/,
     'a toolbar still draws as a panel somewhere');
 
-  /* And the thread is one card. The messages, the box to add to them and the
-     way to close it are one conversation, so they are one object. */
-  const h = await body('/office/question/q-b14-w', 'office');
-  const panels = (h.match(/<div class="wl">/g) || []).length;
-  assert.strictEqual(panels, 1,
-    'the thread screen draws ' + panels + ' panels for one conversation');
-  assert.match(h, /class="uprow reassign replybox"/,
-    'the reply box is not part of the thread it belongs to');
+  /* And a thread is one card. The messages, the box to add to them and the
+     way to close it are one conversation, so they are one object.
 
-  // The ways out are in the header, where a way out belongs.
-  const body_ = h.split('class="mbody')[1] || '';
-  assert.ok(!/>Back</.test(body_), 'Back is in the body rather than the header');
-  assert.match(h.split('class="mbody')[0], />Back</, 'the header offers no way out');
+     Checked on the head office's, which is the reference's `.card`: one `.ch`
+     naming it, one `.cb` holding the messages and the reply box, and the ways
+     out in `.hacts` beside the heading rather than loose in the body. */
+  const h = await body('/office/question/q-b14-w', 'office');
+  const cards = (h.match(/<div class="card"/g) || []).length;
+  assert.strictEqual(cards, 1,
+    'the thread screen draws ' + cards + ' cards for one conversation');
+  assert.match(h, /<div class="cb">[\s\S]*<form method="post" action="\/office\/answer"/,
+    'the reply box is not inside the card it belongs to');
+  const afterHead = h.split('</div></div>').slice(1).join('</div></div>');
+  assert.match(h.split('<div class="hero"')[0], /class="hacts"/,
+    'the header offers no way out');
+  assert.ok(!/class="cb">[\s\S]*?>Villa file</.test(h),
+    'the way out is in the body rather than the header');
 });
 
 test('a conversation is drawn as a conversation, not as a worklist', async () => {
@@ -858,12 +928,35 @@ test('a conversation is drawn as a conversation, not as a worklist', async () =>
 
      The message is the content and everything else is a caption. Mine and
      theirs are told apart by side and by ground rather than by a label. */
-  for (const [role, path] of [['office', '/office/question/q-b14-w'],
-                              ['buyer', '/questions']]) {
+  /* The head office is drawn in the reference's vocabulary now, and the
+     reference has no chat component at all. Rather than invent one, its thread
+     is built from `.row`: the message is the row's `<b>`, which is the content,
+     and who said it and when is the `<span>` caption under it. The substance of
+     the rule is kept - the sentence is the loudest thing on the line, and
+     nothing scores it - in the alphabet that console is drawn in. */
+  const off = await body('/office/question/q-b14-w', 'office');
+  const thread = (/<div class="ct">The thread<\/div>[\s\S]*?<div class="cb">([\s\S]*?)<form/
+    .exec(off) || ['', ''])[1];
+  assert.ok(thread, 'the office thread is not on the screen');
+  assert.ok(!/class="wrow|class="tr /.test(thread), 'the office thread is a worklist again');
+  assert.match(thread, /<div class="rt"><b>[^<]+<\/b><span>/,
+    'the office thread demotes the message below the name again');
+  assert.ok(!/class="pill/.test(thread), 'a message in the office thread carries a status pill');
+  assert.ok(!/class="badge/.test(thread), 'a message in the office thread carries a count');
+
+  /* The buyer's end is v21's, and it keeps v21's bubbles. Pick a thread that
+     actually has a message in it: a question nobody has answered yet renders
+     the empty line, which proves nothing about how a message is drawn. */
+  for (const [role, path] of [['buyer', '/questions']]) {
     const listing = await body(path, role);
-    const id = role === 'buyer'
-      ? (/href="\/questions\/([^"]+)"/.exec(listing) || [])[1] : null;
-    const h = role === 'buyer' ? await body('/questions/' + id, role) : listing;
+    const ids = [...listing.matchAll(/href="\/questions\/([^"]+)"/g)].map(m => m[1]);
+    assert.ok(ids.length, role + ': no question to open');
+    let h = '';
+    for (const id of ids) {
+      const page = await body('/questions/' + id, role);
+      if (/<div class="msg /.test(page)) { h = page; break; }
+    }
+    assert.ok(h, role + ': not one of ' + ids.length + ' threads has a message in it');
 
     /* v21's own markup: `.thread` holding `.msg` bubbles, the message a `<p>`
        and the caption a `.s` inside the bubble under it. Matching v21 here is
@@ -966,7 +1059,10 @@ test('the villa and the stage are one run of text, not two cells', async () => {
      sat 3px apart - so it read as two labels with a dot floating in the space.
      One run of text is the only thing that fixes that, and it has to come from
      the markup. */
-  for (const [role, p] of [['engineer', '/engineer'], ['office', '/office']]) {
+  /* v21's row only. The head office's rows are the reference's `.tr`, where
+     the villa is its own cell with the buyer's name under it - `.cellav` and
+     `.who`, which is the shape the reference uses for a person in a table. */
+  for (const [role, p] of [['engineer', '/engineer']]) {
     const h = await body(p, role);
     const codes = h.match(/<p class="rt"><span class="rcode">[^<]+<\/span>[^<]/g) || [];
     assert.ok(codes.length > 0,
@@ -981,22 +1077,29 @@ test('rows are built in one place, not copied per screen', async () => {
      there, day counts written into the amount cell on one screen and the day
      cell on another. */
   const src = f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
-  for (const f of ['src/screens/engineer.js', 'src/screens/buyer.js',
-                   'src/screens/office.js']) {
+  for (const f of ['src/screens/engineer.js', 'src/screens/buyer.js']) {
     const viaBuilder = (src(f).match(/\bwrow\(\{/g) || []).length;
     assert.ok(viaBuilder > 0, f + ' builds no rows through the shared builder');
 
     /* A few rows are a different shape: the villa detail puts a radio button,
        a stage code or a status chip in the first cell rather than a villa
        code, and the builder does not model those. What must never be written
-       by hand again is a row carrying a villa code - that is the one that has
-       to put the code inside its heading rather than beside it. */
+       by hand again is a row carrying a villa code. */
     const handCoded = src(f).match(/class="id">\$\{esc\((?:x|v|s|u)\.code\)/g) || [];
     assert.deepStrictEqual(handCoded, [],
       f + ' still writes ' + handCoded.length + ' villa-code rows by hand');
   }
-});
 
+  /* The office's rows are the reference's `.tr` inside `.tbl`, and every one
+     of them comes out of `table()`. A `<div class="tr"` written into a screen
+     is the drift starting again. */
+  const off = src('src/screens/office.js');
+  /* Two, and both are inside `table()`: the header row and the body row. A
+     third is a screen writing its own. */
+  const handTr = (off.match(/<div class="tr /g) || []).length;
+  assert.strictEqual(handTr, 2, 'the office console writes ' + handTr + ' table rows by hand');
+  assert.ok(off.split('table(').length - 1 > 8, 'the office console barely uses its own table()');
+});
 test('one gutter, and everything on a phone starts on it', async () => {
   const css = await (await get('/app.css')).text();
   /* v21's phone gutter is 26px: `.top`, `.blk` and `.lede` are all padded
@@ -1062,15 +1165,21 @@ test('the header is one bar, not four bands', async () => {
   // And the screen actually says which screen it is.
   for (const [role, p, name] of [['engineer', '/engineer', 'Me'],
                                  ['engineer', '/engineer/villas', 'Villas'],
-                                 ['office', '/office', 'Today'],
-                                 ['office', '/office/owner', 'The position'],
                                  ['buyer', '/journey', 'Journey']]) {
     const h = await body(p, role);
     assert.ok(h.includes('<span class="ab-screen">' + name + '</span>'),
       role + ' ' + p + ' does not name itself in the bar');
   }
-});
 
+  /* The office names itself in `.h1`, which is the reference's page title and
+     the only band above the content. */
+  for (const [p, name] of [['/office', 'Office dashboard'], ['/office/packs', 'Ready to send'],
+                           ['/office/rera', 'RERA filing']]) {
+    const h = await body(p, 'office');
+    assert.ok(h.includes('<div class="h1">' + name + '</div>'),
+      p + ' does not name itself in its heading');
+  }
+});
 test('the header is v21 s lede: a label, a number, a sentence', async () => {
   /* v21 opens every phone screen with `.lede` - `.k` at 500 12px/16px with
      14px under it, `.mega` at 600 64px/64px on -2.2px of tracking, and `.cap`
@@ -1130,7 +1239,7 @@ test('no day count is shown without a verdict', async () => {
   /* And every row that shows a day count says what it means. Scoped to the
      screens where the count is against a deadline: the site log shows how long
      ago an entry was made, which has no due date and must not be reddened. */
-  for (const [role, p] of [['engineer', '/engineer/villas'], ['office', '/office'],
+  for (const [role, p] of [['engineer', '/engineer/villas'],
                            ['engineer', '/engineer/certs']]) {
     // The desktop table's column headings reuse the same cell classes, and
     // "Age" is a label rather than a figure.
@@ -1142,6 +1251,17 @@ test('no day count is shown without a verdict', async () => {
         role + ' ' + p + ' shows a day count with no verdict: ' + r);
     }
   }
+
+  /* The head office says the same thing in the reference's vocabulary: a
+     figure standing for how long something has waited is a pill, and a pill
+     has one of five meanings. A bare number with no pill beside it would be
+     the same unscored figure in a different alphabet. */
+  /* Read off the quiet villas rather than the packs: nothing in this project
+     is currently sitting delivered-and-unpaid, so that screen is legitimately
+     empty and would prove nothing either way. */
+  const off = await body('/office/silent', 'office');
+  const waits = off.match(/class="pill p-over">[^<]*(days quiet|never photographed)</g) || [];
+  assert.ok(waits.length > 0, 'the office shows no scored waiting times');
 });
 
 test('v21 owns the buttons on a phone; the scale is the desktop s', async () => {
@@ -1287,70 +1407,78 @@ test('the app bar is opaque, full width, and content passes under it', async () 
   assert.match(bar[1], /width:\s*100%/, 'the app bar does not claim the full width');
 });
 
-test('nothing is laid out with a width the page cannot override', async () => {
+test('nothing is laid out with a height the page cannot override', async () => {
   /* The ageing histogram shipped with `style="height:88px"` on each bar. An
      inline height beats every rule, so on a phone the sparkline became four
-     slabs half the screen wide. Heights travel as a custom property now, and
-     the chart lives in the shared layer rather than in this one screen. */
-  const h = await body('/office/owner', 'office');
-  const bars = h.match(/<i class="[^"]*" style="([^"]*)"><\/i>/g) || [];
-  assert.ok(bars.length > 0, 'no chart columns rendered');
-  for (const b of bars) {
-    assert.ok(!/style="[^"]*height:/.test(b), 'a column still carries an inline height: ' + b);
-    assert.match(b, /--h:|--pct:/, 'a column does not pass its size as a property: ' + b);
-  }
-});
+     slabs half the screen wide.
 
+     A width is a different matter, and the reference settles it: its own
+     progress bar is `<span style="width:88%">`, because the fill of a bar is
+     data rather than layout and there is nowhere else for it to live. */
+  for (const [role, p] of [['office', '/office'], ['engineer', '/engineer'],
+                           ['buyer', '/journey'], ['buyer', '/money']]) {
+    const h = await body(p, role);
+    /* The mark is the exception, and it is the reference's exception: its own
+       top bar draws the logo at a second size with `style="width:20px;
+       height:20px"` on the same three divs. A mark has one shape and two
+       sizes; it is not laid out. */
+    const inlineHeights = (h.match(/style="[^"]*height:[^"]*"/g) || [])
+      .filter(x => !/^style="width:\d+px;height:\d+px"$/.test(x));
+    assert.deepStrictEqual(inlineHeights, [],
+      role + ' ' + p + ' carries an inline height: ' + inlineHeights.join(', '));
+  }
+  const h = await body('/office', 'office');
+  assert.match(h, /<span style="width:\d+%"><\/span>/,
+    'the bar does not carry its own fill, which is the one thing it is for');
+});
 test('no destination is named after the person reading it', async () => {
   /* "Owner view" and then "Owner dashboard" both named who was looking rather
-     than what they were looking at, and an owner does not need telling whose
-     dashboard it is. Every other destination in this role is named for its
-     content - Today, Ready to send, Sanction not recorded - and this one is
-     "The position", which is the question it answers and pairs with Today:
-     where we stand, against what needs doing now. */
+     than what they were looking at. Every destination is named for its
+     content - Dashboard, Ready to send, Sanction not recorded - and none of
+     them for whoever opened it. */
   const h = await body('/office', 'office');
-  const panel = h.split('<nav class="dpanel"')[1] || '';
-  assert.ok(panel, 'no menu to read the destination names from');
+  const side = (/<nav class="nav">[\s\S]*?<\/nav>/.exec(h) || [''])[0];
+  assert.ok(side, 'no sidebar to read the destination names from');
 
   /* Destination labels only. The group headings are content and may name a
-     party - "Buyer decisions" is whose decisions they are, read by the office,
-     which is the right way round. */
-  const labels = [...panel.matchAll(/<span class="dl">([^<]*)<\/span>/g)].map(m => m[1]);
-  assert.strictEqual(labels.length, 15, 'read ' + labels.length + ' destination labels, not fifteen');
+     party - "Buyers" is whose decisions and documents they are, read by the
+     office, which is the right way round. */
+  const labels = [...side.matchAll(/<span class="lbl">([^<]*)<\/span>/g)].map(m => m[1]);
+  assert.strictEqual(labels.length, 22, 'read ' + labels.length + ' destination labels, not 22');
   for (const l of labels) {
     assert.ok(!/^(Owner|Admin|My|Your)/i.test(l),
       'a destination is named after who is reading it: ' + JSON.stringify(l));
   }
-  assert.ok(labels.includes('The position'), 'the position has lost its name');
 });
+test('the office dashboard leads with the money that has stopped', async () => {
+  /* The reference's dashboard shape, filled with this project's question:
+     what is the money waiting on, and how far through the book are we. */
+  const h = await body('/office', 'office');
 
-test('the owner dashboard answers the three questions it exists for', async () => {
-  /* "Looks so empty." It was: one figure and two lists of totals in a column,
-     which answers none of what somebody opening it wants to know. Is the money
-     coming in, is the work moving, and what is stuck. */
-  const h = await body('/office/owner', 'office');
+  assert.match(h, /<div class="hero">/, 'no hero on the dashboard');
+  assert.match(h, /class="eyebrow">Waiting on evidence</,
+    'the hero does not say what its figure is');
+  assert.match(h, /<div class="big num">₹/, 'the headline figure is not money');
+  /* The bar is stages certified against stages under way, and it carries its
+     own caption - a bar with no numbers beside it is a decoration. */
+  assert.match(h, /<div class="bar"><span style="width:\d+%"><\/span><\/div>/,
+    'the hero has no progress bar');
+  assert.match(h, /class="barcap"><span><b>\d+%<\/b>/, 'the bar has no caption');
 
-  assert.match(h, /<p class="fig ok">/, 'no headline figure for what has been collected');
-  const tiles = (h.match(/class="stat"/g) || []).length;
-  assert.strictEqual(tiles, 4, 'the owner sees ' + tiles + ' tiles, not four');
+  const k = (h.match(/class="kpi"/g) || []).length;
+  assert.strictEqual(k, 4, 'the dashboard shows ' + k + ' KPIs, not four');
+  const cards = (h.match(/<div class="card">/g) || []).length;
+  assert.ok(cards >= 2, 'the dashboard shows ' + cards + ' cards');
+  assert.match(h, />Packs ready to send</, 'nothing lists the packs waiting to go out');
+  assert.match(h, />Villas gone quiet</, 'nothing lists the villas nobody has photographed');
+  assert.match(h, /class="tbl"/, 'there is no stage worklist');
 
-  // Money, work, and how long things have been blocked - three charts.
-  const charts = (h.match(/<div class="chart">/g) || []).length;
-  assert.strictEqual(charts, 3, 'the owner gets ' + charts + ' charts, not three');
-  assert.match(h, /Where the money is/, 'nothing shows how the money divides');
-  assert.match(h, /Where the work is/, 'nothing shows how the work divides');
-  assert.match(h, /How long things have been blocked/, 'nothing shows what is stuck and for how long');
-
-  /* And every segment carries its own figure, so nothing on the screen is only
-     a colour. A legend without numbers is a decoration. */
-  /* And a column chart has to be measured against its own plot area. As a
-     flex item beside its number and its label the bar's percentage height was
-     capped to the space they left, so 15, 17 and 16 all drew at exactly 90px
-     - three identical bars for three different counts. */
-  assert.match(h, /<span class="well"><i /, 'the chart columns have no plot area to be measured in');
-
-  const keys = (h.match(/class="mixk"/g) || []).length;
-  assert.ok(keys >= 6, 'the charts have ' + keys + ' labelled segments between them');
-  assert.match(h, /class="mixk">\s*<i[^>]*><\/i>[^<]*<b>/,
-    'a chart segment has no figure beside it');
+  /* And the pipeline, as the reference's board: one column per state a pack
+     can be in, from certified to disbursed. */
+  assert.match(h, /<div class="board">/, 'the packs are not on a board');
+  const cols = (h.match(/<div class="col">/g) || []).length;
+  assert.strictEqual(cols, 4, 'the board has ' + cols + ' columns, not four');
+  for (const c of ['Certified, pack not sent', 'With the lender', 'Lender has asked', 'Disbursed']) {
+    assert.ok(h.includes('>' + c + '<'), 'the board has no "' + c + '" column');
+  }
 });

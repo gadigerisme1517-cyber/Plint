@@ -1,330 +1,365 @@
 'use strict';
 /* ============================================================================
-   The head office: fifteen destinations in nine groups, and the buyer file.
+   The head office console.
 
-   The groups and their order are v21's, verbatim from its `groups` array. They
-   are not a menu somebody arranged by feel: each one names who is being waited
-   on, and the sequence walks a file from the moment sales let go of it to the
-   moment the last account is transferred after possession. "Waiting on you" is
-   above "Waiting on the bank" because one of those is the office's own delay
-   and the other is not.
+   The visual system is inbell_office_dashboard.html's, value for value, and
+   public/office.css is that file's stylesheet copied verbatim. This module
+   emits the same markup shapes: `.head`/`.h1`/`.hsub`/`.hacts`, `.hero` with
+   its `.big` and its `.bar`, `.kpis`, `.card`/`.ch`/`.cb`/`.row`/`.rico`,
+   `.tbl`/`.tr`/`.tr.hd`, `.pill`, `.board`/`.col`/`.lcard`, `.btn`, `.note`,
+   `.empty` and the toast. Where this console needs something the reference
+   does not have, it is built out of those classes rather than invented.
 
-   FIFTEEN IS WHY THIS ROLE HAS A MENU AND THE OTHER TWO HAVE A BAR. v21's
-   `.nav five` is a shape that holds five; the buyer and the engineer have
-   exactly five and keep the bar. Fifteen is not a bar at any width, so the
-   office gets a button that opens the same nine groups the sidebar draws on a
-   monitor. One list, in `destinations()`, rendered three ways.
+   WHAT IS DIFFERENT FROM THE REFERENCE, AND WHY. The reference is a prototype:
+   it navigates with `onclick` on a div, its screens are functions over arrays
+   held in the page, and every button ends in `toast('… (demo)')`. This is an
+   application over a database with row-level security. So:
 
-   WHAT THIS FILE MAY NOT DO. It does not price a stage, raise a demand, or
-   record a sanction: those go through the money layer and `record_sanction`,
-   which are the only paths that touch money and the only ones that write an
-   audit row. Reassignment goes through `assign_engineer`. Everything here
-   either reads, or writes a row whose whole content is "somebody in this
-   office dealt with this".
+     - a nav item is an anchor with a real URL, and the browser's back button,
+       middle-click and no-JS all work;
+     - a button that changes something is a form that POSTs and redirects, and
+       the redirect carries what happened in `?m=`, which the shell renders as
+       the reference's own `.toast.on`;
+     - every figure on every screen is read from the database in the session's
+       own role, so what the office cannot see, the office is not shown.
 
-   Dependencies arrive as a context object rather than by requiring server.js,
-   because server.js requires this. Nothing is imported across that line.
+   THE GROUND TRUTH THIS CONSOLE MUST NOT CONTRADICT.
+
+     - The lender always sends its own technical officer. Nothing here may say
+       or imply the photographs replace that visit; they are what the office
+       and the buyer can see between visits, and what the pack carries.
+     - Five documents per stage. Four generate from the record. Only the
+       engineer's completion certificate carries an external qualified
+       signature, and only a qualified engineer may sign it.
+     - Bookings and receipts come from the builder's ERP. This console reads
+       them and writes nothing back to it.
    ========================================================================= */
 
-module.exports = function officeScreens(ctx) {
-  const { esc, desk, M, asUser, schedules, stageTotal } = ctx;
-
-  const { wrow, whead, empty, ageChip, AGE } = require('./rows')({ esc });
-  /* The furniture every dashboard is built from. One platform, three
-     dashboards: the summary card, the tile grid and the section panel are
-     defined once in ./ui, and this file composes them rather than drawing its
-     own. Eleven places used to draw the same header. */
-  const UI = require('./ui')({ esc });
+module.exports = function office(ctx) {
+  const { esc, officePage, M, asUser, schedules, stageTotal } = ctx;
 
   const days = d => Math.max(0, Math.round((Date.now() - new Date(d).getTime()) / 86400000));
   const until = d => Math.round((new Date(d).getTime() - Date.now()) / 86400000);
-  /* From the shared layer. Three files had their own copy of this, all three
-     drawing a `.tools` panel - which on a wide screen is a white card around
-     the words "Sent." */
-  const flash = UI.flash;
 
-  /* v21's nine groups and fifteen destinations, in v21's order. The first
-     group has no heading because Today and Owner view are not a category -
-     they are where you start and where you stand back. */
-  const GROUPS = [
-    ['', [
-      ['today',      'Today'],
-      ['owner',      'The position'],
-    ]],
-    ['New from sales', [
-      ['handoff',    'Waiting for pickup'],
-    ]],
-    ['Waiting on you', [
-      ['packs',      'Ready to send'],
-      ['query',      'Lender asked a question'],
-    ]],
-    ['Buyer loans', [
-      ['chase',      'Sanction not recorded'],
-    ]],
-    ['Chasing your team', [
-      ['signoff',    'Sign-off and evidence'],
-      ['silent',     'Site gone quiet'],
-    ]],
-    ['Waiting on the bank', [
-      ['wait',       'Sent, not yet paid'],
-    ]],
-    ['Your own money', [
-      ['escrow',     'Escrow drawdown'],
-    ]],
-    ['Buyer decisions', [
-      ['choices',    'Choices not made'],
-      ['warranty',   'Warranty claims'],
-    ]],
-    ['Compliance', [
-      ['evidence',   'Evidence certificates'],
-      ['qpr',        'Quarterly RERA filing'],
-      ['possession', 'After possession'],
-    ]],
+  /* A pack that has been with a lender longer than this is the thing the
+     office chases. It is the same fourteen days the sidebar counts. */
+  const PACK_LATE_DAYS = 14;
+  /* Three weeks with no photograph is a villa that has gone quiet. */
+  const QUIET_DAYS = 21;
+
+  // ------------------------------------------------------------------ icons
+
+  /* The reference's own icon set. Nothing new is drawn: each item below picks
+     the shape from that set which says what it is. */
+  const I = {
+    home: '<path d="M3 10l9-7 9 7v10a1 1 0 01-1 1h-5v-7H9v7H4a1 1 0 01-1-1z"/>',
+    growth: '<path d="M4 19V5M4 19h16M8 15l3-4 3 3 4-6"/>',
+    users: '<circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0112 0M16 6a3 3 0 010 6M21 20a6 6 0 00-4-5.6"/>',
+    cal: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/>',
+    money: '<rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/>',
+    attend: '<path d="M20 6L9 17l-5-5"/>',
+    exam: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/>',
+    comms: '<path d="M4 5h16v11H8l-4 4z"/>',
+    report: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>',
+    event: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M8 15h3"/>',
+    bell: '<path d="M6 9a6 6 0 1112 0c0 5 2 6 2 6H4s2-1 2-6M10 20a2 2 0 004 0"/>',
+    hr: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0114 0"/>',
+    cert: '<circle cx="12" cy="9" r="5"/><path d="M9 13l-1.5 7L12 18l4.5 2L15 13"/>',
+    hostel: '<path d="M3 21V8l9-5 9 5v13M9 21v-6h6v6"/>',
+    settings: '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2 2M16.4 16.4l2 2M18.4 5.6l-2 2M7.6 16.4l-2 2"/>',
+    bolt: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
+    risk: '<path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17v.5"/>',
+    cockpit: '<circle cx="12" cy="12" r="9"/><path d="M12 12l5-3"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/>',
+  };
+  const ic = (n, cls = '') => `<svg class="${cls}" viewBox="0 0 24 24" fill="none">${I[n] || I.report}</svg>`;
+
+  // -------------------------------------------------------------------- nav
+
+  /* The reference's shape exactly: a flat list of `{item}` and `{grp}`. */
+  const NAV = [
+    { item: { id: 'dashboard', label: 'Dashboard', icon: 'home' } },
+    { grp: 'Money stuck' },
+    { item: { id: 'packs', label: 'Ready to send', icon: 'report', count: 'packs' } },
+    { item: { id: 'wait', label: 'At the lender', icon: 'money', count: 'wait' } },
+    { item: { id: 'query', label: 'Lender queries', icon: 'comms', count: 'query' } },
+    { item: { id: 'chase', label: 'Sanction not recorded', icon: 'risk' } },
+    { grp: 'The site' },
+    { item: { id: 'stages', label: 'Stages', icon: 'growth' } },
+    { item: { id: 'evidence', label: 'Evidence certificates', icon: 'cert' } },
+    { item: { id: 'silent', label: 'Site gone quiet', icon: 'bell', count: 'silent' } },
+    { item: { id: 'signoff', label: 'Sign-off queue', icon: 'attend' } },
+    { grp: 'Buyers' },
+    { item: { id: 'villas', label: 'Villas', icon: 'hostel' } },
+    { item: { id: 'documents', label: 'Documents', icon: 'report' } },
+    { item: { id: 'choices', label: 'Choices', icon: 'exam', count: 'choices' } },
+    { item: { id: 'visits', label: 'Visits', icon: 'cal' } },
+    { item: { id: 'warranty', label: 'Warranty', icon: 'risk', count: 'warranty' } },
+    { grp: 'Compliance' },
+    { item: { id: 'rera', label: 'RERA filing', icon: 'cert' } },
+    { item: { id: 'escrow', label: 'Escrow drawdown', icon: 'money' } },
+    { item: { id: 'possession', label: 'After possession', icon: 'home' } },
+    { grp: 'Setup' },
+    { item: { id: 'schedule', label: 'Payment schedule', icon: 'cal' } },
+    { item: { id: 'lenders', label: 'Lenders', icon: 'money' } },
+    { item: { id: 'logins', label: 'Logins', icon: 'users' } },
+    { item: { id: 'settings', label: 'Settings', icon: 'settings' } },
+    { item: { id: 'help', label: 'Help', icon: 'bolt' } },
   ];
 
-  /* One icon per destination, in v21's stroke style: 24x24, 1.6 stroke, round
-     caps. A menu of fifteen labels is a wall of text - the icon is what lets
-     somebody find "Escrow drawdown" without reading the eight words above it,
-     and it is the thing the row is recognised by after the second week. */
-  const ICON = {
-    today:      'M12 7v5l3 2M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z',
-    owner:      'M4 19V5m0 14h16M8 16V9m4 7v-4m4 4V7',
-    handoff:    'M4 13h4l2 3h4l2-3h4M4 13l2-8h12l2 8v6H4Z',
-    packs:      'M4 8 12 4l8 4v8l-8 4-8-4Zm0 0 8 4m0 0 8-4m-8 4v8',
-    query:      'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 13v.5M9.6 9.2A2.4 2.4 0 1 1 12 12v1.2',
-    chase:      'M6 3h8l4 4v14H6Zm8 0v4h4M12 11v3m0 3v.5',
-    signoff:    'M4.5 12.5 9 17l10.5-11',
-    silent:     'M3 3l18 18M9.5 5h5l1.5 2H20v9M4 7h1.5M4 7v11h12',
-    wait:       'M7 3h10M7 21h10M17 3v4l-5 5 5 5v4M7 3v4l5 5-5 5v4',
-    escrow:     'M3 9 12 4l9 5M5 9v9m4-9v9m6-9v9m4-9v9M3 20h18',
-    choices:    'M4 7h10M4 12h10M4 17h6M17 15l2 2 3.5-4',
-    warranty:   'M12 3 5 6v5c0 5 3 8 7 10 4-2 7-5 7-10V6Z',
-    evidence:   'M4 8h3l1.5-2h7L17 8h3v11H4Zm8 2.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z',
-    qpr:        'M6 3h8l4 4v14H6Zm8 0v4h4M9 13h6M9 17h4',
-    possession: 'M14.5 4a4.5 4.5 0 1 1-3.2 7.7L4 19v2h3v-2h2v-2h2l1.3-1.3A4.5 4.5 0 0 1 14.5 4Zm1.5 3.5v.01',
+  const KEYS = new Set(NAV.filter(e => e.item).map(e => e.item.id));
+  const href = id => (id === 'dashboard' ? '/office' : '/office/' + id);
+
+  function nav(current, n) {
+    return NAV.map(e => {
+      if (e.grp) return `<div class="grp">${esc(e.grp)}</div>`;
+      const it = e.item;
+      const badge = it.count && n[it.count] ? `<span class="badge">${n[it.count]}</span>` : '';
+      return `<a class="item ${it.id === current ? 'on' : ''}" href="${href(it.id)}"`
+        + `${it.id === current ? ' aria-current="page"' : ''}>${ic(it.icon)}`
+        + `<span class="lbl">${esc(it.label)}</span>${badge}</a>`;
+    }).join('');
+  }
+
+  // ---------------------------------------------------------------- helpers
+
+  /* One for one with the reference's own helpers, so a screen here is built
+     the way a screen there is. */
+  const head = (t, s, acts = '') =>
+    `<div class="head"><div><div class="h1">${esc(t)}</div>`
+    + `${s ? `<div class="hsub">${s}</div>` : ''}</div>`
+    + `${acts ? `<div class="hacts">${acts}</div>` : ''}</div>`;
+
+  const kpis = arr => `<div class="kpis">${arr.map(k =>
+    `<div class="kpi"><div class="kl">${ic(k.icon)} ${esc(k.l)}</div>`
+    + `<b class="num">${k.v}</b><div class="kn">${esc(k.n)}</div></div>`).join('')}</div>`;
+
+  const P = { paid: 'p-paid', due: 'p-due', over: 'p-over', accent: 'p-accent', grey: 'p-grey' };
+  /* What the five pills mean here, and nothing else may use them:
+       paid   - disbursed, or certified
+       due    - waiting
+       over   - a lender query, or a stage overdue
+       accent - informational
+       grey   - not started                                                   */
+  const pill = (kind, text) => `<span class="pill ${P[kind]}">${esc(text)}</span>`;
+
+  const btn = (label, o = {}) => {
+    const inner = (o.icon ? ic(o.icon) : '') + ' ' + esc(label);
+    const cls = 'btn' + (o.dark ? ' dark' : '');
+    if (o.href) return `<a class="${cls}" href="${o.href}">${inner}</a>`;
+    if (o.post) {
+      return `<form method="post" action="${o.post}">`
+        + Object.entries(o.fields || {}).map(([k, v]) =>
+          `<input type="hidden" name="${esc(k)}" value="${esc(String(v))}">`).join('')
+        + `<button class="${cls}" type="submit">${inner}</button></form>`;
+    }
+    return `<button class="${cls}" type="button">${inner}</button>`;
   };
-  const icon = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
- stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICON[k]}"/></svg>`;
 
-  /** Every key, flat, so a route can decide in one lookup whether it is ours. */
-  const KEYS = new Set(GROUPS.flatMap(([, items]) => items.map(([k]) => k)));
+  /**
+   * The reference's table. `rows` are arrays of cells already rendered; `tmpl`
+   * is the grid template every row carries inline, exactly as there.
+   * @param {object} [o] o.href(i) makes the row a link, o.tags(i) lets the
+   *                     filter chips above it narrow the list.
+   */
+  function table(cols, rows, tmpl, o = {}) {
+    const gt = `grid-template-columns:${tmpl}`;
+    if (!rows.length) {
+      return `<div class="tbl"><div class="tr hd" style="${gt}">`
+        + cols.map(c => `<div>${esc(c)}</div>`).join('')
+        + `</div><div class="empty">${esc(o.empty || 'Nothing here.')}</div></div>`;
+    }
+    return `<div class="tbl"${o.id ? ` id="${o.id}"` : ''}><div class="tr hd" style="${gt}">`
+      + cols.map(c => `<div>${esc(c)}</div>`).join('') + '</div>'
+      + rows.map((r, i) => {
+        const tags = o.tags ? ` data-tags="${esc(o.tags(i))}"` : '';
+        const cells = r.map(c => `<div>${c}</div>`).join('');
+        return o.href
+          ? `<a class="tr click" style="${gt}"${tags} href="${o.href(i)}">${cells}</a>`
+          : `<div class="tr" style="${gt}"${tags}>${cells}</div>`;
+      }).join('') + '</div>';
+  }
 
-  /** v21's own headline and subtitle for each screen, kept as it wrote them. */
-  const HEAD = {
-    today:      ['Today', 'What is on this office now'],
-    owner:      ['The position', 'Where the project stands, rather than what needs doing today'],
-    handoff:    ['New from sales', 'Buyers who have paid a token and have no owner yet'],
-    packs:      ['Ready to send', 'Stage verified. Pack generated. Not yet with the lender'],
-    query:      ['Lender questions', 'Open queries holding a disbursement'],
-    chase:      ['Sanction not recorded', 'Buyers with no sanction letter on file yet. '
-                 + 'Nothing can be disbursed against a stage until this is marked.'],
-    signoff:    ['Sign-off and evidence', 'Stages marked done on site, not yet certified'],
-    silent:     ['Site quiet', 'No photograph in three weeks'],
-    wait:       ['Sent, not paid', 'With the lender over fourteen days'],
-    escrow:     ['Escrow drawdown', 'What may be withdrawn from the designated account'],
-    choices:    ['Buyer choices', 'Selections not yet made'],
-    warranty:   ['Warranty claims', 'Open snags within the twelve-month period'],
-    evidence:   ['Evidence certificates', 'Section 63 certificate, hash and signatures'],
-    qpr:        ['RERA filing', 'Quarterly progress report'],
-    possession: ['After possession', 'Khata, meters, corpus and accounts still to transfer'],
-  };
+  const filters = (scope, opts) =>
+    `<div class="filters" data-scope="${scope}">${opts.map((o, i) =>
+      `<button class="chip ${i === 0 ? 'on' : ''}" data-filter="${esc(o[1])}" type="button">`
+      + `${esc(o[0])}</button>`).join('')}</div>`;
 
-  const href = k => k === 'today' ? '/office' : '/office/' + k;
+  const card = (title, body, acts = '') =>
+    `<div class="card"><div class="ch"><div class="ct">${esc(title)}</div>${acts}</div>`
+    + `<div class="cb">${body}</div></div>`;
 
-  /* Fourteen days with a lender is v21's threshold for chasing a pack, and it
-     is not the same number as the twenty-one days that make a site quiet. Both
-     are here rather than typed into the queries that use them. */
-  const PACK_LATE_DAYS = 14;
+  const row = (icon, title, sub, right = '') =>
+    `<div class="row"><div class="rico">${ic(icon)}</div>`
+    + `<div class="rt"><b>${esc(title)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</div>`
+    + `${right}</div>`;
 
-  /* The header, from the shared furniture rather than drawn here.
+  const note = t => `<div class="note">${t}</div>`;
+  const empty = t => `<div class="empty">${esc(t)}</div>`;
 
-     The fourteen screens behind Today are worklists: a title, a sentence and
-     one figure is what a worklist owes its reader. Today and Owner view are
-     dashboards, and they pass `parts`, `bar` and a tile grid through the same
-     helper - so the difference between a worklist and a dashboard is what the
-     screen has to say, not how it is built. */
-  const hero = (count, unitWord, title, sentence, hot, extra, back) =>
-    UI.head(title, sentence, UI.summary({
-      cap: unitWord, figure: esc(String(count)), tone: hot ? 'hot' : null,
-      parts: extra && extra.parts, bar: extra && extra.bar,
-    }) + (extra && extra.tiles ? extra.tiles : ''), back);
+  const board = cols => `<div class="board">${cols.map(c =>
+    `<div class="col"><div class="colh"><span class="ctt">${esc(c.label)}</span>`
+    + `<span class="cnt">${c.cards.length}</span></div>`
+    + (c.cards.length ? c.cards.map(k =>
+      `<a class="lcard" href="${k.href}"><b>${esc(k.title)}</b>`
+      + `<div class="ls">${esc(k.sub)}</div>`
+      + (k.tags ? `<div class="lt">${k.tags}</div>` : '') + '</a>').join('')
+      : `<div class="ls" style="padding:6px 5px">Nothing here.</div>`)
+    + '</div>').join('')}</div>`;
 
-  // ------------------------------------------------------------------ counts
+  const villaHref = code => '/office/villa/' + encodeURIComponent(code);
+  const who = (name, sub) =>
+    `<div class="cellav"><div class="miniav">${esc(initials(name))}</div>`
+    + `<div class="who"><b>${esc(name)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</div></div>`;
+  const initials = n => String(n || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
+  const num = t => `<span class="num">${esc(t)}</span>`;
 
-  /* One query for all fifteen counts, because the sidebar draws every one of
-     them on every screen. Fifteen separate round trips to render a menu would
-     be fifteen round trips on every page in the role. */
+  // ----------------------------------------------------------------- counts
+
+  /* One query for every badge in the sidebar, because the sidebar is on every
+     screen in this role and twenty-two reads to draw it would be twenty-two
+     reads on every page. */
   async function counts(c) {
     const r = (await c.query(`
       SELECT
-        (SELECT count(*) FROM handoffs WHERE picked_up_at IS NULL)                       handoff,
-        (SELECT count(*) FROM pack_deliveries WHERE state = 'queued')                    packs,
-        (SELECT count(*) FROM pack_queries WHERE answered_at IS NULL)                    query,
-        (SELECT count(*) FROM units
-          WHERE bank IS NOT NULL AND sanction_recorded_at IS NULL)                       chase,
-        (SELECT count(*) FROM unit_stages WHERE status = 'marked')                       signoff,
-        (SELECT count(*) FROM units u WHERE NOT EXISTS (
-            SELECT 1 FROM evidence e JOIN unit_stages s ON s.id = e.unit_stage_id
-             WHERE s.unit_id = u.id AND e.taken_at > now() - ($1 || ' days')::interval))  silent,
+        (SELECT count(*) FROM pack_deliveries WHERE state = 'queued')                   packs,
+        (SELECT count(*) FROM pack_queries WHERE answered_at IS NULL)                   query,
         (SELECT count(*) FROM pack_deliveries d
            JOIN unit_stages s ON s.id = d.unit_stage_id
            JOIN demands dm ON dm.unit_stage_id = s.id
           WHERE d.state = 'delivered' AND dm.paid_at IS NULL
-            AND d.delivered_at < now() - ($2 || ' days')::interval)                      wait,
-        (SELECT count(*) FROM choices WHERE selected IS NULL)                            choices,
-        (SELECT count(*) FROM queries WHERE kind = 'warranty' AND status <> 'closed')    warranty,
-        (SELECT count(*) FROM qpr_filings WHERE filed_at IS NULL)                        qpr,
-        (SELECT count(*) FROM possessions WHERE handed_over_at IS NOT NULL)              possession,
-        (SELECT count(*) FROM queries WHERE kind = 'query' AND status = 'open')          questions
-      `, [String(AGE.overdue), String(PACK_LATE_DAYS)])).rows[0];
+            AND d.delivered_at < now() - ($1 || ' days')::interval)                     wait,
+        (SELECT count(*) FROM units u WHERE NOT EXISTS (
+            SELECT 1 FROM evidence e JOIN unit_stages s ON s.id = e.unit_stage_id
+             WHERE s.unit_id = u.id AND e.taken_at > now() - ($2 || ' days')::interval)) silent,
+        (SELECT count(*) FROM choices
+          WHERE selected IS NULL AND needed_by < CURRENT_DATE)                          choices,
+        (SELECT count(*) FROM snags WHERE status = 'open')                              warranty
+      `, [String(PACK_LATE_DAYS), String(QUIET_DAYS)])).rows[0];
     for (const k of Object.keys(r)) r[k] = Number(r[k]);
-    /* Owner view, escrow and evidence carry no count in v21 - they are a
-       position rather than a queue, and a number beside them would read as
-       work outstanding. `null` is what the sidebar renders as nothing. */
-    r.today = null; r.owner = null; r.escrow = null; r.evidence = null;
     return r;
   }
 
-  // -------------------------------------------------------------- the sidebar
-
-  /* Rendered by `desk()` for the other two roles from `destinations()`. The
-     office cannot use that: fifteen flat links are a list, and the nine
-     headings are what make it navigation. So this role draws its own, in the
-     same `.side` markup v21 uses, and `desk()` is handed it. */
-  function sidebar(current, n) {
-    return GROUPS.map(([g, items]) =>
-      (g ? `<p class="k grp">${esc(g)}</p>` : '') +
-      items.map(([k, label]) => {
-        const c = n[k];
-        /* `aria-current` as well as v21's `aria-selected`: the first is what a
-           screen reader announces for the page you are on, and it is what the
-           shell test looks for across all three roles. */
-        return `<a class="sbtn st" href="${href(k)}" aria-selected="${current === k}"${
-          current === k ? ' aria-current="page"' : ''}
- style="text-decoration:none;display:flex;align-items:center;gap:8px">${esc(label)}${
-   c === null || c === undefined ? ''
-     : `<span class="c${c === 0 ? ' zero' : ''}">${c}</span>`}</a>`;
-      }).join('')).join('');
-  }
-
-  /* The same nine groups as a drawer over whatever you were looking at.
-
-     It was a screen: you tapped Menu, the page navigated, and you arrived
-     somewhere that looked like every other screen in the role. That reads as
-     the menu not having opened - which is how it was reported. A menu is a
-     layer, not a destination: the thing you were reading stays behind it,
-     dimmed, so it is obvious both that something opened and what it is over.
-
-     No JavaScript. The button is a link to `#menu` and the panel is shown by
-     `:target`, which also means the back button closes it and the browser's
-     own history does the work. With no CSS at all it degrades to a list of
-     fifteen links at the foot of the document, which is the correct fallback.
-
-     `overflow-y: auto` on the panel is the one place in the application an
-     inner scroller is right: it is a fixed-height layer over the page, not a
-     pane inside it. */
-  function drawer(current, n) {
-    const body = GROUPS.map(([g, items]) =>
-      (g ? `<p class="dgrp">${esc(g)}</p>` : '') +
-      items.map(([k, label]) => {
-        const c = n[k];
-        const num = c === null || c === undefined ? ''
-          : `<span class="dn${c === 0 ? ' zero' : k === 'chase' || k === 'silent' ? ' due' : ''}">${c}</span>`;
-        return `<a href="${href(k)}"${current === k ? ' aria-current="page"' : ''}>${
-          icon(k)}<span class="dl">${esc(label)}</span>${num}</a>`;
-      }).join('')).join('');
-
-    return `<div class="drawer" id="menu">
-<a class="dscrim" href="#" aria-label="Close the menu"></a>
-<nav class="dpanel" aria-label="All destinations">
-<div class="dhead"><p class="dname">Plint</p><p class="dorg">NVT Eterna &middot; Phase 1</p></div>
-${body}
-<div class="dfoot"><a class="wbtn st" href="#" style="text-decoration:none">Close</a></div>
-</nav></div>`;
-  }
-
-  // ---------------------------------------------------------------- the reads
-
-  /** The counts every screen needs, plus the rows the asked-for screen needs. */
   async function load(sess, which) {
-    return asUser(sess, async c => {
-      const n = await counts(c);
-      const byProject = await schedules(c);
-      const rows = await forScreen(c, which);
-      return { n, byProject, rows };
-    });
+    return asUser(sess, async c => ({
+      n: await counts(c),
+      byProject: await schedules(c),
+      rows: await forScreen(c, which),
+    }));
   }
 
-  /* One query per destination, written where the screen that reads it is.
-     Everything is a plain read except the aggregates on Owner view. */
+  // ------------------------------------------------------------------- data
+
+  /* One read per destination, written beside the screen that consumes it. */
   async function forScreen(c, k) {
     switch (k) {
 
-      case 'today': return {
-        /* How far through the book the project is, for the summary's bar. */
-        stagesPaid: Number((await c.query(
-          `SELECT count(*) n FROM unit_stages WHERE status = 'paid'`)).rows[0].n),
-        stagesAll: Number((await c.query(
-          `SELECT count(*) n FROM unit_stages`)).rows[0].n),
-        blockers: (await c.query(
-          `SELECT u.id unit_id, u.code, u.buyer_name, u.bank, u.agreement_value_paise,
-                  u.project_id, u.assigned_engineer_id,
-                  t.name stage_name, t.pct_bp, t.seq, s.status,
-                  b.holder, b.holder_role, b.reason, b.since, (CURRENT_DATE - b.since) age
-             FROM blockers b
-             JOIN unit_stages s ON s.id = b.unit_stage_id
+      case 'dashboard': return {
+        money: (await c.query(
+          `SELECT coalesce(sum(total_paise) FILTER (WHERE paid_at IS NOT NULL), 0) collected,
+                  coalesce(sum(total_paise) FILTER (WHERE paid_at IS NULL), 0)     outstanding,
+                  coalesce(sum(total_paise), 0)                                    billed
+             FROM demands`)).rows[0],
+        stages: (await c.query(
+          `SELECT count(*) FILTER (WHERE status = 'certified' OR status = 'demanded'
+                                      OR status = 'paid')                     certified,
+                  count(*) FILTER (WHERE status = 'marked')                   marked,
+                  count(*) FILTER (WHERE status <> 'pending')                 due,
+                  count(*)                                                    all_stages,
+                  count(*) FILTER (WHERE status = 'certified' AND certified_at
+                                     >= date_trunc('month', now()))           this_month
+             FROM unit_stages`)).rows[0],
+        villas: Number((await c.query(`SELECT count(*) n FROM units`)).rows[0].n),
+        /* Delivered and NOT yet paid. Counting every delivery ever made put
+           195 on the dashboard while the screen behind it said nothing was
+           sitting with a lender - both were true and they contradicted each
+           other, because one counted history and the other counted work. */
+        atLender: Number((await c.query(
+          `SELECT count(*) n FROM pack_deliveries d
+             JOIN unit_stages s ON s.id = d.unit_stage_id
+             LEFT JOIN demands dm ON dm.unit_stage_id = s.id
+            WHERE d.state IN ('sending','delivered') AND dm.paid_at IS NULL`)).rows[0].n),
+        receivable: (await c.query(
+          `SELECT coalesce(sum(dm.total_paise), 0) v FROM demands dm
+             JOIN unit_stages s ON s.id = dm.unit_stage_id
+             JOIN units u ON u.id = s.unit_id
+            WHERE dm.paid_at IS NULL AND u.bank IS NOT NULL`)).rows[0].v,
+        /* The money the office is waiting on evidence for: stages the engineer
+           has marked but nobody has certified, so no pack and no demand. */
+        waiting: (await c.query(
+          `SELECT s.id, u.code, u.buyer_name, u.agreement_value_paise, u.project_id,
+                  t.name stage_name, t.seq, s.marked_at
+             FROM unit_stages s
              JOIN units u ON u.id = s.unit_id
              JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
-            ORDER BY (CURRENT_DATE - b.since) DESC`)).rows,
-      /* LEFT JOIN, and a fallback, because `users` is behind row-level
-         security: a buyer may read only their own row, and the office may read
-         only engineer and office rows - the table holds password hashes, so
-         widening that to name somebody is not the trade. An inner join here
-         does not error, it silently returns nothing, which is how the office's
-         whole buyer-question queue came out empty and how the buyer would
-         never have seen a single reply from the office. */
+            WHERE s.status = 'marked' ORDER BY s.marked_at`)).rows,
+        queued: (await c.query(
+          `SELECT d.id, u.code, u.buyer_name, u.bank, t.name stage_name, d.queued_at,
+                  dm.total_paise
+             FROM pack_deliveries d
+             JOIN unit_stages s ON s.id = d.unit_stage_id
+             JOIN units u ON u.id = s.unit_id
+             JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
+             LEFT JOIN demands dm ON dm.unit_stage_id = s.id
+            WHERE d.state = 'queued' ORDER BY d.queued_at LIMIT 5`)).rows,
+        quiet: (await c.query(
+          `SELECT u.code, u.buyer_name,
+                  (SELECT max(e.taken_at) FROM evidence e
+                     JOIN unit_stages s ON s.id = e.unit_stage_id
+                    WHERE s.unit_id = u.id) last_shot
+             FROM units u
+            WHERE NOT EXISTS (
+              SELECT 1 FROM evidence e JOIN unit_stages s ON s.id = e.unit_stage_id
+               WHERE s.unit_id = u.id AND e.taken_at > now() - ($1 || ' days')::interval)
+            ORDER BY 3 NULLS FIRST LIMIT 5`, [String(QUIET_DAYS)])).rows,
+        worklist: (await c.query(
+          `SELECT s.id, s.status, s.marked_at, s.certified_at,
+                  u.code, u.buyer_name, u.bank, u.agreement_value_paise, u.project_id,
+                  t.name stage_name, t.seq,
+                  dm.due_at, dm.paid_at, dm.total_paise,
+                  (SELECT count(*)::int FROM evidence e WHERE e.unit_stage_id = s.id) shots
+             FROM unit_stages s
+             JOIN units u ON u.id = s.unit_id
+             JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
+             LEFT JOIN demands dm ON dm.unit_stage_id = s.id
+            WHERE s.status <> 'pending'
+            ORDER BY (s.status = 'marked') DESC, coalesce(dm.due_at, s.marked_at)
+            LIMIT 12`)).rows,
+        /* LEFT JOIN, and a fallback name, because `users` is behind row-level
+           security: the office may read engineer and office rows only, so an
+           inner join here would silently return nothing and the whole queue
+           would come out empty. It did, once. */
         questions: (await c.query(
-          `SELECT q.*, u.code, coalesce(w.display_name, u.buyer_name) asker,
+          `SELECT q.id, q.subject, q.raised_at, u.code,
+                  coalesce(w.display_name, u.buyer_name) asker,
                   (SELECT count(*)::int FROM query_messages m WHERE m.query_id = q.id) replies
              FROM queries q JOIN units u ON u.id = q.unit_id
              LEFT JOIN users w ON w.id = q.raised_by
             WHERE q.kind = 'query' AND q.status = 'open'
-            ORDER BY q.raised_at`)).rows,
-      };
-
-      case 'owner': return {
-        money: (await c.query(
-          `SELECT coalesce(sum(total_paise) FILTER (WHERE paid_at IS NOT NULL), 0)  collected,
-                  coalesce(sum(total_paise) FILTER (WHERE paid_at IS NULL), 0)      outstanding,
-                  count(*) FILTER (WHERE paid_at IS NULL)                           unpaid,
-                  /* Past its due date and still unpaid. An owner reads "money
-                     demanded" and "money late" as two different problems, and
-                     one of them is the one that needs a phone call. */
-                  coalesce(sum(total_paise) FILTER (
-                    WHERE paid_at IS NULL AND due_at < now()), 0)                   overdue,
-                  count(*) FILTER (WHERE paid_at IS NULL AND due_at < now())        overdue_n
-             FROM demands`)).rows[0],
-        escrow: (await c.query(
-          `SELECT coalesce(sum(amount_paise) FILTER (WHERE direction = 'in'), 0)  inn,
-                  coalesce(sum(amount_paise) FILTER (WHERE direction = 'out'), 0) out
-             FROM escrow_movements`)).rows[0],
-        stages: (await c.query(
-          `SELECT status, count(*)::int n FROM unit_stages GROUP BY status`)).rows,
-        villas: (await c.query(
-          `SELECT count(*)::int n,
-                  count(*) FILTER (WHERE sanction_recorded_at IS NOT NULL)::int sanctioned,
-                  count(*) FILTER (WHERE bank IS NULL)::int self_funded,
-                  coalesce(sum(agreement_value_paise), 0) value
-             FROM units`)).rows[0],
-        ageing: (await c.query(
-          `SELECT (CURRENT_DATE - since) age FROM blockers`)).rows,
-      };
-
-      case 'handoff': return {
-        list: (await c.query(
-          `SELECT h.*, u.code, u.buyer_name, u.unit_type, u.agreement_value_paise
-             FROM handoffs h JOIN units u ON u.id = h.unit_id
-            ORDER BY h.picked_up_at NULLS FIRST, h.created_at`)).rows,
+            ORDER BY q.raised_at LIMIT 6`)).rows,
+        /* What an engineer has reported as stopping the work. It is money that
+           has stopped, so it belongs at the top of this screen and not behind
+           a destination of its own. */
+        blockers: (await c.query(
+          `SELECT b.reason, b.holder, b.holder_role, b.since, u.code, u.buyer_name,
+                  t.name stage_name, (CURRENT_DATE - b.since) age
+             FROM blockers b
+             JOIN unit_stages s ON s.id = b.unit_stage_id
+             JOIN units u ON u.id = s.unit_id
+             JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
+            ORDER BY (CURRENT_DATE - b.since) DESC LIMIT 8`)).rows,
+        pipeline: (await c.query(
+          `SELECT d.state, d.queued_at, d.delivered_at, u.code, u.buyer_name, u.bank,
+                  t.name stage_name, dm.total_paise, dm.paid_at,
+                  (SELECT count(*)::int FROM pack_queries q
+                    WHERE q.unit_stage_id = s.id AND q.answered_at IS NULL) open_q
+             FROM pack_deliveries d
+             JOIN unit_stages s ON s.id = d.unit_stage_id
+             JOIN units u ON u.id = s.unit_id
+             JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
+             LEFT JOIN demands dm ON dm.unit_stage_id = s.id
+            ORDER BY d.queued_at`)).rows,
       };
 
       case 'packs': case 'wait': return {
@@ -352,27 +387,45 @@ ${body}
       case 'chase': return {
         list: (await c.query(
           `SELECT u.id unit_id, u.code, u.buyer_name, u.bank, u.agreement_value_paise,
-                  u.lender_chosen_at, u.sanction_recorded_at, u.sanction_paise,
-                  u.own_contribution_paise
+                  u.lender_chosen_at, u.sanction_recorded_at, u.sanction_paise
              FROM units u
             WHERE u.bank IS NOT NULL AND u.sanction_recorded_at IS NULL
             ORDER BY u.lender_chosen_at NULLS LAST, u.code`)).rows,
       };
 
-      case 'signoff': return {
+      case 'stages': return {
+        /* The blocker comes with the stage. A stage that has stopped has to
+           say what stopped it on the row itself - the engineer types the
+           reason once, and this is where the office reads it. */
         list: (await c.query(
-          `SELECT s.id, s.marked_at, s.marked_by, u.id unit_id, u.code, u.buyer_name,
-                  u.agreement_value_paise, u.project_id, u.assigned_engineer_id,
-                  t.name stage_name, t.seq, t.pct_bp,
+          `SELECT s.id, s.status, s.marked_at, s.certified_at,
+                  u.code, u.buyer_name, u.agreement_value_paise, u.project_id,
+                  t.name stage_name, t.seq, dm.due_at, dm.paid_at, dm.total_paise,
+                  b.reason blocked_reason, b.holder blocked_with,
+                  (CURRENT_DATE - b.since) blocked_age,
                   (SELECT count(*)::int FROM evidence e WHERE e.unit_stage_id = s.id) shots
              FROM unit_stages s
              JOIN units u ON u.id = s.unit_id
              JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
-            WHERE s.status = 'marked'
-            ORDER BY s.marked_at`)).rows,
-        engineers: (await c.query(
-          `SELECT id, display_name, engineer_reg FROM users
-            WHERE role = 'engineer' ORDER BY display_name`)).rows,
+             LEFT JOIN demands dm ON dm.unit_stage_id = s.id
+             LEFT JOIN blockers b ON b.unit_stage_id = s.id
+            ORDER BY (b.since IS NOT NULL) DESC, u.code, t.seq`)).rows,
+      };
+
+      case 'evidence': return {
+        list: (await c.query(
+          `SELECT e.sha256, e.caption, e.taken_at, e.gps, u.code, t.name stage_name,
+                  s.status, s.certified_at, s.certificate_hash
+             FROM evidence e
+             JOIN unit_stages s ON s.id = e.unit_stage_id
+             JOIN units u ON u.id = s.unit_id
+             JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
+            ORDER BY e.taken_at DESC LIMIT 40`)).rows,
+        totals: (await c.query(
+          `SELECT count(*)::int shots, count(DISTINCT sha256)::int distinct_hashes
+             FROM evidence`)).rows[0],
+        certs: Number((await c.query(
+          `SELECT count(*) n FROM unit_stages WHERE certificate_hash IS NOT NULL`)).rows[0].n),
       };
 
       case 'silent': return {
@@ -389,8 +442,94 @@ ${body}
              FROM units u LEFT JOIN users w ON w.id = u.assigned_engineer_id
             ORDER BY u.code`)).rows,
         engineers: (await c.query(
-          `SELECT id, display_name, engineer_reg FROM users
-            WHERE role = 'engineer' ORDER BY display_name`)).rows,
+          `SELECT id, display_name FROM users WHERE role = 'engineer' ORDER BY display_name`)).rows,
+      };
+
+      case 'signoff': return {
+        list: (await c.query(
+          `SELECT s.id, s.marked_at, u.id unit_id, u.code, u.buyer_name,
+                  u.agreement_value_paise, u.project_id, u.assigned_engineer_id,
+                  w.display_name engineer_name,
+                  t.name stage_name, t.seq,
+                  (SELECT count(*)::int FROM evidence e WHERE e.unit_stage_id = s.id) shots
+             FROM unit_stages s
+             JOIN units u ON u.id = s.unit_id
+             LEFT JOIN users w ON w.id = u.assigned_engineer_id
+             JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
+            WHERE s.status = 'marked'
+            ORDER BY s.marked_at`)).rows,
+        engineers: (await c.query(
+          `SELECT id, display_name FROM users WHERE role = 'engineer' ORDER BY display_name`)).rows,
+      };
+
+      case 'villas': return {
+        list: (await c.query(
+          `SELECT u.id unit_id, u.code, u.buyer_name, u.unit_type, u.bank,
+                  u.agreement_value_paise, u.sanction_recorded_at,
+                  w.display_name engineer_name,
+                  (SELECT count(*)::int FROM unit_stages s
+                    WHERE s.unit_id = u.id AND s.status = 'paid')            paid,
+                  (SELECT count(*)::int FROM unit_stages s WHERE s.unit_id = u.id) stages
+             FROM units u LEFT JOIN users w ON w.id = u.assigned_engineer_id
+            ORDER BY u.code`)).rows,
+        handoffs: (await c.query(
+          `SELECT h.id, h.token_paise, h.salesperson, h.note, h.created_at, h.picked_up_at,
+                  u.code, u.buyer_name
+             FROM handoffs h JOIN units u ON u.id = h.unit_id
+            WHERE h.picked_up_at IS NULL ORDER BY h.created_at`)).rows,
+      };
+
+      case 'documents': return {
+        stages: (await c.query(
+          `SELECT s.id, s.status, s.certificate_hash, s.certified_at,
+                  u.code, u.buyer_name, t.name stage_name, dm.doc_no,
+                  (SELECT count(*)::int FROM evidence e WHERE e.unit_stage_id = s.id) shots
+             FROM unit_stages s
+             JOIN units u ON u.id = s.unit_id
+             JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
+             LEFT JOIN demands dm ON dm.unit_stage_id = s.id
+            WHERE s.status IN ('certified','demanded','paid')
+            ORDER BY s.certified_at DESC NULLS LAST LIMIT 30`)).rows,
+        loans: (await c.query(
+          `SELECT a.full_name, a.relation, u.code,
+                  count(d.*)::int asked,
+                  count(d.seen_at)::int seen
+             FROM loan_applicants a
+             JOIN units u ON u.id = a.unit_id
+             LEFT JOIN loan_documents d ON d.applicant_id = a.id
+            GROUP BY a.id, a.full_name, a.relation, u.code, a.seq
+            ORDER BY u.code, a.seq LIMIT 20`)).rows,
+      };
+
+      case 'choices': return {
+        list: (await c.query(
+          `SELECT ch.*, u.code, u.buyer_name FROM choices ch
+             JOIN units u ON u.id = ch.unit_id
+            ORDER BY ch.selected NULLS FIRST, ch.needed_by`)).rows,
+      };
+
+      case 'visits': return {
+        list: (await c.query(
+          `SELECT v.*, u.code, u.buyer_name, w.display_name engineer_name
+             FROM visits v JOIN units u ON u.id = v.unit_id
+             LEFT JOIN users w ON w.id = v.engineer_id
+            ORDER BY v.slot_at DESC LIMIT 40`)).rows,
+      };
+
+      case 'warranty': return {
+        snags: (await c.query(
+          `SELECT sn.*, u.code, u.buyer_name FROM snags sn JOIN units u ON u.id = sn.unit_id
+            ORDER BY sn.status, sn.raised_at DESC LIMIT 40`)).rows,
+        claims: (await c.query(
+          `SELECT q.*, u.code, coalesce(w.display_name, u.buyer_name) asker,
+                  (SELECT count(*)::int FROM query_messages m WHERE m.query_id = q.id) replies
+             FROM queries q JOIN units u ON u.id = q.unit_id
+             LEFT JOIN users w ON w.id = q.raised_by
+            WHERE q.kind = 'warranty' ORDER BY q.status, q.raised_at`)).rows,
+      };
+
+      case 'rera': return {
+        list: (await c.query(`SELECT * FROM qpr_filings ORDER BY due_on DESC`)).rows,
       };
 
       case 'escrow': return {
@@ -404,44 +543,6 @@ ${body}
              FROM escrow_movements`)).rows[0],
       };
 
-      case 'choices': return {
-        list: (await c.query(
-          `SELECT ch.*, u.code, u.buyer_name FROM choices ch
-             JOIN units u ON u.id = ch.unit_id
-            WHERE ch.selected IS NULL ORDER BY ch.needed_by`)).rows,
-      };
-
-      case 'warranty': return {
-        list: (await c.query(
-          `SELECT q.*, u.code, u.buyer_name, coalesce(w.display_name, u.buyer_name) asker,
-                  (SELECT count(*)::int FROM query_messages m WHERE m.query_id = q.id) replies
-             FROM queries q JOIN units u ON u.id = q.unit_id
-             LEFT JOIN users w ON w.id = q.raised_by
-            WHERE q.kind = 'warranty' ORDER BY q.status, q.raised_at`)).rows,
-        snags: (await c.query(
-          `SELECT sn.*, u.code FROM snags sn JOIN units u ON u.id = sn.unit_id
-            WHERE sn.status = 'open' ORDER BY sn.raised_at`)).rows,
-      };
-
-      case 'evidence': return {
-        list: (await c.query(
-          `SELECT e.sha256, e.caption, e.taken_at, e.gps, u.code, t.name stage_name,
-                  s.status, s.certified_at, s.certified_by
-             FROM evidence e
-             JOIN unit_stages s ON s.id = e.unit_stage_id
-             JOIN units u ON u.id = s.unit_id
-             JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
-            ORDER BY e.taken_at DESC LIMIT 40`)).rows,
-        totals: (await c.query(
-          `SELECT count(*)::int shots, count(DISTINCT sha256)::int distinct_hashes
-             FROM evidence`)).rows[0],
-      };
-
-      case 'qpr': return {
-        list: (await c.query(
-          `SELECT * FROM qpr_filings ORDER BY due_on DESC`)).rows,
-      };
-
       case 'possession': return {
         list: (await c.query(
           `SELECT p.*, u.code, u.buyer_name FROM possessions p
@@ -449,761 +550,876 @@ ${body}
             ORDER BY p.handed_over_at NULLS LAST, u.code`)).rows,
       };
 
+      case 'schedule': return {
+        list: (await c.query(
+          `SELECT t.*, pr.name project_name, pr.phase,
+                  (SELECT count(*)::int FROM unit_stages s
+                    WHERE s.stage_code = t.code AND s.status = 'paid')      paid,
+                  (SELECT count(*)::int FROM unit_stages s
+                    WHERE s.stage_code = t.code)                            total
+             FROM stage_templates t JOIN projects pr ON pr.id = t.project_id
+            ORDER BY t.project_id, t.seq`)).rows,
+        avg: (await c.query(
+          `SELECT coalesce(avg(agreement_value_paise), 0) v FROM units`)).rows[0].v,
+      };
+
+      case 'lenders': return {
+        list: (await c.query(
+          `SELECT l.*,
+                  (SELECT count(*)::int FROM units u WHERE u.bank = l.name)  villas,
+                  (SELECT coalesce(sum(dm.total_paise), 0) FROM demands dm
+                     JOIN unit_stages s ON s.id = dm.unit_stage_id
+                     JOIN units u ON u.id = s.unit_id
+                    WHERE u.bank = l.name AND dm.paid_at IS NULL)            owed
+             FROM lenders l ORDER BY l.seq`)).rows,
+      };
+
+      /* No join to `sessions`. The application role has no read on that table
+         at all - it is the session store, and a console that can list live
+         sessions is a console that can be read for tokens. So this screen says
+         who may sign in, not who is signed in, and the difference is the
+         point. */
+      case 'logins': return {
+        list: (await c.query(
+          `SELECT u.id, u.email, u.role, u.display_name, u.engineer_qual, u.engineer_reg
+             FROM users u ORDER BY u.role, u.display_name`)).rows,
+        buyers: Number((await c.query(
+          `SELECT count(*) n FROM units WHERE buyer_user_id IS NOT NULL`)).rows[0].n),
+      };
+
+      case 'settings': return {
+        project: (await c.query(`SELECT * FROM projects LIMIT 1`)).rows[0],
+        villas: Number((await c.query(`SELECT count(*) n FROM units`)).rows[0].n),
+        stages: Number((await c.query(`SELECT count(*) n FROM stage_templates`)).rows[0].n),
+        lenders: Number((await c.query(`SELECT count(*) n FROM lenders WHERE on_panel`)).rows[0].n),
+        audit: Number((await c.query(`SELECT count(*) n FROM audit_log`)).rows[0].n),
+      };
+
       default: return {};
     }
   }
 
-  // ------------------------------------------------------------- the screens
+  // ------------------------------------------------------------ the screens
 
-  /** Wraps a screen in the shell, with the office's own sidebar. */
-  const screen = (sess, k, n, main) =>
-    desk(sess, k, HEAD[k][0], '', main, sidebar(k, n), drawer(k, n));
+  const SCREENS = {};
 
-  /* Stuck money, grouped by who is holding it up rather than by stage.
+  /* ------------------------------------------------------------- dashboard */
+  SCREENS.dashboard = (sess, d) => {
+    const s = d.rows.stages, m = d.rows.money;
+    const waitingValue = d.rows.waiting.reduce((t, r) => t + stageTotal(d.byProject, r), 0);
+    const certified = Number(s.certified), due = Number(s.due) || 1;
+    const pct = Math.round((certified / due) * 100);
 
-     Which is also how the fifteen destinations are grouped: the engineer's
-     share is "Sign-off and evidence", the lender's is "Sent, not yet paid",
-     the buyer's is "Sanction not recorded". The heading here is the sentence
-     that says which of those to open, and it carries the money with it,
-     because "six villas" and "two crore" are different sizes of problem. */
-  /* Column headings now, not section headings. A column is about 290px and
-     "Waiting on the certifying engineer" wraps to three lines of it; the
-     board's own heading says these are all things being waited on, so each
-     column only has to name who. */
-  const HOLDER = {
-    engineer: 'The engineer',
-    lender:   'The lender',
-    office:   'This office',
-    buyer:    'The buyer',
-  };
-
-  function stuckByHolder(rows) {
-    if (!rows.length) return '';
-    const by = {};
-    for (const x of rows) (by[x.holder_role] ||= []).push(x);
-    return UI.board(['engineer', 'lender', 'office', 'buyer'].map(k => {
-      const g = (by[k] || []).sort((a, b) => b.age - a.age);
-      if (!g.length) return null;
-      const sum = g.reduce((n, x) => n + x.value, 0);
-      const oldest = g[0].age;
-      return {
-        label: HOLDER[k],
-        note: M.crore(sum) + ' &middot; oldest ' + oldest + ' days',
-        cards: g.map(x => ({
-          href: '/office/buyer/' + encodeURIComponent(x.code),
-          code: x.code,
-          title: x.stage_name,
-          detail: esc(x.reason),
-          days: x.age + 'd',
-          daysAge: x.age,
-          chip: ageChip(x.age, ['Open', 'Ageing', 'Overdue']),
-          amount: M.crore(x.value),
-        })),
-      };
+    const cols = [
+      { label: 'Certified, pack not sent', state: r => r.state === 'queued' },
+      { label: 'With the lender', state: r => r.state === 'sending' || (r.state === 'delivered' && !r.paid_at && !r.open_q) },
+      { label: 'Lender has asked', state: r => r.open_q > 0 && !r.paid_at },
+      { label: 'Disbursed', state: r => !!r.paid_at },
+    ].map(c => ({
+      label: c.label,
+      cards: d.rows.pipeline.filter(c.state).slice(0, 6).map(r => ({
+        title: r.code + ' · ' + r.stage_name,
+        sub: (r.bank || 'self funded') + ' · ' + (r.total_paise ? M.crore(r.total_paise) : 'not priced'),
+        href: villaHref(r.code),
+        tags: r.paid_at ? pill('paid', 'Disbursed')
+          : r.open_q ? pill('over', 'Query open')
+            : r.state === 'queued' ? pill('due', 'Ready to send')
+              : pill('accent', 'At the lender'),
+      })),
     }));
-  }
 
-  function today(sess, d, msg) {
-    const { n } = d;
-    const b = d.rows.blockers || [];
-    for (const x of b) x.value = stageTotal(d.byProject, x);
-    const stuck = b.reduce((a, x) => a + x.value, 0);
-    const onYou = n.handoff + n.packs + n.query + n.chase + n.questions;
-
-    /* The four things this office can act on, as tiles rather than as rows.
-
-       They were rows in a list under a heading, which is the same weight as
-       every other row on the screen - so fourteen missing sanction letters and
-       one settled stage read alike, and the fourteen got scrolled past. A tile
-       with the number at 30px and the colour of how late it is says which of
-       them is the problem before anything is read. */
-    const tiles = UI.stats([
-      { n: n.chase,   label: 'No sanction', sub: 'nothing can be disbursed',
-        href: href('chase'),   tone: UI.countTone(n.chase, true) },
-      { n: n.packs,   label: 'Packs to send', sub: 'verified, not with the lender',
-        href: href('packs'),   tone: UI.countTone(n.packs, true) },
-      { n: n.handoff, label: 'New from sales', sub: 'no owner in this office',
-        href: href('handoff'), tone: UI.countTone(n.handoff, true) },
-      { n: n.query,   label: 'Lender asked', sub: 'holding a disbursement',
-        href: href('query'),   tone: UI.countTone(n.query, true) },
-    ]);
-
-    const questions = (d.rows.questions || []).map(q => wrow({
-      href: '/office/question/' + encodeURIComponent(q.id),
-      code: q.code,
-      title: q.subject,
-      detail: esc(q.asker) + ' &middot; ' + q.replies + ' message' + (q.replies === 1 ? '' : 's'),
-      chip: '<i class="chip late">Open</i>',
-      days: days(q.raised_at) + 'd',
-      daysAge: days(q.raised_at),
-    })).join('');
-
-    const oldest = b.length ? Math.max(...b.map(x => x.age)) : 0;
-
-    /* What is happening, before what needs doing. The money is the headline
-       because this is the screen an owner opens: how much is not moving, what
-       it is made of, and how far through the book the project is. */
-    const paid = d.rows.stagesPaid || 0, allStages = d.rows.stagesAll || 1;
-
-    return screen(sess, 'today', n, `
-${UI.head('Today',
-  onYou ? 'Work this office can move today. What it is only waiting on is under '
-          + '&ldquo;Chasing your team&rdquo; and &ldquo;Waiting on the bank&rdquo;.'
-        : 'Nothing is sitting with this office. The rest is with the site, the '
-          + 'lenders and the buyers.',
-  UI.summary({
-    cap: 'Stuck money',
-    figure: M.crore(stuck),
-    tone: stuck > 0 ? 'hot' : null,
-    note: b.length + ' stage' + (b.length === 1 ? '' : 's') + ' blocked across the project'
-      + (oldest ? ', the oldest for ' + oldest + ' days' : ''),
-    parts: [
-      { cap: 'On this office', value: String(onYou), tone: UI.countTone(onYou, true) },
-      { cap: 'Oldest', value: oldest + 'd', tone: UI.ageTone(oldest) },
-      { cap: 'Blocked', value: String(b.length) },
-    ],
-    bar: {
-      pct: Math.round(paid / allStages * 100),
-      left: Math.round(paid / allStages * 100) + '% of stages paid',
-      right: paid + ' of ' + allStages,
-    },
-  }) + tiles)}
-<div class="mbody anim">
-${flash(msg)}
-${questions ? `<div class="blk"><p class="k">Buyers have asked you something</p></div>
-<div class="wl">${questions}</div><div class="gap"></div>` : ''}
-${b.length ? `<div class="blk"><p class="k">Stuck money, by who is holding it up</p></div>
-${stuckByHolder(b)}` : `<div class="blk"><p class="k">Stuck money</p></div>
-<div class="wl">${empty('No stage is blocked anywhere on the project.')}</div>`}
-</div>`);
-  }
-
-  /* THE OWNER'S DASHBOARD.
-
-     Not a worklist and not a page of totals in a column. The person opening
-     this wants three answers before they read a word: is the money coming in,
-     is the work moving, and what is stuck. It had one figure and two lists,
-     which answered none of them - "so empty", which it was.
-
-     Every piece here is the shared furniture: the summary, the tiles, and the
-     two charts. Nothing on this screen is drawn for this screen. */
-  function owner(sess, d, msg) {
-    const { n } = d;
-    const r = d.rows;
-
-    const collected  = Number(r.money.collected);
-    const unpaid     = Number(r.money.outstanding);
-    const overdue    = Number(r.money.overdue);
-    const dueLater   = Math.max(0, unpaid - overdue);
-    const escrowHeld = Number(r.escrow.inn) - Number(r.escrow.out);
-    const book       = Number(r.villas.value);
-    const notAsked   = Math.max(0, book - collected - unpaid);
-
-    const byStatus = Object.fromEntries(r.stages.map(x => [x.status, x.n]));
-    const paid      = byStatus.paid || 0;
-    const demanded  = byStatus.demanded || 0;
-    const certified = (byStatus.certified || 0) + (byStatus.marked || 0);
-    const pending   = byStatus.pending || 0;
-    const allStages = paid + demanded + certified + pending || 1;
-
-    const ages = r.ageing.map(x => Number(x.age));
-    const blocked = ages.length;
-    const oldest = blocked ? Math.max(...ages) : 0;
-
-    /* v21's four buckets, on this application's own thresholds rather than on
-       numbers typed into a chart: anything past `overdue` is red, because that
-       is what red means on every other screen in the product. */
-    const buckets = [
-      ['Under 10d', 0, AGE.ageing - 1, null],
-      [AGE.ageing + ' to ' + (AGE.overdue - 1) + 'd', AGE.ageing, AGE.overdue - 1, 'warn'],
-      [AGE.overdue + ' to 34d', AGE.overdue, 34, 'hot'],
-      ['35d and over', 35, 99999, 'hot'],
-    ];
-
-    const facts = (label, rows) =>
-      `<div class="blk"><p class="k">${esc(label)}</p></div><div class="wl">${
-        rows.map(([k, v]) => wrow({ title: k, amount: v })).join('')}</div>`;
-
-    return screen(sess, 'owner', n, `
-${UI.head('The position',
-  r.villas.n + ' villas, ' + M.crore(book) + ' of agreements, and where all of '
-  + 'it stands today.',
-  UI.summary({
-    cap: 'Collected',
-    figure: M.crore(collected),
-    tone: 'ok',
-    note: M.crore(overdue) + ' of what has been demanded is past its due date, and '
-      + M.crore(escrowHeld) + ' is held in escrow against work not yet built.',
-    parts: [
-      { cap: 'Overdue', value: M.crore(overdue), tone: overdue > 0 ? 'hot' : null },
-      { cap: 'Demanded', value: M.crore(unpaid) },
-      { cap: 'In escrow', value: M.crore(escrowHeld) },
-    ],
-    bar: {
-      pct: Math.round(collected / (book || 1) * 100),
-      left: Math.round(collected / (book || 1) * 100) + '% of the book collected',
-      right: M.crore(collected) + ' of ' + M.crore(book),
-    },
-  }) + UI.stats([
-    { n: M.crore(overdue), label: 'Late', sub: r.money.overdue_n + ' demands past due',
-      href: href('wait'), tone: overdue > 0 ? 'hot' : null },
-    { n: blocked, label: 'Blocked', sub: 'stages not moving',
-      href: href('signoff'), tone: UI.countTone(blocked, true) },
-    { n: oldest + 'd', label: 'Oldest', sub: 'the longest wait',
-      href: href('signoff'), tone: UI.ageTone(oldest) },
-    { n: n.chase, label: 'No sanction', sub: 'nothing can be disbursed',
-      href: href('chase'), tone: UI.countTone(n.chase, true) },
-  ]))}
-<div class="mbody anim">
-${flash(msg)}
-${UI.mix('Where the money is', [
-  { label: 'Collected', value: M.crore(collected), n: collected, tone: 'ok' },
-  { label: 'Overdue', value: M.crore(overdue), n: overdue, tone: 'hot' },
-  { label: 'Demanded, in date', value: M.crore(dueLater), n: dueLater, tone: 'warn' },
-  { label: 'Not yet asked for', value: M.crore(notAsked), n: notAsked },
-])}
-${UI.mix('Where the work is', [
-  { label: 'Paid', value: String(paid), n: paid, tone: 'ok' },
-  { label: 'Demanded', value: String(demanded), n: demanded, tone: 'warn' },
-  { label: 'Built, not billed', value: String(certified), n: certified },
-  { label: 'Not started', value: String(pending), n: pending, tone: 'rest' },
-])}
-${UI.bars('How long things have been blocked', buckets.map(([label, lo, hi, tone]) => ({
-  label, tone, n: ages.filter(a => a >= lo && a <= hi).length,
-})))}
-${facts('Money', [
-  ['Collected', M.money(collected)],
-  ['Demanded, unpaid', M.money(unpaid)],
-  ['Of that, overdue', M.money(overdue)],
-  ['Held in escrow', M.money(escrowHeld)],
-  ['Agreement value, all villas', M.money(book)],
-])}
-<div class="gap"></div>
-${facts('The book', [
-  ['Villas', String(r.villas.n)],
-  ['Sanction recorded', r.villas.sanctioned + ' of ' + (r.villas.n - r.villas.self_funded)],
-  ['Self funded', String(r.villas.self_funded)],
-  ['Stages paid', paid + ' of ' + allStages],
-])}
-</div>`);
-  }
-
-  function handoff(sess, d, msg) {
-    const { n } = d;
-    const waiting = d.rows.list.filter(h => !h.picked_up_at);
-    const row = h => wrow({
-      href: '/office/buyer/' + encodeURIComponent(h.code),
-      code: h.code,
-      title: h.buyer_name,
-      detail: esc(h.unit_type) + ' &middot; token ' + M.money(Number(h.token_paise))
-        + ' &middot; sold by ' + esc(h.salesperson)
-        + (h.note ? ' &middot; ' + esc(h.note) : ''),
-      chip: h.picked_up_at ? '<i class="chip ok">Picked up</i>' : '<i class="chip late">No owner</i>',
-      days: days(h.created_at) + 'd',
-      daysAge: h.picked_up_at ? null : days(h.created_at),
-      amount: M.money(Number(h.agreement_value_paise)),
-      action: h.picked_up_at ? 'Yours'
-        : `<form method="post" action="/office/handoff"><input type="hidden" name="id" value="${esc(h.id)}">
-<button class="wbtn solid st" type="submit">Pick up</button></form>`,
-      actionIsText: !!h.picked_up_at,
-    });
-
-    return screen(sess, 'handoff', n, `
-${hero(waiting.length, 'with no owner', HEAD.handoff[0], esc(HEAD.handoff[1])
-  + '. Until somebody in this office picks a file up, nobody is chasing its sanction.',
-  waiting.length > 0)}
-<div class="mbody anim">
-${flash(msg)}
-<div class="wl">${d.rows.list.length ? d.rows.list.map(row).join('')
-  : empty('Sales have handed nothing over.')}</div>
-</div>`);
-  }
-
-  function packs(sess, d, msg) {
-    const { n } = d;
-    const queued = d.rows.list.filter(x => x.state === 'queued');
-    return screen(sess, 'packs', n, `
-${hero(queued.length, 'to send', HEAD.packs[0], esc(HEAD.packs[1])
-  + '. Each one is a stage the buyer has already been billed for.', queued.length > 0)}
-<div class="mbody anim">
-${flash(msg)}
-<div class="wl">${queued.length ? queued.map(x => wrow({
-  href: '/office/buyer/' + encodeURIComponent(x.code),
-  code: x.code,
-  title: x.stage_name,
-  detail: esc(x.buyer_name) + ' &middot; ' + esc(x.lender || 'self funded')
-    + (x.doc_no ? ' &middot; demand ' + esc(x.doc_no) : ''),
-  chip: '<i class="chip wait">Queued</i>',
-  days: days(x.queued_at) + 'd',
-  daysAge: days(x.queued_at),
-  amount: x.total_paise ? M.money(Number(x.total_paise)) : '',
-})).join('') : empty('Every verified pack is with its lender.')}</div>
-</div>`);
-  }
-
-  function waitScreen(sess, d, msg) {
-    const { n } = d;
-    const late = d.rows.list.filter(x =>
-      x.state === 'delivered' && !x.paid_at && x.delivered_at
-      && days(x.delivered_at) > PACK_LATE_DAYS);
-    return screen(sess, 'wait', n, `
-${hero(late.length, 'past ' + PACK_LATE_DAYS + ' days', HEAD.wait[0], esc(HEAD.wait[1])
-  + '. The pack went, the lender acknowledged it, and the money has not arrived.',
-  late.length > 0)}
-<div class="mbody anim">
-${flash(msg)}
-<div class="wl">${late.length ? late.map(x => wrow({
-  href: '/office/buyer/' + encodeURIComponent(x.code),
-  code: x.code,
-  title: x.stage_name,
-  detail: esc(x.buyer_name) + ' &middot; ' + esc(x.lender || 'self funded')
-    + ' &middot; sent ' + M.longDate(x.delivered_at)
-    + (x.due_at ? ' &middot; due ' + M.longDate(x.due_at) : ''),
-  chip: ageChip(days(x.delivered_at), ['With the lender', 'Ageing', 'Overdue']),
-  days: days(x.delivered_at) + 'd',
-  daysAge: days(x.delivered_at),
-  amount: x.total_paise ? M.money(Number(x.total_paise)) : '',
-})).join('') : empty('Nothing has been with a lender longer than ' + PACK_LATE_DAYS + ' days.')}</div>
-</div>`);
-  }
-
-  function query(sess, d, msg) {
-    const { n } = d;
-    const open = d.rows.list.filter(q => !q.answered_at);
-    return screen(sess, 'query', n, `
-${hero(open.length, 'unanswered', HEAD.query[0], esc(HEAD.query[1])
-  + '. Every day one of these sits open is a day the disbursement does not move.',
-  open.length > 0)}
-<div class="mbody anim">
-${flash(msg)}
-<div class="wl">${d.rows.list.length ? d.rows.list.map(q => wrow({
-  code: q.code,
-  title: q.stage_name,
-  detail: esc(q.question)
-    + (q.answered_at ? ' &middot; answered: ' + esc(q.answer) : ''),
-  chip: q.answered_at ? '<i class="chip ok">Answered</i>' : '<i class="chip late">Open</i>',
-  days: days(q.asked_at) + 'd',
-  daysAge: q.answered_at ? null : days(q.asked_at),
-  actionWide: !q.answered_at,
-  action: q.answered_at ? '' : `<form class="uprow reassign" method="post" action="/office/query"
-  style="display:flex;gap:10px;align-items:center;width:100%">
-<input type="hidden" name="id" value="${esc(q.id)}">
-<span class="mid" style="display:flex;gap:10px;align-items:center">
-<span class="s">Answer ${esc(q.bank || 'the lender')}</span>
-<input class="fi" type="text" name="answer" maxlength="300" required
-  placeholder="What you told them" style="margin:0;flex:1 1 200px"></span>
-<button class="wbtn solid st" type="submit">Answer</button></form>`,
-})).join('') : empty('No lender has asked anything.')}</div>
-</div>`);
-  }
-
-  function chase(sess, d, msg) {
-    const { n } = d;
-    return screen(sess, 'chase', n, `
-${hero(d.rows.list.length, 'files', HEAD.chase[0], esc(HEAD.chase[1]),
-  d.rows.list.length > 0)}
-<div class="mbody anim">
-${flash(msg)}
-<div class="wl">${d.rows.list.length ? d.rows.list.map(u => wrow({
-  code: u.code,
-  title: u.buyer_name,
-  detail: esc(u.bank) + (u.lender_chosen_at
-    ? ' &middot; chosen ' + M.longDate(u.lender_chosen_at) : ' &middot; no date on the pick'),
-  chip: '<i class="chip late">no sanction</i>',
-  days: u.lender_chosen_at ? days(u.lender_chosen_at) + 'd' : '',
-  daysAge: u.lender_chosen_at ? days(u.lender_chosen_at) : null,
-  amount: M.money(Number(u.agreement_value_paise)),
-  actionWide: true,
-  action: `<form class="uprow" method="post" action="/office/sanction"
-  style="display:flex;gap:8px;flex-wrap:wrap;width:100%">
-<input type="hidden" name="unit" value="${esc(u.unit_id)}">
-<input class="fi" type="number" name="sanction" min="1" required placeholder="Sanctioned amount, in rupees">
-<input class="fi" type="number" name="own" min="1" required placeholder="Own contribution, in rupees">
-<input class="fi" type="text" name="letter" maxlength="60" required placeholder="Sanction letter reference">
-<button class="wbtn solid st" type="submit">Record sanction</button></form>`,
-})).join('') : empty('Every buyer with a lender has a sanction on file.')}</div>
-</div>`);
-  }
-
-  function signoff(sess, d, msg) {
-    const { n } = d;
-    for (const x of d.rows.list) x.value = stageTotal(d.byProject, x);
-    return screen(sess, 'signoff', n, `
-${hero(d.rows.list.length, 'to certify', HEAD.signoff[0], esc(HEAD.signoff[1])
-  + '. This office cannot sign one; it can move it to an engineer who will.',
-  d.rows.list.length > 0)}
-<div class="mbody anim">
-${flash(msg)}
-<div class="wl">${d.rows.list.length ? d.rows.list.map(x => wrow({
-  href: '/office/buyer/' + encodeURIComponent(x.code),
-  code: x.code,
-  title: x.stage_name,
-  detail: esc(x.buyer_name) + ' &middot; marked by ' + esc(x.marked_by)
-    + ' &middot; ' + x.shots + ' photograph' + (x.shots === 1 ? '' : 's'),
-  chip: x.shots >= 2 ? '<i class="chip wait">ready</i>'
-    : `<i class="chip warn">${x.shots} photo${x.shots === 1 ? '' : 's'}</i>`,
-  days: days(x.marked_at) + 'd',
-  daysAge: days(x.marked_at),
-  amount: M.money(x.value),
-}) + reassignForm(x, d.rows.engineers, 'signoff')).join('') : empty('Nothing is waiting on a certificate.')}</div>
-</div>`);
-  }
-
-  /* The one control this office has over the site: move the work to somebody
-     else. It goes through `assign_engineer`, which is SECURITY DEFINER and
-     takes the actor from the transaction. */
-  function reassignForm(x, engineers, from) {
-    const others = engineers.filter(e => e.id !== x.assigned_engineer_id);
-    if (!others.length) return '';
-    return `<form method="post" action="/office/assign" class="uprow reassign"
-  style="display:flex;gap:10px;align-items:center;padding:8px 26px 14px;border-bottom:1px solid var(--hair)">
-<input type="hidden" name="unit" value="${esc(x.unit_id)}">
-<input type="hidden" name="from" value="${esc(from)}">
-<span class="mid" style="display:flex;gap:10px;align-items:center">
-<span class="s">Move it to</span>
-<select class="fi" name="engineer" style="margin:0;flex:0 0 220px;padding:7px 10px">
-${others.map(e => `<option value="${esc(e.id)}">${esc(e.display_name)}${
-  e.engineer_reg ? '' : ' (cannot certify)'}</option>`).join('')}
-</select></span>
-<button class="wbtn st" type="submit">Reassign</button></form>`;
-  }
-
-  function silent(sess, d, msg) {
-    const { n } = d;
-    const quiet = d.rows.list.filter(v =>
-      !v.last_shot || days(v.last_shot) >= AGE.overdue);
-    return screen(sess, 'silent', n, `
-${hero(quiet.length, 'villas', HEAD.silent[0], esc(HEAD.silent[1])
-  + '. Three weeks with no photograph is not proof that nothing happened, which '
-  + 'is exactly the problem.', quiet.length > 0)}
-<div class="mbody anim">
-${flash(msg)}
-<div class="wl">${quiet.length ? quiet.map(v => wrow({
-  href: '/office/buyer/' + encodeURIComponent(v.code),
-  code: v.code,
-  title: v.next_stage || 'All stages done',
-  detail: esc(v.buyer_name) + ' &middot; ' + esc(v.engineer_name || 'nobody assigned'),
-  chip: v.last_shot ? ageChip(days(v.last_shot)) : '<i class="chip late">never</i>',
-  days: v.last_shot ? days(v.last_shot) + 'd' : '',
-  daysAge: v.last_shot ? days(v.last_shot) : null,
-}) + reassignForm(v, d.rows.engineers, 'silent')).join('')
-  : empty('Every villa has a photograph from the last three weeks.')}</div>
-</div>`);
-  }
-
-  function escrow(sess, d, msg) {
-    const { n } = d;
-    const held = Number(d.rows.totals.inn) - Number(d.rows.totals.out);
-    return screen(sess, 'escrow', n, `
-${hero(M.crore(held), 'held', HEAD.escrow[0],
-  esc(HEAD.escrow[1]) + '. Seventy per cent of what buyers pay stays here until '
-  + 'the stage it was collected for is built.', false)}
-<div class="mbody anim">
-${flash(msg)}
-<div class="blk"><p class="k">The account</p></div>
-<div class="wl">${[
-  ['Paid in', M.money(Number(d.rows.totals.inn))],
-  ['Drawn down', M.money(Number(d.rows.totals.out))],
-  ['Held now', M.money(held)],
-].map(([k, v]) => wrow({ title: k, amount: v })).join('')}</div>
-<div class="gap"></div>
-<div class="blk"><p class="k">Movements</p></div>
-<div class="wl">${d.rows.list.length ? d.rows.list.map(m => wrow({
-  code: m.code || '',
-  title: m.direction === 'in' ? 'Paid in' : 'Drawn down',
-  detail: esc(m.reference) + ' &middot; ' + M.longDate(m.occurred_at),
-  chip: m.direction === 'in' ? '<i class="chip ok">in</i>' : '<i class="chip wait">out</i>',
-  amount: M.money(Number(m.amount_paise)),
-})).join('') : empty('No movement has been recorded on the escrow account.')}</div>
-</div>`);
-  }
-
-  function choices(sess, d, msg) {
-    const { n } = d;
-    return screen(sess, 'choices', n, `
-${hero(d.rows.list.length, 'not made', HEAD.choices[0], esc(HEAD.choices[1])
-  + '. The site cannot order against a preference nobody signed.',
-  d.rows.list.length > 0)}
-<div class="mbody anim">
-${flash(msg)}
-<div class="wl">${d.rows.list.length ? d.rows.list.map(ch => {
-  const left = until(ch.needed_by);
-  return wrow({
-    href: '/office/buyer/' + encodeURIComponent(ch.code),
-    code: ch.code,
-    title: ch.label,
-    detail: esc(ch.buyer_name) + ' &middot; ' + esc(ch.detail)
-      + ' &middot; needed by ' + M.longDate(ch.needed_by),
-    chip: left < 0 ? '<i class="chip late">overdue</i>'
-      : left <= AGE.ageing ? '<i class="chip warn">due soon</i>' : '<i class="chip wait">open</i>',
-    days: left < 0 ? (-left) + 'd late' : 'in ' + left + 'd',
-    daysAge: left < 0 ? AGE.overdue : left <= AGE.ageing ? AGE.ageing : 0,
-  });
-}).join('') : empty('Every interior choice on the project is signed.')}</div>
-</div>`);
-  }
-
-  function warranty(sess, d, msg) {
-    const { n } = d;
-    const open = d.rows.list.filter(q => q.status !== 'closed');
-    return screen(sess, 'warranty', n, `
-${hero(open.length, 'open', HEAD.warranty[0], esc(HEAD.warranty[1])
-  + '. A claim and a snag are the same complaint reaching this office two ways.',
-  open.length > 0)}
-<div class="mbody anim">
-${flash(msg)}
-<div class="blk"><p class="k">Claims from buyers</p></div>
-<div class="wl">${d.rows.list.length ? d.rows.list.map(q => wrow({
-  href: '/office/question/' + encodeURIComponent(q.id),
-  code: q.code,
-  title: q.subject,
-  detail: esc(q.asker) + ' &middot; ' + q.replies + ' message' + (q.replies === 1 ? '' : 's'),
-  chip: q.status === 'open' ? '<i class="chip late">Open</i>'
-    : q.status === 'answered' ? '<i class="chip wait">Answered</i>' : '<i class="chip ok">Closed</i>',
-  days: days(q.raised_at) + 'd',
-  daysAge: q.status === 'closed' ? null : days(q.raised_at),
-})).join('') : empty('No warranty claim has been raised.')}</div>
-<div class="gap"></div>
-<div class="blk"><p class="k">Snags still open on site</p></div>
-<div class="wl">${d.rows.snags.length ? d.rows.snags.map(s => wrow({
-  code: s.code,
-  title: s.title,
-  detail: esc(s.detail || 'No detail given.'),
-  chip: '<i class="chip late">Open</i>',
-  days: days(s.raised_at) + 'd',
-  daysAge: days(s.raised_at),
-})).join('') : empty('No snag is open anywhere on the project.')}</div>
-</div>`);
-  }
-
-  function evidence(sess, d, msg) {
-    const { n } = d;
-    const t = d.rows.totals;
-    return screen(sess, 'evidence', n, `
-${hero(t.shots, 'photographs', HEAD.evidence[0], esc(HEAD.evidence[1])
-  + '. Each is content addressed, so the same photograph filed twice is one '
-  + 'row and a substituted one is a different hash.', false)}
-<div class="mbody anim">
-${flash(msg)}
-<div class="blk"><p class="k">Integrity</p></div>
-<div class="wl">${[
-  ['Photographs on file', String(t.shots)],
-  ['Distinct hashes', String(t.distinct_hashes)],
-].map(([k, v]) => wrow({ title: k, amount: v })).join('')}</div>
-<div class="gap"></div>
-<div class="blk"><p class="k">Most recent</p></div>
-<div class="wl">${d.rows.list.length ? d.rows.list.map(e => wrow({
-  code: e.code,
-  title: e.stage_name,
-  detail: esc(e.caption) + ' &middot; ' + esc(e.gps)
-    + ' &middot; ' + esc(e.sha256.slice(0, 12)) + '&hellip;',
-  chip: e.certified_at ? '<i class="chip ok">certified</i>' : '<i class="chip wait">on file</i>',
-  days: days(e.taken_at) + 'd',
-  daysAge: null,
-})).join('') : empty('No photograph has been filed.')}</div>
-</div>`);
-  }
-
-  function qpr(sess, d, msg) {
-    const { n } = d;
-    const due = d.rows.list.filter(f => !f.filed_at);
-    return screen(sess, 'qpr', n, `
-${hero(due.length, 'not filed', HEAD.qpr[0], esc(HEAD.qpr[1])
-  + '. A quarter filed late is a compliance matter whatever the site did.',
-  due.length > 0)}
-<div class="mbody anim">
-${flash(msg)}
-<div class="wl">${d.rows.list.length ? d.rows.list.map(f => {
-  const left = until(f.due_on);
-  return wrow({
-    title: f.quarter,
-    detail: f.filed_at
-      ? 'Filed ' + M.longDate(f.filed_at) + ' &middot; ' + esc(f.reference)
-      : 'Due ' + M.longDate(f.due_on),
-    chip: f.filed_at ? '<i class="chip ok">Filed</i>'
-      : left < 0 ? '<i class="chip late">Overdue</i>' : '<i class="chip wait">Open</i>',
-    days: f.filed_at ? '' : left < 0 ? (-left) + 'd late' : 'in ' + left + 'd',
-    daysAge: f.filed_at ? null : left < 0 ? AGE.overdue : left <= AGE.ageing ? AGE.ageing : 0,
-    actionWide: !f.filed_at,
-    action: f.filed_at ? '' : `<form class="uprow reassign" method="post" action="/office/qpr"
-  style="display:flex;gap:10px;align-items:center;width:100%">
-<input type="hidden" name="id" value="${esc(f.id)}">
-<span class="mid" style="display:flex;gap:10px;align-items:center">
-<span class="s">Filed with K-RERA as</span>
-<input class="fi" type="text" name="reference" maxlength="60" required
-  placeholder="Acknowledgement reference" style="margin:0;flex:1 1 180px"></span>
-<button class="wbtn solid st" type="submit">Mark filed</button></form>`,
-  });
-}).join('') : empty('No quarter has been opened for filing.')}</div>
-</div>`);
-  }
-
-  function possession(sess, d, msg) {
-    const { n } = d;
-    const handed = d.rows.list.filter(p => p.handed_over_at);
-    return screen(sess, 'possession', n, `
-${hero(handed.length, 'handed over', HEAD.possession[0], esc(HEAD.possession[1])
-  + '. Handing over the keys is not the end of the file.', false)}
-<div class="mbody anim">
-${flash(msg)}
-<div class="wl">${d.rows.list.length ? d.rows.list.map(p => wrow({
-  href: '/office/buyer/' + encodeURIComponent(p.code),
-  code: p.code,
-  title: p.buyer_name,
-  detail: (p.offered_at ? 'Offered ' + M.longDate(p.offered_at) : 'Not offered')
-    + (p.snags_cleared_at ? ' &middot; snags cleared ' + M.longDate(p.snags_cleared_at) : '')
-    + (p.handed_over_at ? ' &middot; keys to ' + esc(p.keys_to || 'the buyer') : ''),
-  chip: p.handed_over_at ? '<i class="chip ok">Handed over</i>'
-    : p.snags_cleared_at ? '<i class="chip wait">Ready</i>'
-    : p.offered_at ? '<i class="chip warn">Snags open</i>' : '<i class="chip idle">Not offered</i>',
-  days: p.handed_over_at ? days(p.handed_over_at) + 'd' : '',
-  daysAge: null,
-})).join('') : empty('No villa has reached possession.')}</div>
-</div>`);
-  }
-
-  const SCREENS = {
-    today, owner, handoff, packs, query, chase, signoff, silent,
-    wait: waitScreen, escrow, choices, warranty, evidence, qpr, possession,
+    return head('Office dashboard',
+      'What the money is waiting on today, and who is holding it.',
+      btn('Ready to send', { icon: 'report', href: '/office/packs' })
+      + btn('Sign-off queue', { icon: 'attend', dark: true, href: '/office/signoff' }))
+      + `<div class="hero">
+  <div><div class="eyebrow">Waiting on evidence</div>
+    <div class="big num">${esc(M.crore(waitingValue))}</div>
+    <div class="bigsub">${d.rows.waiting.length} stage${d.rows.waiting.length === 1 ? '' : 's'} marked on site and not yet certified. Nothing can be billed until an engineer signs.</div></div>
+  <div>
+    <div class="mini-r">
+      <div><div class="eyebrow">Certified</div><div class="mini-v g num">${certified}</div></div>
+      <div style="text-align:right"><div class="eyebrow">Still to certify</div><div class="mini-v num">${Number(s.due) - certified}</div></div>
+    </div>
+    <div class="bar"><span style="width:${pct}%"></span></div>
+    <div class="barcap"><span><b>${pct}%</b> of stages under way are certified</span><span style="color:var(--faint)">${Number(s.all_stages)} stages in the book</span></div>
+  </div>
+</div>`
+      + kpis([
+        { l: 'Villas sold', icon: 'hostel', v: String(d.rows.villas), n: 'Eterna Phase 1' },
+        { l: 'Certified this month', icon: 'cert', v: String(Number(s.this_month)), n: 'stages signed off' },
+        { l: 'Packs at the lender', icon: 'money', v: String(d.rows.atLender), n: 'sent, awaiting disbursement' },
+        { l: 'Receivable from lenders', icon: 'growth', v: esc(M.crore(d.rows.receivable)), n: 'billed and unpaid' },
+      ])
+      + `<div class="g2">`
+      + card('Packs ready to send',
+        d.rows.queued.length
+          ? d.rows.queued.map(r => row('report', r.code + ' · ' + r.stage_name,
+            (r.bank || 'self funded') + ' · queued ' + days(r.queued_at) + 'd ago',
+            `<div class="rr">${esc(r.total_paise ? M.crore(r.total_paise) : '—')}</div>`)).join('')
+          : empty('Every certified stage has gone out.'),
+        btn('All packs', { href: '/office/packs' }))
+      + card('Villas gone quiet',
+        d.rows.quiet.length
+          ? d.rows.quiet.map(r => row('bell', r.code + ' · ' + r.buyer_name,
+            r.last_shot ? 'last photograph ' + days(r.last_shot) + ' days ago' : 'no photograph yet',
+            pill('over', r.last_shot ? days(r.last_shot) + 'd' : 'none'))).join('')
+          : empty('Every villa has been photographed inside three weeks.'),
+        btn('All quiet villas', { href: '/office/silent' }))
+      + `</div>`
+      + `<div class="g2" style="margin-top:12px">`
+      + card('Buyers have asked you something',
+        d.rows.questions.length
+          ? d.rows.questions.map(q => `<a class="row" href="/office/question/${encodeURIComponent(q.id)}">
+<div class="rico">${ic('comms')}</div><div class="rt"><b>${esc(q.subject)}</b>
+<span>${esc(q.code)} · ${esc(q.asker)} · ${q.replies} message${q.replies === 1 ? '' : 's'}</span></div>
+${pill('over', days(q.raised_at) + 'd')}</a>`).join('')
+          : empty('No buyer is waiting on an answer.'),
+        btn('Warranty', { href: '/office/warranty' }))
+      + card('Reported as stopping the work',
+        d.rows.blockers.length
+          ? d.rows.blockers.map(b => `<a class="row" href="${villaHref(b.code)}">
+<div class="rico">${ic('risk')}</div><div class="rt"><b>${esc(b.reason)}</b>
+<span>${esc(b.code)} · ${esc(b.stage_name)} · with ${esc(b.holder || b.holder_role)}</span></div>
+${pill('over', b.age + 'd')}</a>`).join('')
+          : empty('Nothing has been reported as blocked.'),
+        btn('Stages', { href: '/office/stages' }))
+      + `</div>`
+      + `<div class="ct" style="margin:18px 0 12px">The stage worklist</div>`
+      + table(['Villa', 'Stage', 'Evidence', 'Status', 'Value'],
+        d.rows.worklist.map(r => [
+          who(r.code, r.buyer_name),
+          esc(r.stage_name),
+          num(r.shots + ' photo' + (r.shots === 1 ? '' : 's')),
+          statusPill(r),
+          `<span class="num" style="font-weight:700">${esc(r.total_paise ? M.crore(r.total_paise) : M.crore(stageTotal(d.byProject, r)))}</span>`,
+        ]),
+        '1.6fr 1.3fr .9fr 1.1fr .9fr',
+        { href: i => villaHref(d.rows.worklist[i].code), empty: 'No stage is under way.' })
+      + `<div class="ct" style="margin:18px 0 12px">Packs, from certified to disbursed</div>`
+      + board(cols);
   };
 
-  // ------------------------------------------------------------- buyer file
-
-  /* One villa, whole: the position this office would read out on the phone if
-     the buyer rang. Not a destination in the sidebar - it is where every row
-     in every other screen goes when you tap it. */
-  async function buyerFile(sess, code, n) {
-    const d = await asUser(sess, async c => {
-      const u = (await c.query('SELECT * FROM units WHERE code = $1', [code])).rows[0];
-      if (!u) return null;
-      return {
-        u,
-        stages: (await c.query(
-          `SELECT s.*, t.name, t.pct_bp, t.seq FROM unit_stages s
-             JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = $2
-            WHERE s.unit_id = $1 ORDER BY t.seq`, [u.id, u.project_id])).rows,
-        demands: (await c.query(
-          `SELECT d.*, s.stage_code FROM demands d JOIN unit_stages s ON s.id = d.unit_stage_id
-            WHERE s.unit_id = $1 ORDER BY d.raised_at`, [u.id])).rows,
-        choices: (await c.query(
-          'SELECT * FROM choices WHERE unit_id = $1 ORDER BY needed_by', [u.id])).rows,
-        queries: (await c.query(
-          `SELECT * FROM queries WHERE unit_id = $1 ORDER BY raised_at DESC`, [u.id])).rows,
-        visits: (await c.query(
-          `SELECT * FROM visits WHERE unit_id = $1 ORDER BY slot_at DESC LIMIT 6`, [u.id])).rows,
-        agreement: (await c.query(
-          'SELECT * FROM agreements WHERE unit_id = $1', [u.id])).rows[0] || null,
-        possession: (await c.query(
-          'SELECT * FROM possessions WHERE unit_id = $1', [u.id])).rows[0] || null,
-        engineer: (await c.query(
-          `SELECT display_name FROM users WHERE id = $1`, [u.assigned_engineer_id])).rows[0] || null,
-      };
-    });
-    if (!d) return null;
-
-    const u = d.u;
-    const led = M.ledger({ agreementValuePaise: u.agreement_value_paise, stages: d.stages });
-    const openChoices = d.choices.filter(c => !c.selected).length;
-    const openQ = d.queries.filter(q => q.status === 'open').length;
-
-    const facts = [
-      ['Buyer', u.buyer_name],
-      ['Unit', u.unit_type],
-      ['Agreement value', M.money(u.agreement_value_paise)],
-      ['Collected', M.money(led.paidPaise)],
-      ['Demanded, unpaid', M.money(led.demandedPaise)],
-      ['Lender', u.bank || 'Self funded'],
-      ['Sanction', u.sanction_recorded_at ? M.money(u.sanction_paise) : 'Not recorded'],
-      ['Site engineer', d.engineer ? d.engineer.display_name : 'Nobody assigned'],
-    ].map(([k, v]) => wrow({ title: k, amount: esc(String(v)) })).join('');
-
-    return desk(sess, null, 'Villa ' + u.code, '', `
-${hero(u.code, 'buyer file', 'Villa ' + u.code,
-  esc(u.buyer_name) + ' &middot; ' + esc(u.unit_type) + ' &middot; '
-  + esc(u.bank || 'self funded'), false)}
-<div class="mbody anim">
-<div class="tools"><a class="wbtn st" href="/office" style="text-decoration:none">Back</a><div class="g"></div></div>
-<div class="blk"><p class="k">Where this file stands</p></div>
-<div class="wl">${facts}</div>
-<div class="gap"></div>
-<div class="blk"><p class="k">Stages</p></div>
-<div class="wl">${d.stages.map((s, i) => wrow({
-  code: String(i + 1).padStart(2, '0'),
-  title: s.name,
-  detail: (s.marked_at ? 'marked ' + M.longDate(s.marked_at) + ' by ' + esc(s.marked_by || '') : 'not marked')
-    + (s.certified_at ? ' &middot; certified ' + M.longDate(s.certified_at) : ''),
-  chip: `<i class="chip ${s.status === 'paid' ? 'ok' : s.status === 'demanded' ? 'late'
-    : s.status === 'pending' ? 'idle' : 'wait'}">${esc(s.status)}</i>`,
-})).join('')}</div>
-<div class="gap"></div>
-<div class="blk"><p class="k">Open with the buyer</p></div>
-<div class="wl">${
-  (openChoices ? wrow({ href: '/office/choices', title: 'Interior choices',
-    detail: openChoices + ' not signed', chip: '<i class="chip late">' + openChoices + '</i>' }) : '')
-+ (openQ ? d.queries.filter(q => q.status === 'open').map(q => wrow({
-    href: '/office/question/' + encodeURIComponent(q.id),
-    title: q.subject,
-    detail: (q.kind === 'warranty' ? 'Warranty claim' : 'Question')
-      + ' &middot; raised ' + M.longDate(q.raised_at),
-    chip: '<i class="chip late">Open</i>',
-    days: days(q.raised_at) + 'd', daysAge: days(q.raised_at),
-  })).join('') : '')
-+ (!openChoices && !openQ ? empty('Nothing is open with this buyer.') : '')}</div>
-</div>`, sidebar(null, n), drawer(null, n));
+  /* The one place a stage's state becomes a pill, so no two screens disagree
+     about what "waiting" means. */
+  function statusPill(r) {
+    if (r.paid_at) return pill('paid', 'Disbursed');
+    if (r.status === 'marked') return pill('due', 'Waiting to certify');
+    if (r.due_at && until(r.due_at) < 0) return pill('over', days(r.due_at) + 'd overdue');
+    if (r.status === 'demanded') return pill('due', 'Billed');
+    if (r.status === 'certified') return pill('paid', 'Certified');
+    if (r.status === 'paid') return pill('paid', 'Paid');
+    return pill('grey', 'Not started');
   }
 
-  // ------------------------------------------------------- one question thread
+  /* ---------------------------------------------------------------- packs */
+  SCREENS.packs = (sess, d) => {
+    const queued = d.rows.list.filter(r => r.state === 'queued');
+    const value = queued.reduce((t, r) => t + Number(r.total_paise || 0), 0);
+    return head('Ready to send',
+      'Stage verified, pack generated, not yet with the lender. Each one is a stage the buyer has already been billed for.',
+      btn('At the lender', { icon: 'money', href: '/office/wait' }))
+      + kpis([
+        { l: 'Packs waiting', icon: 'report', v: String(queued.length), n: 'made, not sent' },
+        { l: 'Value in them', icon: 'money', v: esc(M.crore(value)), n: 'billed and undelivered' },
+        { l: 'Oldest', icon: 'risk', v: queued.length ? days(queued[0].queued_at) + 'd' : '—', n: 'since the pack was made' },
+        { l: 'Lenders involved', icon: 'growth', v: String(new Set(queued.map(r => r.bank).filter(Boolean)).size), n: 'on these packs' },
+      ])
+      + note('A pack is five documents. Four of them generate from the record. '
+        + 'The fifth is the engineer’s completion certificate, which carries an external '
+        + 'qualified signature. The lender still sends its own technical officer — '
+        + 'the pack does not stand in for that visit.')
+      + filters('packlist', [['All', '*'], ['With a lender', 'bank'], ['Self funded', 'self']])
+      + table(['Villa', 'Stage', 'Lender', 'Queued', 'Amount'],
+        queued.map(r => [
+          who(r.code, r.buyer_name),
+          esc(r.stage_name),
+          esc(r.bank || 'self funded'),
+          num(days(r.queued_at) + 'd ago'),
+          `<span class="num" style="font-weight:700">${esc(r.total_paise ? M.crore(r.total_paise) : '—')}</span>`,
+        ]),
+        '1.6fr 1.3fr 1.1fr .8fr .9fr',
+        {
+          id: 'packlist', href: i => villaHref(queued[i].code),
+          tags: i => (queued[i].bank ? 'bank' : 'self'),
+          empty: 'Every certified stage has gone out.',
+        });
+  };
+
+  /* ----------------------------------------------------------------- wait */
+  SCREENS.wait = (sess, d) => {
+    const out = d.rows.list.filter(r => r.state === 'delivered' && !r.paid_at);
+    const late = out.filter(r => days(r.delivered_at) > PACK_LATE_DAYS);
+    const value = out.reduce((t, r) => t + Number(r.total_paise || 0), 0);
+    return head('At the lender',
+      'Sent, and not yet paid. After ' + PACK_LATE_DAYS + ' days it is worth a phone call.',
+      btn('Lender queries', { icon: 'comms', href: '/office/query' }))
+      + kpis([
+        { l: 'Packs out', icon: 'money', v: String(out.length), n: 'with a lender now' },
+        { l: 'Past ' + PACK_LATE_DAYS + ' days', icon: 'risk', v: String(late.length), n: 'worth chasing' },
+        { l: 'Money out there', icon: 'growth', v: esc(M.crore(value)), n: 'sent and unpaid' },
+        { l: 'Oldest', icon: 'cockpit', v: out.length ? Math.max(...out.map(r => days(r.delivered_at))) + 'd' : '—', n: 'since delivery' },
+      ])
+      + filters('waitlist', [['All', '*'], ['Past ' + PACK_LATE_DAYS + ' days', 'late'], ['Inside ' + PACK_LATE_DAYS, 'ok']])
+      + table(['Villa', 'Stage', 'Lender', 'With them', 'Amount'],
+        out.map(r => [
+          who(r.code, r.buyer_name),
+          esc(r.stage_name),
+          esc(r.bank || 'self funded'),
+          days(r.delivered_at) > PACK_LATE_DAYS
+            ? pill('over', days(r.delivered_at) + ' days')
+            : pill('due', days(r.delivered_at) + ' days'),
+          `<span class="num" style="font-weight:700">${esc(r.total_paise ? M.crore(r.total_paise) : '—')}</span>`,
+        ]),
+        '1.6fr 1.3fr 1.1fr 1fr .9fr',
+        {
+          id: 'waitlist', href: i => villaHref(out[i].code),
+          tags: i => (days(out[i].delivered_at) > PACK_LATE_DAYS ? 'late' : 'ok'),
+          empty: 'Nothing is sitting with a lender.',
+        });
+  };
+
+  /* ---------------------------------------------------------------- query */
+  SCREENS.query = (sess, d) => {
+    const open = d.rows.list.filter(r => !r.answered_at);
+    const done = d.rows.list.filter(r => r.answered_at);
+    return head('Lender queries',
+      'A lender has asked something before it will release. Until it is answered, that stage is not moving.')
+      + kpis([
+        { l: 'Open', icon: 'comms', v: String(open.length), n: 'waiting on this office' },
+        { l: 'Answered', icon: 'attend', v: String(done.length), n: 'sent back' },
+        { l: 'Oldest open', icon: 'risk', v: open.length ? days(open[0].asked_at) + 'd' : '—', n: 'since they asked' },
+        { l: 'Villas affected', icon: 'hostel', v: String(new Set(open.map(r => r.code)).size), n: 'with a query open' },
+      ])
+      + (open.length ? open.map(q => `<div class="card" style="margin-bottom:12px">
+<div class="ch"><div class="ct">${esc(q.code)} · ${esc(q.stage_name)}</div>${pill('over', esc(q.bank || 'lender'))}</div>
+<div class="cb">
+<div class="row"><div class="rico">${ic('comms')}</div><div class="rt"><b>${esc(q.question)}</b>
+<span>asked ${esc(M.longDate(q.asked_at))} · ${days(q.asked_at)} days ago</span></div></div>
+<form method="post" action="/office/query" style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap">
+<input type="hidden" name="id" value="${esc(q.id)}">
+<input class="chip" name="answer" required maxlength="400" placeholder="What you are sending back"
+ style="flex:1 1 260px;min-width:0;cursor:text;font-family:var(--body)">
+<button class="btn dark" type="submit">${ic('comms')} Send the answer</button></form>
+</div></div>`).join('') : empty('No lender is waiting on an answer.'))
+      + (done.length ? `<div class="ct" style="margin:18px 0 12px">Answered</div>`
+        + table(['Villa', 'Stage', 'They asked', 'You sent back', 'When'],
+          done.map(r => [esc(r.code), esc(r.stage_name), esc(r.question),
+            `<b>${esc(r.answer || '—')}</b>`, num(M.longDate(r.answered_at))]),
+          '.7fr 1fr 1.6fr 1.6fr .8fr') : '');
+  };
+
+  /* ---------------------------------------------------------------- chase */
+  SCREENS.chase = (sess, d) => {
+    const list = d.rows.list;
+    return head('Sanction not recorded',
+      'The buyer has chosen a lender and the sanction letter has not reached this office. Nothing can be disbursed against a sanction nobody has recorded.')
+      + kpis([
+        { l: 'Files waiting', icon: 'risk', v: String(list.length), n: 'no sanction on record' },
+        { l: 'Value at stake', icon: 'money', v: esc(M.crore(list.reduce((t, r) => t + Number(r.agreement_value_paise), 0))), n: 'agreement value of those villas' },
+        { l: 'Chosen a lender', icon: 'attend', v: String(list.filter(r => r.lender_chosen_at).length), n: 'and told us which' },
+        { l: 'Lenders involved', icon: 'growth', v: String(new Set(list.map(r => r.bank)).size), n: 'across these files' },
+      ])
+      + (list.length ? list.map(u => `<div class="card" style="margin-bottom:12px">
+<div class="ch"><div class="ct">${esc(u.code)} · ${esc(u.buyer_name)}</div>${pill('due', esc(u.bank))}</div>
+<div class="cb">
+<div class="row"><div class="rico">${ic('money')}</div><div class="rt"><b>Agreement ${esc(M.crore(u.agreement_value_paise))}</b>
+<span>${u.lender_chosen_at ? 'lender chosen ' + esc(M.longDate(u.lender_chosen_at)) : 'no date recorded for the choice'}</span></div></div>
+<form method="post" action="/office/sanction" style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap">
+<input type="hidden" name="unit" value="${esc(u.unit_id)}">
+<input class="chip" name="amount" required inputmode="numeric" placeholder="Sanctioned amount in rupees"
+ style="flex:1 1 200px;min-width:0;cursor:text;font-family:var(--body)">
+<input class="chip" name="ref" maxlength="60" placeholder="Sanction letter reference"
+ style="flex:1 1 200px;min-width:0;cursor:text;font-family:var(--body)">
+<button class="btn dark" type="submit">${ic('attend')} Record the sanction</button></form>
+</div></div>`).join('') : empty('Every file with a lender has its sanction on record.'));
+  };
+
+  /* --------------------------------------------------------------- stages */
+  SCREENS.stages = (sess, d) => {
+    const list = d.rows.list;
+    const by = k => list.filter(r => r.status === k).length;
+    return head('Stages',
+      'Every stage of every villa, in the order the payment schedule sets them.')
+      + kpis([
+        { l: 'Paid', icon: 'attend', v: String(by('paid')), n: 'money in' },
+        { l: 'Billed', icon: 'money', v: String(by('demanded')), n: 'demand raised' },
+        { l: 'Certified', icon: 'cert', v: String(by('certified')), n: 'signed, not yet billed' },
+        { l: 'Marked on site', icon: 'growth', v: String(by('marked')), n: 'waiting on an engineer' },
+      ])
+      + filters('stagelist', [['All', '*'], ['Reported blocked', 'blocked'], ['Marked', 'marked'],
+        ['Certified', 'certified'], ['Billed', 'demanded'], ['Paid', 'paid'],
+        ['Not started', 'pending']])
+      + table(['Villa', 'Stage', 'Evidence', 'Status', 'Value'],
+        list.map(r => [
+          who(r.code, r.buyer_name),
+          `<b>${esc(r.stage_name)}</b>`
+          + (r.blocked_reason
+            ? `<span style="display:block;font-size:11px;color:var(--red)">${esc(r.blocked_reason)}`
+              + ` · with ${esc(r.blocked_with || 'the site')} ${r.blocked_age}d</span>` : ''),
+          num(r.shots + ' photo' + (r.shots === 1 ? '' : 's')),
+          r.blocked_reason ? pill('over', 'blocked') : statusPill(r),
+          `<span class="num" style="font-weight:700">${esc(M.crore(r.total_paise || stageTotal(d.byProject, r)))}</span>`,
+        ]),
+        '1.5fr 1.4fr .9fr 1.1fr .9fr',
+        {
+          id: 'stagelist', href: i => villaHref(list[i].code),
+          tags: i => list[i].status + (list[i].blocked_reason ? ' blocked' : ''),
+        });
+  };
+
+  /* ------------------------------------------------------------- evidence */
+  SCREENS.evidence = (sess, d) => {
+    const t = d.rows.totals;
+    return head('Evidence certificates',
+      'Every photograph is hashed when it is captured and the hash goes into the stage certificate. A photograph that changes stops matching its certificate.')
+      + kpis([
+        { l: 'Photographs', icon: 'cert', v: String(t.shots), n: 'captured on site' },
+        { l: 'Distinct hashes', icon: 'attend', v: String(t.distinct_hashes), n: t.shots === t.distinct_hashes ? 'no duplicate content' : 'duplicates present' },
+        { l: 'Certificates issued', icon: 'report', v: String(d.rows.certs), n: 'stages with a signed hash' },
+        { l: 'Villas covered', icon: 'hostel', v: String(new Set(d.rows.list.map(r => r.code)).size), n: 'in the last 40 photographs' },
+      ])
+      + note('The engineer’s completion certificate is the one document in the pack that '
+        + 'carries an external qualified signature. The other four generate from this record. '
+        + 'None of it replaces the lender’s own technical officer, who still visits.')
+      + table(['Villa', 'Stage', 'Caption', 'Taken', 'Hash'],
+        d.rows.list.map(r => [
+          `<b>${esc(r.code)}</b>`,
+          esc(r.stage_name),
+          esc(r.caption || '—'),
+          num(M.longDate(r.taken_at)),
+          `<span class="num" style="color:var(--faint);font-size:11.5px">${esc(String(r.sha256 || '').slice(0, 12))}</span>`,
+        ]),
+        '.8fr 1.2fr 1.8fr 1fr 1fr',
+        { href: i => villaHref(d.rows.list[i].code), empty: 'No photographs have been captured yet.' });
+  };
+
+  /* --------------------------------------------------------------- silent */
+  SCREENS.silent = (sess, d) => {
+    const quiet = d.rows.list.filter(r => !r.last_shot || days(r.last_shot) >= QUIET_DAYS);
+    return head('Site gone quiet',
+      'No photograph in ' + QUIET_DAYS + ' days. Either nothing is happening on that villa, or something is happening and nobody is recording it.')
+      + kpis([
+        { l: 'Villas quiet', icon: 'bell', v: String(quiet.length), n: 'over ' + QUIET_DAYS + ' days' },
+        { l: 'Never photographed', icon: 'risk', v: String(quiet.filter(r => !r.last_shot).length), n: 'nothing on record at all' },
+        { l: 'Longest silence', icon: 'cockpit', v: quiet.filter(r => r.last_shot).length ? Math.max(...quiet.filter(r => r.last_shot).map(r => days(r.last_shot))) + 'd' : '—', n: 'since the last photograph' },
+        { l: 'Engineers involved', icon: 'hr', v: String(new Set(quiet.map(r => r.engineer_name).filter(Boolean)).size), n: 'on these villas' },
+      ])
+      + (quiet.length ? quiet.map(u => `<div class="card" style="margin-bottom:12px">
+<div class="ch"><div class="ct">${esc(u.code)} · ${esc(u.buyer_name)}</div>
+${u.last_shot ? pill('over', days(u.last_shot) + ' days quiet') : pill('over', 'never photographed')}</div>
+<div class="cb">
+<div class="row"><div class="rico">${ic('growth')}</div><div class="rt"><b>${esc(u.next_stage || 'No stage pending')}</b>
+<span>${esc(u.engineer_name || 'no engineer assigned')}</span></div>
+<a class="btn" href="${villaHref(u.code)}">Open the villa</a></div>
+<form method="post" action="/office/assign" style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap">
+<input type="hidden" name="unit" value="${esc(u.unit_id)}">
+<input type="hidden" name="from" value="silent">
+<select class="chip" name="engineer" style="flex:1 1 200px;min-width:0;font-family:var(--body)">
+${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === u.assigned_engineer_id ? ' selected' : ''}>${esc(e.display_name)}</option>`).join('')}
+</select>
+<button class="btn dark" type="submit">${ic('hr')} Move it to them</button></form>
+</div></div>`).join('') : empty('Every villa has been photographed inside ' + QUIET_DAYS + ' days.'));
+  };
+
+  /* -------------------------------------------------------------- signoff */
+  SCREENS.signoff = (sess, d) => {
+    const list = d.rows.list;
+    return head('Sign-off queue',
+      'Marked on site and waiting for a qualified engineer to certify it. Only a qualified engineer may sign the completion certificate, so nothing here can be cleared from this desk.')
+      + kpis([
+        { l: 'Waiting', icon: 'attend', v: String(list.length), n: 'stages marked, not certified' },
+        { l: 'Value held up', icon: 'money', v: esc(M.crore(list.reduce((t, r) => t + stageTotal(d.byProject, r), 0))), n: 'cannot be billed yet' },
+        { l: 'Oldest', icon: 'risk', v: list.length ? days(list[0].marked_at) + 'd' : '—', n: 'since it was marked' },
+        { l: 'Without evidence', icon: 'cert', v: String(list.filter(r => r.shots === 0).length), n: 'no photograph attached' },
+      ])
+      + (list.length ? list.map(s => `<div class="card" style="margin-bottom:12px">
+<div class="ch"><div class="ct">${esc(s.code)} · ${esc(s.stage_name)}</div>
+${s.shots ? pill('due', s.shots + ' photograph' + (s.shots === 1 ? '' : 's')) : pill('over', 'no evidence')}</div>
+<div class="cb">
+<div class="row"><div class="rico">${ic('hr')}</div><div class="rt"><b>${esc(s.engineer_name || 'No engineer assigned')}</b>
+<span>marked ${esc(M.longDate(s.marked_at))} · ${days(s.marked_at)} days waiting</span></div>
+<div class="rr">${esc(M.crore(stageTotal(d.byProject, s)))}</div></div>
+<form method="post" action="/office/assign" style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap">
+<input type="hidden" name="unit" value="${esc(s.unit_id)}">
+<input type="hidden" name="from" value="signoff">
+<span class="hsub" style="flex:1 1 200px;margin:0">Ask a different engineer to certify this</span>
+<select class="chip" name="engineer" style="flex:0 1 200px;min-width:0;font-family:var(--body)">
+${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_engineer_id ? ' selected' : ''}>${esc(e.display_name)}</option>`).join('')}
+</select>
+<button class="btn dark" type="submit">${ic('hr')} Reassign</button></form>
+</div></div>`).join('') : empty('Nothing is waiting to be certified.'));
+  };
+
+  /* --------------------------------------------------------------- villas */
+  SCREENS.villas = (sess, d) => {
+    const list = d.rows.list;
+    return head('Villas',
+      'Every villa in Eterna Phase 1, its buyer, its lender and how far through the book it is.',
+      btn('Stages', { icon: 'growth', href: '/office/stages' }))
+      + kpis([
+        { l: 'Villas', icon: 'hostel', v: String(list.length), n: 'Eterna Phase 1' },
+        { l: 'With a lender', icon: 'money', v: String(list.filter(r => r.bank).length), n: 'the rest are self funded' },
+        { l: 'Sanction recorded', icon: 'attend', v: String(list.filter(r => r.sanction_recorded_at).length), n: 'of those with a lender' },
+        { l: 'New from sales', icon: 'plus', v: String(d.rows.handoffs.length), n: 'no owner in this office yet' },
+      ])
+      + (d.rows.handoffs.length ? card('New from sales, not picked up',
+        d.rows.handoffs.map(h => `<div class="row"><div class="rico">${ic('plus')}</div>
+<div class="rt"><b>${esc(h.code)} · ${esc(h.buyer_name)}</b>
+<span>${esc(h.salesperson)} · token ${esc(M.crore(h.token_paise))} · ${days(h.created_at)} days ago</span></div>
+<form method="post" action="/office/handoff"><input type="hidden" name="id" value="${esc(h.id)}">
+<button class="btn dark" type="submit">Pick it up</button></form></div>`).join(''))
+        + '<div style="height:12px"></div>' : '')
+      + filters('villalist', [['All', '*'], ['With a lender', 'bank'], ['Self funded', 'self'],
+        ['Sanction missing', 'nosanction']])
+      + table(['Villa', 'Type', 'Lender', 'Engineer', 'Paid', 'Agreement'],
+        list.map(r => [
+          who(r.code, r.buyer_name),
+          esc(r.unit_type || '—'),
+          r.bank ? esc(r.bank) : `<span style="color:var(--faint)">self funded</span>`,
+          esc(r.engineer_name || '—'),
+          num(r.paid + ' / ' + r.stages),
+          `<span class="num" style="font-weight:700">${esc(M.crore(r.agreement_value_paise))}</span>`,
+        ]),
+        '1.6fr 1.2fr 1.1fr 1.2fr .7fr 1fr',
+        {
+          id: 'villalist', href: i => villaHref(list[i].code),
+          tags: i => (list[i].bank ? 'bank' : 'self')
+            + (list[i].bank && !list[i].sanction_recorded_at ? ' nosanction' : ''),
+        });
+  };
+
+  /* ------------------------------------------------------------ documents */
+  SCREENS.documents = (sess, d) => head('Documents',
+    'Five documents make a stage pack. Four of them generate from this record. The fifth is the engineer’s completion certificate, and that one needs an external qualified signature.')
+    + note('Nothing in the pack replaces the lender’s own technical officer. '
+      + 'The lender always sends one, and the pack is what its officer reads before the visit.')
+    + kpis([
+      { l: 'Stage packs', icon: 'report', v: String(d.rows.stages.length), n: 'certified or beyond' },
+      { l: 'Generated', icon: 'settings', v: String(d.rows.stages.length * 4), n: 'four per pack, from the record' },
+      { l: 'Signed by an engineer', icon: 'cert', v: String(d.rows.stages.filter(r => r.certificate_hash).length), n: 'completion certificates' },
+      { l: 'Loan files', icon: 'users', v: String(d.rows.loans.length), n: 'applicants on record' },
+    ])
+    + `<div class="ct" style="margin:6px 0 12px">The five, per stage</div>`
+    + table(['Villa', 'Stage', 'Demand note', 'Photographs', 'Engineer certificate'],
+      d.rows.stages.map(r => [
+        `<b>${esc(r.code)}</b>`,
+        esc(r.stage_name),
+        r.doc_no ? num(r.doc_no) : pill('grey', 'not raised'),
+        num(r.shots + ''),
+        r.certificate_hash ? pill('paid', 'signed') : pill('due', 'waiting'),
+      ]),
+      '.8fr 1.4fr 1.2fr .9fr 1.2fr',
+      { href: i => villaHref(d.rows.stages[i].code), empty: 'No stage has been certified yet.' })
+    + `<div class="ct" style="margin:18px 0 12px">Loan files, by applicant</div>`
+    + table(['Applicant', 'Villa', 'Relation', 'Documents seen'],
+      d.rows.loans.map(r => [
+        who(r.full_name, null),
+        esc(r.code),
+        esc(r.relation || '—'),
+        r.asked === r.seen ? pill('paid', r.seen + ' of ' + r.asked)
+          : pill('due', r.seen + ' of ' + r.asked),
+      ]),
+      '1.6fr .8fr 1.2fr 1fr', { empty: 'No loan file has been opened.' });
+
+  /* -------------------------------------------------------------- choices */
+  SCREENS.choices = (sess, d) => {
+    const list = d.rows.list;
+    const open = list.filter(r => !r.selected);
+    const late = open.filter(r => r.needed_by && until(r.needed_by) < 0);
+    return head('Choices',
+      'Tiles, sanitaryware, kitchen. A choice that misses its cut-off holds up the stage behind it.')
+      + kpis([
+        { l: 'Not made', icon: 'exam', v: String(open.length), n: 'still open' },
+        { l: 'Past the cut-off', icon: 'risk', v: String(late.length), n: 'holding up work' },
+        { l: 'Made', icon: 'attend', v: String(list.length - open.length), n: 'and recorded' },
+        { l: 'Villas waiting', icon: 'hostel', v: String(new Set(open.map(r => r.code)).size), n: 'with a choice open' },
+      ])
+      + filters('choicelist', [['All', '*'], ['Past the cut-off', 'late'], ['Open', 'open'], ['Made', 'made']])
+      + table(['Villa', 'Choice', 'Needed by', 'Status', 'Selected'],
+        list.map(r => [
+          who(r.code, r.buyer_name),
+          `<b>${esc(r.label)}</b>`,
+          r.needed_by ? num(M.longDate(r.needed_by)) : '—',
+          r.selected ? pill('paid', 'made')
+            : (r.needed_by && until(r.needed_by) < 0)
+              ? pill('over', Math.abs(until(r.needed_by)) + 'd past')
+              : pill('due', 'waiting'),
+          esc(r.selected || '—'),
+        ]),
+        '1.5fr 1.4fr 1fr 1fr 1.1fr',
+        {
+          id: 'choicelist', href: i => villaHref(list[i].code),
+          tags: i => (list[i].selected ? 'made' : 'open')
+            + (!list[i].selected && list[i].needed_by && until(list[i].needed_by) < 0 ? ' late' : ''),
+        });
+  };
+
+  /* --------------------------------------------------------------- visits */
+  SCREENS.visits = (sess, d) => {
+    const list = d.rows.list;
+    const asked = list.filter(r => r.status === 'requested');
+    return head('Visits',
+      'Buyers coming to site. The engineer confirms or moves the slot; this office sees where each one stands.')
+      + kpis([
+        { l: 'Requested', icon: 'cal', v: String(asked.length), n: 'waiting on an engineer' },
+        { l: 'Confirmed', icon: 'attend', v: String(list.filter(r => r.status === 'confirmed').length), n: 'slot agreed' },
+        { l: 'Declined', icon: 'risk', v: String(list.filter(r => r.status === 'declined').length), n: 'a new slot is needed' },
+        { l: 'Villas', icon: 'hostel', v: String(new Set(list.map(r => r.code)).size), n: 'with a visit on record' },
+      ])
+      + filters('visitlist', [['All', '*'], ['Requested', 'requested'], ['Confirmed', 'confirmed'], ['Declined', 'declined']])
+      + table(['Villa', 'Slot', 'Engineer', 'Status', 'Note'],
+        list.map(r => [
+          who(r.code, r.buyer_name),
+          num(M.longDate(r.slot_at)),
+          esc(r.engineer_name || '—'),
+          r.status === 'confirmed' ? pill('paid', 'confirmed')
+            : r.status === 'declined' ? pill('over', 'declined') : pill('due', 'requested'),
+          esc(r.note || r.response_note || '—'),
+        ]),
+        '1.5fr 1.1fr 1.2fr 1fr 1.6fr',
+        {
+          id: 'visitlist', href: i => villaHref(list[i].code),
+          tags: i => list[i].status, empty: 'No visit has been asked for.',
+        });
+  };
+
+  /* ------------------------------------------------------------- warranty */
+  SCREENS.warranty = (sess, d) => {
+    const open = d.rows.snags.filter(s => s.status === 'open');
+    const claims = d.rows.claims;
+    return head('Warranty',
+      'Snags raised after handover, and the claims buyers have opened against them.')
+      + kpis([
+        { l: 'Open snags', icon: 'risk', v: String(open.length), n: 'not yet fixed' },
+        { l: 'Fixed', icon: 'attend', v: String(d.rows.snags.length - open.length), n: 'closed out' },
+        { l: 'Claims open', icon: 'comms', v: String(claims.filter(c => c.status !== 'closed').length), n: 'buyers waiting on an answer' },
+        { l: 'Villas', icon: 'hostel', v: String(new Set(open.map(s => s.code)).size), n: 'with something open' },
+      ])
+      + `<div class="ct" style="margin:6px 0 12px">Claims from buyers</div>`
+      + table(['Villa', 'Claim', 'Raised', 'Messages', 'Status'],
+        claims.map(q => [
+          `<b>${esc(q.code)}</b>`,
+          esc(q.subject),
+          num(M.longDate(q.raised_at)),
+          num(String(q.replies)),
+          q.status === 'closed' ? pill('paid', 'closed') : pill('over', 'open'),
+        ]),
+        '.8fr 2fr 1fr .8fr 1fr',
+        { href: i => '/office/question/' + encodeURIComponent(claims[i].id), empty: 'No warranty claim has been opened.' })
+      + `<div class="ct" style="margin:18px 0 12px">Snags on site</div>`
+      + table(['Villa', 'Snag', 'Raised by', 'Raised', 'Status'],
+        d.rows.snags.map(s => [
+          `<b>${esc(s.code)}</b>`,
+          esc(s.title),
+          esc(s.raised_role || '—'),
+          num(M.longDate(s.raised_at)),
+          s.status === 'open' ? pill('over', 'open') : pill('paid', 'fixed'),
+        ]),
+        '.8fr 2fr 1fr 1fr 1fr', { empty: 'No snag has been raised.' });
+  };
+
+  /* ----------------------------------------------------------------- rera */
+  SCREENS.rera = (sess, d) => {
+    const list = d.rows.list;
+    const due = list.filter(r => !r.filed_at);
+    return head('RERA filing',
+      'The quarterly progress report. It is filed against the same certified stages the packs are built from, so the two cannot disagree.')
+      + kpis([
+        { l: 'Quarters on record', icon: 'cert', v: String(list.length), n: 'since the project opened' },
+        { l: 'Filed', icon: 'attend', v: String(list.length - due.length), n: 'with a reference' },
+        { l: 'Not filed', icon: 'risk', v: String(due.length), n: 'still owed' },
+        { l: 'Next due', icon: 'cal', v: due.length ? esc(M.longDate(due[due.length - 1].due_on)) : '—', n: 'the earliest one outstanding' },
+      ])
+      + (due.length ? due.map(q => `<div class="card" style="margin-bottom:12px">
+<div class="ch"><div class="ct">${esc(q.quarter)}</div>${until(q.due_on) < 0 ? pill('over', Math.abs(until(q.due_on)) + ' days late') : pill('due', 'due ' + M.longDate(q.due_on))}</div>
+<div class="cb">
+<form method="post" action="/office/qpr" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+<input type="hidden" name="id" value="${esc(q.id)}">
+<input class="chip" name="ref" required maxlength="60" placeholder="Acknowledgement reference from the portal"
+ style="flex:1 1 260px;min-width:0;cursor:text;font-family:var(--body)">
+<button class="btn dark" type="submit">${ic('attend')} Mark it filed</button></form>
+</div></div>`).join('') : '')
+      + table(['Quarter', 'Due', 'Filed', 'Reference'],
+        list.map(r => [
+          `<b>${esc(r.quarter)}</b>`,
+          num(M.longDate(r.due_on)),
+          r.filed_at ? pill('paid', M.longDate(r.filed_at)) : pill('over', 'not filed'),
+          esc(r.reference || '—'),
+        ]),
+        '1fr 1fr 1.2fr 1.6fr', { empty: 'No quarter is on record.' });
+  };
+
+  /* --------------------------------------------------------------- escrow */
+  SCREENS.escrow = (sess, d) => {
+    const t = d.rows.totals;
+    const held = Number(t.inn) - Number(t.out);
+    return head('Escrow drawdown',
+      'Seventy per cent of what a buyer pays stays in the project account until the work it was billed for is certified. This is what has moved.')
+      + kpis([
+        { l: 'Held now', icon: 'money', v: esc(M.crore(held)), n: 'in the project account' },
+        { l: 'Paid in', icon: 'growth', v: esc(M.crore(t.inn)), n: 'from buyers and lenders' },
+        { l: 'Drawn down', icon: 'report', v: esc(M.crore(t.out)), n: 'released against certified work' },
+        { l: 'Movements', icon: 'cockpit', v: String(d.rows.list.length), n: 'most recent first' },
+      ])
+      + table(['When', 'Villa', 'Direction', 'Reference', 'Amount'],
+        d.rows.list.map(r => [
+          num(M.longDate(r.occurred_at)),
+          esc(r.code || '—'),
+          r.direction === 'in' ? pill('paid', 'in') : pill('accent', 'drawn'),
+          esc(r.reference || '—'),
+          `<span class="num" style="font-weight:700">${esc(M.crore(r.amount_paise))}</span>`,
+        ]),
+        '1fr .8fr .8fr 1.8fr 1fr', { empty: 'Nothing has moved through the account yet.' });
+  };
+
+  /* ----------------------------------------------------------- possession */
+  SCREENS.possession = (sess, d) => {
+    const list = d.rows.list;
+    const done = list.filter(r => r.handed_over_at);
+    return head('After possession',
+      'Offered, snags cleared, handed over. The warranty clock starts at handover.')
+      + kpis([
+        { l: 'Handed over', icon: 'home', v: String(done.length), n: 'keys with the buyer' },
+        { l: 'Offered', icon: 'cal', v: String(list.filter(r => r.offered_at && !r.handed_over_at).length), n: 'awaiting handover' },
+        { l: 'Snags cleared', icon: 'attend', v: String(list.filter(r => r.snags_cleared_at).length), n: 'before handover' },
+        { l: 'Villas in the list', icon: 'hostel', v: String(list.length), n: 'at or past offer' },
+      ])
+      + table(['Villa', 'Offered', 'Snags cleared', 'Handed over', 'Keys to'],
+        list.map(r => [
+          who(r.code, r.buyer_name),
+          r.offered_at ? num(M.longDate(r.offered_at)) : pill('grey', 'not offered'),
+          r.snags_cleared_at ? pill('paid', M.longDate(r.snags_cleared_at)) : pill('due', 'open'),
+          r.handed_over_at ? pill('paid', M.longDate(r.handed_over_at)) : pill('due', 'waiting'),
+          esc(r.keys_to || '—'),
+        ]),
+        '1.5fr 1fr 1.2fr 1.2fr 1fr',
+        { href: i => villaHref(list[i].code), empty: 'No villa has reached possession.' });
+  };
+
+  /* ------------------------------------------------------------- schedule */
+  SCREENS.schedule = (sess, d) => {
+    const list = d.rows.list;
+    const avg = Number(d.rows.avg);
+    return head('Payment schedule',
+      'Set once for the project. Every villa is billed against these percentages, and a stage cannot be billed before it is certified.')
+      + note('Changing a percentage here does not re-bill anything already raised. '
+        + 'A demand is immutable once it exists — a correction is a credit note against it, '
+        + 'never an edit.')
+      + table(['#', 'Stage', 'Share', 'On the average villa', 'Paid', 'Of'],
+        list.map(r => [
+          `<b>${r.seq + 1}</b>`,
+          `<b>${esc(r.name)}</b><span style="display:block;font-size:11px;color:var(--faint)">${esc(r.description || '')}</span>`,
+          num((r.pct_bp / 100).toFixed(1) + '%'),
+          `<span class="num" style="font-weight:700">${esc(M.crore(avg * r.pct_bp / 10000))}</span>`,
+          num(String(r.paid)),
+          num(String(r.total)),
+        ]),
+        '.4fr 2.2fr .7fr 1.2fr .6fr .6fr', { empty: 'No schedule is set.' });
+  };
+
+  /* -------------------------------------------------------------- lenders */
+  SCREENS.lenders = (sess, d) => {
+    const list = d.rows.list;
+    return head('Lenders',
+      'The panel. A buyer may use any lender; these are the ones with the project already approved, which is the difference between two weeks and six.')
+      + kpis([
+        { l: 'On the panel', icon: 'money', v: String(list.filter(r => r.on_panel).length), n: 'project approved' },
+        { l: 'Off panel', icon: 'growth', v: String(list.filter(r => !r.on_panel).length), n: 'buyer may still use them' },
+        { l: 'Villas financed', icon: 'hostel', v: String(list.reduce((t, r) => t + r.villas, 0)), n: 'across all lenders' },
+        { l: 'Owed to us', icon: 'report', v: esc(M.crore(list.reduce((t, r) => t + Number(r.owed), 0))), n: 'billed and unpaid' },
+      ])
+      + table(['Lender', 'APF code', 'Rate', 'Turnaround', 'Villas', 'Owed'],
+        list.map(r => [
+          `<b>${esc(r.name)}</b>`,
+          `<span class="num" style="font-size:11.5px;color:var(--faint)">${esc(r.apf_code || '—')}</span>`,
+          num((r.rate_bp / 100).toFixed(2) + '%'),
+          r.on_panel ? num(r.turnaround_low + '–' + r.turnaround_high + ' days') : pill('grey', 'not on panel'),
+          num(String(r.villas)),
+          `<span class="num" style="font-weight:700">${esc(M.crore(r.owed))}</span>`,
+        ]),
+        '1.3fr 1.5fr .7fr 1.1fr .6fr .9fr', { empty: 'No lender is on record.' });
+  };
+
+  /* --------------------------------------------------------------- logins */
+  SCREENS.logins = (sess, d) => {
+    const list = d.rows.list;
+    return head('Logins',
+      'Who can sign in, and as what. A buyer’s login is created with their villa and can only ever read that villa.')
+      + note('This console cannot read a buyer’s account row, and it cannot read the '
+        + 'session store at all — the database refuses both. So this is who may sign in, '
+        + 'not who is signed in, and buyer accounts are counted here rather than listed.')
+      + kpis([
+        { l: 'Office', icon: 'users', v: String(list.filter(r => r.role === 'office').length), n: 'this desk' },
+        { l: 'Engineers', icon: 'hr', v: String(list.filter(r => r.role === 'engineer').length), n: 'qualified to certify' },
+        { l: 'Buyers', icon: 'hostel', v: String(d.rows.buyers), n: 'one per villa' },
+        { l: 'Readable here', icon: 'bolt', v: String(list.length), n: 'of ' + (list.length + d.rows.buyers) + ' accounts' },
+      ])
+      + table(['Name', 'Email', 'Role', 'Qualification', 'Registration'],
+        list.map(r => [
+          who(r.display_name || r.email, null),
+          `<span style="color:var(--grey)">${esc(r.email)}</span>`,
+          r.role === 'office' ? pill('accent', 'office') : pill('grey', 'engineer'),
+          esc(r.engineer_qual || '—'),
+          esc(r.engineer_reg || '—'),
+        ]),
+        '1.4fr 1.6fr .9fr 1.3fr 1.1fr', { empty: 'No account is readable from here.' });
+  };
+
+  /* ------------------------------------------------------------- settings */
+  SCREENS.settings = (sess, d) => head('Settings',
+    'What this console is pointed at, and what it may write.')
+    + `<div class="g2">`
+    + card('The project',
+      row('hostel', d.rows.project.name + ' · ' + d.rows.project.phase, d.rows.villas + ' villas')
+      + row('cal', 'Payment schedule', d.rows.stages + ' stages, set once for the project',
+        `<a class="btn" href="/office/schedule">Open</a>`)
+      + row('money', 'Lender panel', d.rows.lenders + ' lenders with the project approved',
+        `<a class="btn" href="/office/lenders">Open</a>`)
+      + row('users', 'Logins', 'office, engineers and one buyer per villa',
+        `<a class="btn" href="/office/logins">Open</a>`))
+    + card('What this console writes',
+      row('report', 'Bookings and receipts', 'read from your ERP — nothing is written back',
+        pill('grey', 'read only'))
+      + row('cert', 'Stage certificates', 'signed by a qualified engineer, never from this desk',
+        pill('grey', 'engineer only'))
+      + row('money', 'Demands', 'immutable once raised; a correction is a credit note',
+        pill('accent', 'append only'))
+      + row('settings', 'Audit log', d.rows.audit + ' entries — every write, with who and when',
+        pill('accent', 'append only')))
+    + `</div>`
+    + note('Money is in rupees throughout, rolled up to lakh and crore. '
+      + 'Dates are Indian Standard Time.');
+
+  /* ----------------------------------------------------------------- help */
+  SCREENS.help = () => head('Help',
+    'How this console expects to be used, and the rules it will not let you break.')
+    + `<div class="g2">`
+    + card('The things people ask',
+      row('cert', 'Why can I not certify a stage from here?',
+        'Only a qualified engineer may sign a completion certificate. This desk can reassign it, not sign it.')
+      + row('report', 'What is in a pack?',
+        'Five documents. Four generate from the record; the fifth is the engineer’s certificate.')
+      + row('users', 'Does the pack replace the lender’s visit?',
+        'No. The lender always sends its own technical officer. The pack is what that officer reads first.')
+      + row('money', 'Can I edit a demand?',
+        'No. A demand is immutable once raised. Raise a credit note against it instead.'))
+    + card('Where things live',
+      row('growth', 'A villa’s whole file', 'Villas, then the villa — stages, evidence, money, people',
+        `<a class="btn" href="/office/villas">Open</a>`)
+      + row('risk', 'Money that has stopped', 'Ready to send, At the lender, Lender queries, Sanction not recorded',
+        `<a class="btn" href="/office/packs">Open</a>`)
+      + row('bolt', 'What is on fire today', 'The dashboard leads with what is waiting on evidence',
+        `<a class="btn" href="/office">Open</a>`))
+    + `</div>`;
+
+  // ------------------------------------------------------- the villa file
+
+  async function villaFile(sess, code, n) {
+    return asUser(sess, async c => {
+      const u = (await c.query(
+        `SELECT u.*, w.display_name engineer_name FROM units u
+           LEFT JOIN users w ON w.id = u.assigned_engineer_id WHERE u.code = $1`, [code])).rows[0];
+      if (!u) return null;
+      const byProject = await schedules(c);
+      const stages = (await c.query(
+        `SELECT s.*, t.name stage_name, t.seq, t.pct_bp, dm.total_paise, dm.due_at, dm.paid_at,
+                dm.doc_no,
+                (SELECT count(*)::int FROM evidence e WHERE e.unit_stage_id = s.id) shots
+           FROM unit_stages s
+           JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = $2
+           LEFT JOIN demands dm ON dm.unit_stage_id = s.id
+          WHERE s.unit_id = $1 ORDER BY t.seq`, [u.id, u.project_id])).rows;
+      const qs = (await c.query(
+        `SELECT q.*, (SELECT count(*)::int FROM query_messages m WHERE m.query_id = q.id) replies
+           FROM queries q WHERE q.unit_id = $1 ORDER BY q.raised_at DESC`, [u.id])).rows;
+      const paid = stages.filter(s => s.paid_at).reduce((t, s) => t + Number(s.total_paise), 0);
+
+      const main = head(u.code + ' · ' + u.buyer_name,
+        (u.unit_type || '') + ' · ' + (u.bank || 'self funded')
+        + ' · ' + esc(u.engineer_name || 'no engineer assigned'),
+        btn('All villas', { href: '/office/villas' })
+        + btn('Stages', { icon: 'growth', dark: true, href: '/office/stages' }))
+        + `<div class="hero">
+  <div><div class="eyebrow">Agreement value</div>
+    <div class="big num">${esc(M.crore(u.agreement_value_paise))}</div>
+    <div class="bigsub">${esc(u.unit_type || 'villa')} · ${esc(u.bank ? 'financed by ' + u.bank : 'self funded')}</div></div>
+  <div>
+    <div class="mini-r">
+      <div><div class="eyebrow">Paid so far</div><div class="mini-v g num">${esc(M.crore(paid))}</div></div>
+      <div style="text-align:right"><div class="eyebrow">Sanction</div><div class="mini-v num">${esc(u.sanction_paise ? M.crore(u.sanction_paise) : '—')}</div></div>
+    </div>
+    <div class="bar"><span style="width:${Math.round((paid / Number(u.agreement_value_paise)) * 100)}%"></span></div>
+    <div class="barcap"><span><b>${stages.filter(s => s.paid_at).length}</b> of ${stages.length} stages paid</span>
+      <span style="color:var(--faint)">${esc(u.sanction_recorded_at ? 'sanction recorded' : 'sanction not recorded')}</span></div>
+  </div>
+</div>`
+        + table(['#', 'Stage', 'Evidence', 'Status', 'Amount'],
+          stages.map(s => [
+            `<b>${s.seq + 1}</b>`,
+            `<b>${esc(s.stage_name)}</b>`,
+            num(s.shots + ' photo' + (s.shots === 1 ? '' : 's')),
+            statusPill(s),
+            `<span class="num" style="font-weight:700">${esc(M.crore(s.total_paise || stageTotal(byProject, { ...s, agreement_value_paise: u.agreement_value_paise, project_id: u.project_id })))}</span>`,
+          ]),
+          '.4fr 2fr 1fr 1.2fr 1fr')
+        + (qs.length ? `<div class="ct" style="margin:18px 0 12px">What this buyer has asked</div>`
+          + table(['Subject', 'Kind', 'Raised', 'Messages', 'Status'],
+            qs.map(q => [
+              `<b>${esc(q.subject)}</b>`,
+              q.kind === 'warranty' ? pill('over', 'warranty') : pill('accent', 'question'),
+              num(M.longDate(q.raised_at)),
+              num(String(q.replies)),
+              q.status === 'closed' ? pill('paid', 'closed') : pill('due', 'open'),
+            ]),
+            '2fr 1fr 1fr .8fr 1fr',
+            { href: i => '/office/question/' + encodeURIComponent(qs[i].id) }) : '');
+      return { main, n };
+    });
+  }
+
+  // ----------------------------------------------------- one question thread
 
   async function questionThread(sess, id, n, msg) {
-    const d = await asUser(sess, async c => {
+    return asUser(sess, async c => {
       const q = (await c.query(
-        `SELECT q.*, u.code, u.buyer_name, coalesce(w.display_name, u.buyer_name) asker
+        `SELECT q.*, u.code, coalesce(w.display_name, u.buyer_name) asker
            FROM queries q JOIN units u ON u.id = q.unit_id
            LEFT JOIN users w ON w.id = q.raised_by WHERE q.id = $1`, [id])).rows[0];
       if (!q) return null;
-      return { q, msgs: (await c.query(
+      const msgs = (await c.query(
         `SELECT m.*, coalesce(w.display_name, initcap(m.author_role)) author_name
-           FROM query_messages m
-           LEFT JOIN users w ON w.id = m.author_id
-          WHERE m.query_id = $1 ORDER BY m.sent_at`, [id])).rows };
-    });
-    if (!d) return null;
-    const { q, msgs } = d;
+           FROM query_messages m LEFT JOIN users w ON w.id = m.author_id
+          WHERE m.query_id = $1 ORDER BY m.sent_at`, [id])).rows;
 
-    /* No summary card. A conversation does not have a headline figure, and
-       "MESSAGES 2" is not something anybody opens a thread to find out. The
-       title is the question, the line under it is who asked and when, and the
-       ways out are in the header where a way out belongs. */
-    return desk(sess, null, q.subject, '', `
-${UI.head(q.subject,
-  esc(q.code) + ' &middot; ' + esc(q.asker) + ' &middot; '
-  + (q.kind === 'warranty' ? 'warranty claim' : 'question')
-  + ' &middot; raised ' + M.longDate(q.raised_at)
-  + (q.status === 'closed' ? ' &middot; closed' : ''), '',
-  [{ href: '/office', label: 'Back' },
-   { href: '/office/buyer/' + encodeURIComponent(q.code), label: 'Buyer file' }])}
-<div class="mbody anim">
-${flash(msg)}
-<div class="wl">
-${UI.talk(msgs.map(m => ({
-  body: m.body,
-  who: m.author_role === 'office' ? 'You' : m.author_name,
-  when: M.longDate(m.sent_at),
-  mine: m.author_role === 'office',
-})), 'The buyer has said nothing beyond the subject line.')}
-<form class="uprow reassign replybox" method="post" action="/office/answer">
+      const main = head(q.subject,
+        esc(q.code) + ' · ' + esc(q.asker) + ' · '
+        + (q.kind === 'warranty' ? 'warranty claim' : 'question')
+        + ' · raised ' + esc(M.longDate(q.raised_at)),
+        btn('Villa file', { href: villaHref(q.code) })
+        + (q.status !== 'closed'
+          ? btn('Close this', { icon: 'attend', dark: true, post: '/office/close', fields: { id: q.id } })
+          : ''))
+        + `<div class="card"><div class="ch"><div class="ct">The thread</div>
+${q.status === 'closed' ? pill('paid', 'closed') : pill('due', 'open')}</div><div class="cb">`
+        + (msgs.length ? msgs.map(m => row(
+          m.author_role === 'office' ? 'users' : 'comms',
+          m.body,
+          (m.author_role === 'office' ? 'You' : m.author_name) + ' · ' + M.longDate(m.sent_at))).join('')
+          : empty('The buyer has said nothing beyond the subject line.'))
+        + `<form method="post" action="/office/answer" style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap">
 <input type="hidden" name="id" value="${esc(q.id)}">
-<span class="mid" style="display:flex;gap:10px;align-items:center">
-<span class="s">Answer the buyer</span>
-<input class="fi" type="text" name="body" maxlength="400" required placeholder="What you want to tell them"
-  style="margin:0;flex:1 1 220px"></span>
-<button class="wbtn solid st" type="submit">Send</button></form>
-${q.status !== 'closed' ? `<form method="post" action="/office/close" class="replyfoot">
-<input type="hidden" name="id" value="${esc(q.id)}">
-<button class="wbtn st" type="submit">Close this</button></form>` : ''}</div>
-</div>`, sidebar(null, n), drawer(null, n));
+<input class="chip" name="body" required maxlength="400" placeholder="What you want to tell them"
+ style="flex:1 1 260px;min-width:0;cursor:text;font-family:var(--body)">
+<button class="btn dark" type="submit">${ic('comms')} Send</button></form>
+</div></div>`;
+      return { main, n };
+    });
   }
 
-  return { GROUPS, KEYS, HEAD, href, SCREENS, load, counts, sidebar, drawer,
-           buyerFile, questionThread, PACK_LATE_DAYS };
+  return {
+    KEYS, NAV, nav, counts, load, SCREENS, villaFile, questionThread,
+    render: (sess, key, d, msg) => officePage(sess, nav(key, d.n), SCREENS[key](sess, d, msg), msg),
+    wrap: (sess, n, main, msg) => officePage(sess, nav(null, n), main, msg),
+  };
 };

@@ -48,6 +48,9 @@ const STATIC = {
   '/icons/icon-maskable-512.png': ['icons/icon-maskable-512.png', 'image/png', IMMUTABLE],
   '/icons/apple-touch-icon.png':  ['icons/apple-touch-icon.png', 'image/png', IMMUTABLE],
   '/icons/favicon.svg':           ['icons/favicon.svg', 'image/svg+xml; charset=utf-8', IMMUTABLE],
+  /* The head office console's own system. It is not a layer on plint.css and
+     it never loads beside it - see the top of the file. */
+  '/office.css':                  ['office.css', 'text/css; charset=utf-8', 'no-cache'],
 };
 
 /* Read and hashed once, at boot. Two things need the hash: an ETag, so the
@@ -102,7 +105,8 @@ const BUILD = crypto.createHash('sha256')
    rendered the new markup with the old stylesheet.
    A content-addressed URL is the only fix that reaches everyone, because the
    page asks for a different file rather than asking about the same one. */
-const CSS = { plint: '/plint.' + BUILD + '.css', app: '/app.' + BUILD + '.css' };
+const CSS = { plint: '/plint.' + BUILD + '.css', app: '/app.' + BUILD + '.css',
+              office: '/office.' + BUILD + '.css' };
 for (const [name, url] of Object.entries(CSS)) {
   ASSETS[url] = { ...ASSETS['/' + name + '.css'], cache: IMMUTABLE };
 }
@@ -204,14 +208,13 @@ function destinations(sess) {
             ['/money', 'Money', 'money'],
             ['/more', 'More', 'more']];
   }
-  /* Fifteen, in v21's nine groups. The list is flat here because this is what
-     the app bar and the route table need; the groups live in the office module
-     with the screens they head, and the sidebar and the phone menu are both
-     drawn from that one structure. Fifteen is above `BAR_FITS`, which is what
-     gives this role a menu button where the other two keep v21's bar. */
+  /* The head office's twenty-two, flat. The groups live in the office module
+     beside the screens they head; this list is only what the search route and
+     the route table need. The office console draws its own sidebar from the
+     same structure and does not use the bar or the tab bar at all. */
   if (sess.role === 'office') {
-    return OFF.GROUPS.flatMap(([, items]) =>
-      items.map(([k, label]) => [OFF.href(k), label, 'doc']));
+    return OFF.NAV.filter(e => e.item).map(e =>
+      [e.item.id === 'dashboard' ? '/office' : '/office/' + e.item.id, e.item.label, 'doc']);
   }
   /* v21's five-slot bottom bar, and five fits: Me, Villas, Visits, Log, Certs.
      A menu button is for the head office, whose fifteen destinations cannot be
@@ -304,6 +307,109 @@ ${tabbar(sess, current)}${SW}</body></html>`;
  * what make it one. So that role hands in its own, drawn from the same
  * structure its phone menu is drawn from.
  */
+/* ------------------------------------------------- the head office console
+
+   Its own document, not a variant of the one above. The office runs a
+   different visual system - Manrope and Inter on #0C0D10 with a #2F6BFF
+   accent - and it loads office.css alone: plint.css is v21's, it draws the
+   buyer's and the engineer's screens, and a page holding both stylesheets
+   would have two of every value.
+
+   The font link carries the same Google Fonts URL the reference imports,
+   moved into the head so the fetch starts with the document rather than after
+   the stylesheet has parsed. */
+const OFFICE_HEAD = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Plint &mdash; Head office</title>
+<meta name="theme-color" content="#FFFFFF">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Plint">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="${CSS.office}"></head><body>`;
+
+/* The reference's ring-and-dot mark, at its two sizes. */
+const OLOGO = (px, ring, dot) =>
+  `<div class="logo"${px ? ` style="width:${px}px;height:${px}px"` : ''}>` +
+  `<div class="ring"${ring ? ` style="border-width:${ring}px"` : ''}></div>` +
+  `<div class="dot"${dot ? ` style="width:${dot}px;height:${dot}px"` : ''}></div></div>`;
+
+/* Opening the sidebar on a phone, and showing the toast that says what the
+   last write did. Both are the reference's own classes and its own two class
+   names, `.side.open` and `.toast.on`.
+
+   The toast arrives in the query string because a write here is a POST that
+   redirects - which is what keeps the back button honest and makes every
+   action work with no JavaScript at all. The prototype could call `toast()`
+   from an onclick because nothing it did was real. */
+const OFFICE_JS = `<script>
+(function () {
+  var side = document.getElementById('side'), scrim = document.getElementById('scrim2');
+  function open(){ side.classList.add('open'); scrim.classList.add('on'); }
+  function shut(){ side.classList.remove('open'); scrim.classList.remove('on'); }
+  document.getElementById('ham').addEventListener('click', open);
+  scrim.addEventListener('click', shut);
+  var t = document.getElementById('toast');
+  if (t && t.textContent.trim()) {
+    requestAnimationFrame(function(){ t.classList.add('on'); });
+    setTimeout(function(){ t.classList.remove('on'); }, 4200);
+  }
+  /* A filter chip is the one control on these screens that changes nothing on
+     the server: it narrows what is already on the page. */
+  document.addEventListener('click', function (e) {
+    var chip = e.target.closest && e.target.closest('.filters .chip[data-filter]');
+    if (!chip) return;
+    var bar = chip.parentNode, scope = document.getElementById(bar.dataset.scope);
+    [].forEach.call(bar.children, function (c) { c.classList.remove('on'); });
+    chip.classList.add('on');
+    if (!scope) return;
+    var want = chip.dataset.filter;
+    [].forEach.call(scope.querySelectorAll('[data-tags]'), function (row) {
+      row.style.display = (want === '*' || row.dataset.tags.split(' ').indexOf(want) >= 0)
+        ? '' : 'none';
+    });
+  });
+})();
+</script>`;
+
+/**
+ * The office console's document.
+ * @param {object} sess
+ * @param {string} side  the sidebar's nav, built in src/screens/office.js
+ * @param {string} main  the screen
+ * @param {string} [msg] what the last write did, shown as the toast
+ */
+function officePage(sess, side, main, msg) {
+  return `${OFFICE_HEAD}<div class="app">
+<div class="scrim2" id="scrim2"></div>
+<aside class="side" id="side">
+<div class="brand">${OLOGO()}
+<div><div class="bname">Plint</div><div class="bsub">NVT Eterna &middot; Phase 1</div></div></div>
+<nav class="nav">${side}</nav>
+<div class="urow">
+<div class="uav">${esc((sess.name || 'PM').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase())}</div>
+<div class="uinfo"><b>${esc(sess.name || 'Priya Menon')}</b><span>crm@nvt.demo</span></div>
+<form method="post" action="/logout" style="display:contents">
+<button class="sout" title="Sign out" type="submit">&#8677;</button></form>
+</div>
+</aside>
+<div style="flex:1;min-width:0;display:flex;flex-direction:column">
+<div class="topbar">
+<button class="ham" id="ham" aria-label="Menu"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+<div style="display:flex;align-items:center;gap:8px">${OLOGO(20, 4, 7)}<b style="font-family:var(--disp);font-size:15px">Plint</b></div>
+</div>
+<main class="main"><div id="screen">${main}</div></main>
+</div>
+</div>
+<div class="toast" id="toast">${msg ? esc(msg) : ''}</div>
+${OFFICE_JS}${SW}</body></html>`;
+}
+
 function desk(sess, tab, title, sub, main, sidebar, drawer) {
   const dests = destinations(sess);
   return `${HEAD}${appbar(sess, tab, false, title)}<div class="wrap">
@@ -482,7 +588,7 @@ function stageTotal(byProject, row) {
 const ROW = require('./screens/rows')({ esc });
 const ENG = require('./screens/engineer')({ esc, desk, M, asUser, schedules, stageTotal, LOGO });
 const BUY = require('./screens/buyer')({ esc, desk, M, asUser });
-const OFF = require('./screens/office')({ esc, desk, M, asUser, schedules, stageTotal });
+const OFF = require('./screens/office')({ esc, officePage, M, asUser, schedules, stageTotal });
 const FIND = require('./screens/find')({ esc, desk, M });
 
 /** Certification. The only place a demand is created. */
@@ -949,35 +1055,43 @@ const server = http.createServer(async (req, res) => {
        page in the role, so they are one query rather than fifteen. */
     if (sess.role === 'office' && req.method === 'GET' && p.startsWith('/office')) {
       const msg = url.searchParams.get('m');
-      const key = p === '/office' ? 'today'
+      const key = p === '/office' ? 'dashboard'
         : p.startsWith('/office/') ? p.slice(8) : null;
 
       if (key && OFF.KEYS.has(key)) {
         const d = await OFF.load(sess, key);
-        return html(200, OFF.SCREENS[key](sess, d, msg));
+        return html(200, OFF.render(sess, key, d, msg));
       }
 
-      /* The menu is a layer over whatever you were looking at rather than a
-         screen of its own, so there is nothing here to render. The link stays
-         valid - somebody's bookmark, an old notification - and lands on Today
-         with the drawer open. */
+      /* The old menu URL. The navigation is a drawer in the document now and
+         has no URL of its own, so a bookmark lands on the dashboard with the
+         sidebar where it always is. */
       if (p === '/office/menu') {
-        res.writeHead(302, { location: '/office#menu' });
+        res.writeHead(302, { location: '/office' });
         return res.end();
       }
 
-      if (p.startsWith('/office/buyer/')) {
+      if (p.startsWith('/office/villa/')) {
         const n = await asUser(sess, c => OFF.counts(c));
-        const out = await OFF.buyerFile(sess, decodeURIComponent(p.slice(14)), n);
-        return out ? html(200, out) : html(404, page('Not found', sess,
-          '<div class="blk"><h1 class="h1">No such villa.</h1></div>'));
+        const out = await OFF.villaFile(sess, decodeURIComponent(p.slice(14)), n);
+        return out ? html(200, OFF.wrap(sess, out.n, out.main, msg))
+          : html(404, OFF.wrap(sess, n, '<div class="head"><div><div class="h1">No such villa.</div>'
+            + '<div class="hsub">Nothing in Eterna Phase 1 carries that code.</div></div></div>'));
+      }
+
+      /* The old path for the same thing. Somebody's bookmark, a link in a
+         notification: it still resolves rather than 404ing. */
+      if (p.startsWith('/office/buyer/')) {
+        res.writeHead(302, { location: '/office/villa/' + encodeURIComponent(decodeURIComponent(p.slice(14))) });
+        return res.end();
       }
 
       if (p.startsWith('/office/question/')) {
         const n = await asUser(sess, c => OFF.counts(c));
         const out = await OFF.questionThread(sess, decodeURIComponent(p.slice(17)), n, msg);
-        return out ? html(200, out) : html(404, page('Not found', sess,
-          '<div class="blk"><h1 class="h1">No such question.</h1></div>'));
+        return out ? html(200, OFF.wrap(sess, out.n, out.main, msg))
+          : html(404, OFF.wrap(sess, n, '<div class="head"><div><div class="h1">No such question.</div>'
+            + '<div class="hsub">It may have been closed and removed.</div></div></div>'));
       }
     }
 
@@ -992,7 +1106,7 @@ const server = http.createServer(async (req, res) => {
 
     if (p === '/office/handoff' && req.method === 'POST' && sess.role === 'office') {
       const f = form(await body(req));
-      const back = m => { res.writeHead(302, { location: '/office/handoff?m=' + encodeURIComponent(m) }); res.end(); };
+      const back = m => { res.writeHead(302, { location: '/office/villas?m=' + encodeURIComponent(m) }); res.end(); };
       const r = await asUser(sess, async c => (await c.query(
         `UPDATE handoffs SET picked_up_at = now(), picked_up_by = $2
           WHERE id = $1 AND picked_up_at IS NULL
@@ -1018,7 +1132,7 @@ const server = http.createServer(async (req, res) => {
 
     if (p === '/office/qpr' && req.method === 'POST' && sess.role === 'office') {
       const f = form(await body(req));
-      const back = m => { res.writeHead(302, { location: '/office/qpr?m=' + encodeURIComponent(m) }); res.end(); };
+      const back = m => { res.writeHead(302, { location: '/office/rera?m=' + encodeURIComponent(m) }); res.end(); };
       const ref = (f.reference || '').trim().slice(0, 60);
       if (!ref) return back('A filing is the acknowledgement reference. Without it there is no filing.');
       const r = await asUser(sess, async c => (await c.query(

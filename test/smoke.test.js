@@ -88,20 +88,21 @@ const get = (p, cookie) => fetch(BASE + p, { headers: cookie ? { cookie } : {}, 
 
   console.log('\nhead office');
   const o = await (await get('/office', office)).text();
-  /* Scoped to the blocker rows. Today carries a "waiting on you" block above
-     them built from the same card, so an unscoped count of `.wrow` counts the
-     shortcuts to the other destinations as villas. */
-  const rows = (o.match(/href="\/office\/buyer\//g) || []).length;
-  ok(rows === 48, 'the worklist shows all 48 villas (' + rows + ')');
-  /* Columns now, one per party being waited on, so the headings are just who:
-     a 290px column cannot carry "Waiting on the certifying engineer". */
-  ok(/class="board"/.test(o), 'the stuck money is not a board');
-  ok(/>The engineer</.test(o) && />The lender</.test(o),
-     'grouped by who is holding each one up');
-  /* Stuck money is the headline figure and it is red. It is `.summary .fig`
-     now, from the shared dashboard furniture, rather than a `.kpin` this
-     screen drew for itself. */
-  ok(/<p class="fig hot">/.test(o), 'stuck money is not the red headline figure');
+  const v = await (await get('/office/villas', office)).text();
+  /* Read off Villas, which is the register: every villa, once, linked. The
+     dashboard leads with what has stopped rather than with all forty-eight. */
+  const rows = (v.match(/href="\/office\/villa\//g) || []).length;
+  ok(rows === 48, 'the register shows all 48 villas (' + rows + ')');
+
+  /* The pipeline is a board, one column per state a pack can be in - a shape
+     you read, where a list of the same rows is one you count. */
+  ok(/<div class="board">/.test(o), 'the packs are not on a board');
+  ok(/>Certified, pack not sent</.test(o) && />With the lender</.test(o),
+     'the board is not grouped by where each pack has got to');
+  /* And the dashboard leads with the money that has stopped: what is waiting
+     on evidence, as the largest thing on the screen. */
+  ok(/class="eyebrow">Waiting on evidence</.test(o) && /<div class="big num">₹/.test(o),
+     'the money waiting on evidence is not the headline figure');
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
   server.close();
