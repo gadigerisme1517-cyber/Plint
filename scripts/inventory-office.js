@@ -176,6 +176,14 @@ const text = s => s.replace(/<[^>]*>/g, '').replace(/&middot;/g, '·')
         rows.push({ view, where: 'filter chip', says,
                     now: 'narrows the list in the open page',
                     should: 'filter, count, and be clearable', state: 'works' });
+      } else if (/data-clear=/.test(attrs)) {
+        /* Proven by the browser sweep, which clicks it: it puts every bar on
+           the page back to All and empties the search box. Nothing about that
+           is visible in the markup, which is why the first version of this
+           counted twenty-three of them dead. */
+        rows.push({ view, where: 'clear filters', says,
+                    now: 'puts the bars back to All and empties the search',
+                    should: 'undo the filtering', state: 'works' });
       } else if (/\bham\b/.test(cls)) {
         rows.push({ view, where: 'hamburger', says: '(menu)',
                     now: 'opens the drawer under 860px',

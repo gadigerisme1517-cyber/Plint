@@ -757,14 +757,16 @@ module.exports = function office(ctx) {
           ? d.rows.queued.map(r => row('report', r.code + ' · ' + r.stage_name,
             (r.bank || 'self funded') + ' · queued ' + days(r.queued_at) + 'd ago',
             `<div class="rr">${esc(r.total_paise ? M.crore(r.total_paise) : '—')}</div>`)).join('')
-          : empty('Every certified stage has gone out.'),
+          : empty('Every certified stage has gone out.',
+            { label: 'See what is with a lender', href: '/office/wait' }),
         btn('All packs', { href: '/office/packs' }))
       + card('Villas gone quiet',
         d.rows.quiet.length
           ? d.rows.quiet.map(r => row('bell', r.code + ' · ' + r.buyer_name,
             r.last_shot ? 'last photograph ' + days(r.last_shot) + ' days ago' : 'no photograph yet',
             pill('over', r.last_shot ? days(r.last_shot) + 'd' : 'none'))).join('')
-          : empty('Every villa has been photographed inside three weeks.'),
+          : empty('Every villa has been photographed inside three weeks.',
+            { label: 'See the evidence', href: '/office/evidence' }),
         btn('All quiet villas', { href: '/office/silent' }))
       + `</div>`
       + `<div class="g2" style="margin-top:12px">`
@@ -774,7 +776,8 @@ module.exports = function office(ctx) {
 <div class="rico">${ic('comms')}</div><div class="rt"><b>${esc(q.subject)}</b>
 <span>${esc(q.code)} · ${esc(q.asker)} · ${q.replies} message${q.replies === 1 ? '' : 's'}</span></div>
 ${pill('over', days(q.raised_at) + 'd')}</a>`).join('')
-          : empty('No buyer is waiting on an answer.'),
+          : empty('No buyer is waiting on an answer.',
+            { label: 'See the warranty claims', href: '/office/warranty' }),
         btn('Warranty', { href: '/office/warranty' }))
       + card('Reported as stopping the work',
         d.rows.blockers.length
@@ -782,7 +785,8 @@ ${pill('over', days(q.raised_at) + 'd')}</a>`).join('')
 <div class="rico">${ic('risk')}</div><div class="rt"><b>${esc(b.reason)}</b>
 <span>${esc(b.code)} · ${esc(b.stage_name)} · with ${esc(b.holder || b.holder_role)}</span></div>
 ${pill('over', b.age + 'd')}</a>`).join('')
-          : empty('Nothing has been reported as blocked.'),
+          : empty('Nothing has been reported as blocked.',
+            { label: 'See every stage', href: '/office/stages' }),
         btn('Stages', { href: '/office/stages' }))
       + `</div>`
       + `<div class="ct" style="margin:18px 0 12px">The stage worklist</div>`
@@ -966,7 +970,9 @@ ${pill('over', b.age + 'd')}</a>`).join('')
 <input class="chip" name="letter" required maxlength="60" placeholder="Sanction letter reference"
  style="flex:1 1 180px;min-width:0;cursor:text;font-family:var(--body)">
 <button class="btn dark" type="submit">${ic('attend')} Record the sanction</button></form>
-</div></div>`).join('') : empty('Every file with a lender has its sanction on record.'));
+</div></div>`).join('')
+        : empty('Every file with a lender has its sanction on record.',
+          { label: 'See the villas', href: '/office/villas' }));
   };
 
   /* --------------------------------------------------------------- stages */

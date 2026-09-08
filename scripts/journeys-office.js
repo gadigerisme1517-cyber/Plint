@@ -109,8 +109,14 @@ const num = (html, label) => {
 
       const packs = await get('office', '/office/packs');
       j.ok(packs.status === 200, 'Ready to send opens');
-      const queuedNow = rows(packs.html, /class="tr click"/g);
-      j.ok(queuedNow > 0, 'a pack is queued for a lender (' + queuedNow + ' waiting)');
+      /* A pack is queued for a LENDER. A self-funded villa has no lender to
+         send anything to, so certifying one raises the demand and queues
+         nothing - which is right, and is not the chain being broken. */
+      const queuedNow = rows(packs.html, /action="\/office\/send"/g);
+      const lender = /certified\. Demand for [^.]*\. No lender/.test(r.said || '');
+      j.ok(queuedNow > 0 || lender,
+        queuedNow > 0 ? 'a pack is queued for a lender (' + queuedNow + ' waiting)'
+          : 'that villa is self funded, so there is no lender to queue a pack for');
 
       const dash = await get('office', '/office');
       j.ok(rows(dash.html, /class="lcard"/g) >= beforeQueued,
@@ -172,7 +178,14 @@ const num = (html, label) => {
     const j = journey('Record a sanction, and disbursements become possible');
     const chase = await get('office', '/office/chase');
     const unit = (/name="unit" value="([^"]+)"/.exec(chase.html) || [])[1];
-    if (!j.ok(!!unit, 'a villa is waiting for its sanction letter')) return;
+    /* Not `return`: this is one block inside the run, and returning from it
+       ended the whole sweep before it printed anything. Once every sanction
+       has been recorded there is nothing here to record, which is the queue
+       being empty rather than the journey being broken. */
+    if (!unit) {
+      j.note('every villa with a lender already has its sanction on record');
+      j.ok(/class="empty"/.test(chase.html), 'and the screen says so rather than going blank');
+    } else {
     const before = rows(chase.html, /name="unit"/g);
     const r = await post('office', '/office/sanction',
       { unit, sanction: '9000000', own: '1500000', letter: 'SANC/' + Date.now() });
@@ -184,6 +197,7 @@ const num = (html, label) => {
       + rows(after.html, /name="unit"/g) + ')');
     const villas = await get('office', '/office/villas');
     j.ok(villas.status === 200, 'and the register still opens');
+    }
   }
 
   // ----------------------------------------------------------- 4. chase a pack
@@ -229,23 +243,23 @@ const num = (html, label) => {
     const j = journey('The five documents of a stage pack');
     const stages = await get('office', '/office/documents');
     j.ok(stages.status === 200, 'the Documents screen opens');
-    const linksToDoc = /href="\/doc\/(demand|certificate)\//.test(stages.html);
-    if (!linksToDoc) j.fail('partial', 'the Documents screen names the documents and opens none of them');
-
-    /* The two that exist as files, fetched as a reader would. */
-    const eng = await get('engineer', '/engineer/certs');
-    const stage = (/href="\/engineer\/cert\/([^"]+)"/.exec(eng.html) || [])[1];
+    /* All five, opened from the screen that lists them, the way a reader
+       opens them. A document that is named and cannot be opened is the claim
+       "a pack is five documents" with nothing behind it. */
+    const stage = (/\/doc\/certificate\/([^.]+)\.pdf/.exec(stages.html) || [])[1];
+    j.ok(!!stage, 'the Documents screen links a stage pack');
     if (stage) {
-      for (const kind of ['demand', 'certificate']) {
+      for (const kind of ['certificate', 'demand', 'photographs', 'progress', 'account']) {
+        const linked = stages.html.includes('/doc/' + kind + '/');
         const d = await get('office', '/doc/' + kind + '/' + stage + '.pdf');
         const isFile = d.buf && d.buf.slice(0, 4).toString() === '%PDF';
-        j.ok(isFile || d.status === 404,
-          kind + ': ' + (isFile ? 'produces a real PDF (' + d.buf.length + ' bytes)'
-            : 'HTTP ' + d.status));
+        j.ok(isFile && linked, kind + ': '
+          + (isFile ? 'a real PDF (' + d.buf.length + ' bytes)' : 'HTTP ' + d.status)
+          + (linked ? ', linked from the screen' : ', NOT linked from the screen'));
       }
     }
-    j.note('two of the five are files. The other three are named in prose and '
-      + 'generated nowhere, so a reader cannot open them.');
+    j.note('four print from the record; the certificate is the one carrying a '
+      + 'qualified signature');
   }
 
   // ----------------------------------------------------------------- 7. RERA
@@ -321,15 +335,19 @@ const num = (html, label) => {
                      'settings', 'help']) {
       const p = k ? '/office/' + k : '/office';
       const r = await get('office', p);
-      for (const m of r.html.match(/<div class="empty">([^<]*)<\/div>/g) || []) {
-        empties.push([p, m.replace(/<[^>]*>/g, '')]);
+      for (const m of r.html.match(/<div class="empty">[\s\S]*?<\/div>\s*<\/div>/g) || []) {
+        empties.push([p, m.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' '),
+          (/href="([^"]+)"/.exec(m) || [])[1]]);
       }
     }
     j.ok(empties.length > 0, empties.length + ' empty states found');
-    for (const [p, said] of empties) {
-      j.ok(said.length > 12, p + ': "' + said + '"');
+    for (const [p, said, out] of empties) {
+      j.ok(said.length > 12, p + ': "' + said.trim() + '"');
+      /* And a way off the screen. An empty list with nothing to do next is a
+         dead end however true its sentence is. */
+      if (!j.ok(!!out, p + ': offers a way out')) continue;
+      j.ok((await get('office', out)).status === 200, p + ': and it goes somewhere (' + out + ')');
     }
-    j.note('none of them offers a control; they say why the list is empty and stop.');
   }
 
   // ------------------------------------------------------------------- report
