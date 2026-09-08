@@ -359,21 +359,84 @@ const OFFICE_JS = `<script>
     requestAnimationFrame(function(){ t.classList.add('on'); });
     setTimeout(function(){ t.classList.remove('on'); }, 4200);
   }
-  /* A filter chip is the one control on these screens that changes nothing on
-     the server: it narrows what is already on the page. */
+  /* Filters. The one kind of control on these screens that changes nothing on
+     the server: it narrows what is already on the page.
+
+     A screen may carry several bars - by lender AND by age - and they combine:
+     a row shows only if every bar is either on All or matches it. One bar per
+     question, and the questions are ANDed, which is what a reader expects of
+     two rows of chips and is not what the first version did.
+
+     After every change the count says how many of how many are showing, the
+     Clear appears only when something is filtering, and a list that has been
+     filtered to nothing says so rather than going blank. */
+  function apply(scope) {
+    var list = document.getElementById(scope);
+    if (!list) return;
+    var bars = document.querySelectorAll('.filters[data-scope="' + scope + '"]');
+    var wants = [];
+    [].forEach.call(bars, function (bar) {
+      var on = bar.querySelector('.chip.on[data-filter]');
+      if (on && on.dataset.filter !== '*') wants.push(on.dataset.filter);
+    });
+    /* And the search box, where a list is long enough to need one. It reads
+       the row's own text, so it searches what the reader can see rather than a
+       field somebody decided was searchable. */
+    var box = document.querySelector('[data-search="' + scope + '"]');
+    var q = box && box.value.trim().toLowerCase();
+    var rows = list.querySelectorAll('[data-tags]'), showing = 0;
+    [].forEach.call(rows, function (row) {
+      var tags = row.dataset.tags.split(' ');
+      var keep = wants.every(function (w) { return tags.indexOf(w) >= 0; });
+      if (keep && q) keep = row.textContent.toLowerCase().indexOf(q) >= 0;
+      row.hidden = !keep;
+      if (keep) showing++;
+    });
+    var count = document.querySelector('[data-count="' + scope + '"]');
+    if (count) {
+      count.querySelector('.fnum').textContent = showing === rows.length
+        ? String(rows.length) : showing + ' of ' + rows.length;
+      var clear = count.querySelector('[data-clear]');
+      if (clear) clear.hidden = wants.length === 0 && !q;
+    }
+    var none = list.querySelector('.filtered-empty');
+    if (none) none.hidden = showing !== 0 || rows.length === 0;
+  }
   document.addEventListener('click', function (e) {
     var chip = e.target.closest && e.target.closest('.filters .chip[data-filter]');
-    if (!chip) return;
-    var bar = chip.parentNode, scope = document.getElementById(bar.dataset.scope);
-    [].forEach.call(bar.children, function (c) { c.classList.remove('on'); });
-    chip.classList.add('on');
-    if (!scope) return;
-    var want = chip.dataset.filter;
-    [].forEach.call(scope.querySelectorAll('[data-tags]'), function (row) {
-      row.style.display = (want === '*' || row.dataset.tags.split(' ').indexOf(want) >= 0)
-        ? '' : 'none';
-    });
+    if (chip) {
+      var bar = chip.parentNode;
+      [].forEach.call(bar.querySelectorAll('.chip'), function (c) { c.classList.remove('on'); });
+      chip.classList.add('on');
+      return apply(bar.dataset.scope);
+    }
+    var clear = e.target.closest && e.target.closest('[data-clear]');
+    if (clear) {
+      var scope = clear.dataset.clear;
+      var box = document.querySelector('[data-search="' + scope + '"]');
+      if (box) box.value = '';
+      [].forEach.call(document.querySelectorAll('.filters[data-scope="' + scope + '"]'),
+        function (bar) {
+          [].forEach.call(bar.querySelectorAll('.chip'), function (c) { c.classList.remove('on'); });
+          var all = bar.querySelector('.chip[data-filter="*"]');
+          if (all) all.classList.add('on');
+        });
+      apply(scope);
+    }
   });
+  document.addEventListener('input', function (e) {
+    var box = e.target.closest && e.target.closest('[data-search]');
+    if (box) apply(box.dataset.search);
+  });
+  /* Every scope on the page, whether it is narrowed by chips, by a search box
+     or by both. Keying this off the bars alone left a search-only list with a
+     count that never filled in. */
+  var scopes = {};
+  [].forEach.call(document.querySelectorAll('.filters[data-scope]'),
+    function (b) { scopes[b.dataset.scope] = 1; });
+  [].forEach.call(document.querySelectorAll('[data-search]'),
+    function (b) { scopes[b.dataset.search] = 1; });
+  Object.keys(scopes).forEach(apply);
 })();
 </script>`;
 
@@ -684,8 +747,22 @@ async function docContext(sess, stageId) {
       ? (await c.query('SELECT * FROM users WHERE id=$1', [s.certified_by])).rows[0]
       : null;
     const p = (await c.query('SELECT * FROM projects WHERE id=$1', [s.project_id])).rows[0];
+    /* The whole villa, not just this stage. Two of the five documents are
+       about where the villa stands rather than about one stage: the progress
+       statement prices this stage inside the schedule it belongs to, and the
+       statement of account is everything billed and received against the unit.
+       Neither can be assembled from one row. */
+    const stages = (await c.query(
+      `SELECT st.id, st.status, st.certified_at, t.seq, t.name, t.pct_bp,
+              dm.doc_no, dm.raised_at, dm.due_at, dm.paid_at, dm.total_paise,
+              (SELECT count(*)::int FROM evidence e WHERE e.unit_stage_id = st.id) shots
+         FROM unit_stages st
+         JOIN stage_templates t ON t.code = st.stage_code AND t.project_id = $2
+         LEFT JOIN demands dm ON dm.unit_stage_id = st.id
+        WHERE st.unit_id = $1 ORDER BY t.seq`, [s.unit_id, s.project_id])).rows;
     return {
       unit: s, stageRow: s, demand: d, evidence: ev, project: p, buyer: s.buyer_name,
+      stages,
       stage: { name: s.name, pct_bp: s.pct_bp, description: s.description },
       engineer: eng || { display_name: 'Not certified' },
     };
@@ -1584,15 +1661,24 @@ const server = http.createServer(async (req, res) => {
                     : 'That snag is not open.');
     }
 
-    const doc = /^\/doc\/(demand|certificate)\/(.+)\.pdf$/.exec(p);
-    if (doc) {
+    /* The five documents of a stage pack. Four print from the record; the
+       completion certificate is the one that carries a qualified signature,
+       and only a qualified engineer may put it there. */
+    const DOCS = {
+      demand: PDF.demandLetter,
+      certificate: PDF.completionCertificate,
+      photographs: PDF.photographSheet,
+      progress: PDF.progressStatement,
+      account: PDF.statementOfAccount,
+    };
+    const doc = /^\/doc\/([a-z]+)\/(.+)\.pdf$/.exec(p);
+    if (doc && DOCS[doc[1]]) {
       const ctx = await docContext(sess, decodeURIComponent(doc[2]));
       if (!ctx) return html(404, page('Not found', sess, '<div class="blk"><h1 class="h1">No such document.</h1></div>'));
       if (doc[1] === 'demand' && !ctx.demand)
         return html(404, page('Not found', sess, '<div class="blk"><h1 class="h1">No demand raised yet.</h1></div>'));
       res.writeHead(200, { 'content-type': 'application/pdf' });
-      const stream = doc[1] === 'demand' ? PDF.demandLetter(ctx) : PDF.completionCertificate(ctx);
-      return stream.pipe(res);
+      return DOCS[doc[1]](ctx).pipe(res);
     }
 
     html(404, page('Not found', sess, '<div class="gap l"></div><div class="blk"><h1 class="h1">Not found.</h1></div>'));

@@ -179,4 +179,154 @@ function thumbnails(doc, shots) {
   doc.y = rowTop + H + 26;
 }
 
-module.exports = { demandLetter, completionCertificate };
+/* ------------------------------------------------------- the other three
+
+   A stage pack is five documents. The engineer's completion certificate is the
+   one that carries an external qualified signature; the other four are printed
+   from the record and carry none. Two of those four are above. These are the
+   remaining two, plus the photograph sheet.
+
+   None of them replaces the lender's own technical officer. The lender sends
+   one, always, and reads these before the visit rather than instead of it. */
+
+/** The evidence for one stage: what was photographed, when, where, and its hash. */
+function photographSheet(ctx) {
+  const { unit, stage, evidence, stageRow, project } = ctx;
+  const doc = newDoc();
+  head(doc, 'Photograph sheet');
+
+  kicker(doc, unit.code + '   \u00B7   ' + stage.name);
+  doc.font(REG).fontSize(30).fillColor(INK)
+     .text(evidence.length + (evidence.length === 1 ? ' photograph' : ' photographs'), L, doc.y);
+  gap(doc, 6);
+  para(doc, 'Each one was hashed on the phone that took it, before it left site. '
+    + 'The hash is printed under the photograph and again in the completion '
+    + 'certificate, so a photograph that has been changed since stops matching.');
+  gap(doc, 22);
+
+  row(doc, 'Villa', unit.code + '   \u00B7   ' + unit.unit_type);
+  row(doc, 'Stage', stage.name);
+  row(doc, 'Certified', stageRow.certified_at ? M.longDate(stageRow.certified_at) : 'Not yet certified');
+  gap(doc, 4);
+
+  if (!evidence.length) {
+    gap(doc, 10);
+    para(doc, 'No photograph has been captured for this stage.', { bold: true });
+  } else {
+    thumbnails(doc, evidence);
+    gap(doc, 4);
+    for (const e of evidence) {
+      row(doc, M.longDate(e.taken_at) + (e.gps ? '   \u00B7   ' + e.gps : ''),
+        (e.caption || 'no caption'));
+    }
+  }
+
+  gap(doc, 26);
+  para(doc, 'These photographs are what the office and the buyer can see between '
+    + 'visits. They are not a substitute for the lender\u2019s own technical officer, '
+    + 'who inspects the villa before the lender releases against this stage.',
+    { size: 9, color: INK3, width: 460 });
+  gap(doc, 12);
+  para(doc, 'Project ' + project.name + ', ' + project.phase + '.',
+    { size: 8, color: INK3 });
+  doc.end();
+  return doc;
+}
+
+/** Where the villa stands against the schedule this stage is billed from. */
+function progressStatement(ctx) {
+  const { unit, stage, stages, project } = ctx;
+  const doc = newDoc();
+  head(doc, 'Progress statement');
+
+  const done = stages.filter(x => x.certified_at || x.status === 'paid'
+    || x.status === 'demanded' || x.status === 'certified');
+  const pct = stages.reduce((t, x) =>
+    t + (done.includes(x) ? x.pct_bp : 0), 0) / 100;
+
+  kicker(doc, unit.code + '   \u00B7   ' + unit.unit_type);
+  doc.font(REG).fontSize(30).fillColor(INK).text(pct.toFixed(1) + ' per cent', L, doc.y);
+  gap(doc, 6);
+  para(doc, done.length + ' of ' + stages.length + ' stages certified, priced against the '
+    + 'payment schedule set for the project. This statement is printed from the same '
+    + 'certified stages the demand letters are raised from, so the two cannot disagree.');
+  gap(doc, 22);
+
+  row(doc, 'Villa', unit.code);
+  row(doc, 'Buyer', ctx.buyer);
+  row(doc, 'Lender', unit.bank || 'Self funded');
+  row(doc, 'Agreement value', M.money(unit.agreement_value_paise));
+  gap(doc, 16);
+
+  kicker(doc, 'Stage by stage');
+  for (const x of stages) {
+    const state = x.paid_at ? 'Paid ' + M.longDate(x.paid_at)
+      : x.doc_no ? 'Billed ' + x.doc_no
+        : x.certified_at ? 'Certified ' + M.longDate(x.certified_at)
+          : x.status === 'marked' ? 'Marked on site, not certified'
+            : 'Not started';
+    row(doc, (x.seq + 1) + '.  ' + x.name + '   \u00B7   ' + (x.pct_bp / 100) + '%',
+      state, x.name === stage.name);
+  }
+
+  gap(doc, 26);
+  para(doc, 'A stage is certified only by a qualified engineer, and nothing is billed '
+    + 'before it is. The percentages are the project\u2019s payment schedule and are set '
+    + 'once for every villa in it.', { size: 9, color: INK3, width: 460 });
+  gap(doc, 12);
+  para(doc, 'Project ' + project.name + ', ' + project.phase + '.', { size: 8, color: INK3 });
+  doc.end();
+  return doc;
+}
+
+/** Everything billed and everything received against this villa. */
+function statementOfAccount(ctx) {
+  const { unit, stages, project } = ctx;
+  const doc = newDoc();
+  head(doc, 'Statement of account');
+
+  const billed = stages.reduce((t, x) => t + Number(x.total_paise || 0), 0);
+  const received = stages.reduce((t, x) => t + (x.paid_at ? Number(x.total_paise || 0) : 0), 0);
+
+  kicker(doc, unit.code + '   \u00B7   outstanding');
+  doc.font(REG).fontSize(30).fillColor(INK).text(M.money(billed - received), L, doc.y);
+  gap(doc, 6);
+  para(doc, M.money(billed) + ' billed, ' + M.money(received) + ' received. '
+    + 'Receipts are read from the builder\u2019s own accounting system; nothing on this '
+    + 'statement is written back to it.');
+  gap(doc, 22);
+
+  row(doc, 'Villa', unit.code + '   \u00B7   ' + unit.unit_type);
+  row(doc, 'Buyer', ctx.buyer);
+  row(doc, 'Lender', unit.bank || 'Self funded');
+  row(doc, 'Agreement value', M.money(unit.agreement_value_paise));
+  gap(doc, 16);
+
+  kicker(doc, 'Demands raised');
+  const raised = stages.filter(x => x.doc_no);
+  if (!raised.length) para(doc, 'Nothing has been billed on this villa yet.', { bold: true });
+  for (const x of raised) {
+    row(doc, x.doc_no + '   \u00B7   ' + x.name + '   \u00B7   ' + M.longDate(x.raised_at),
+      M.money(x.total_paise) + (x.paid_at ? '   received' : '   due ' + M.longDate(x.due_at)),
+      !!x.paid_at);
+  }
+  gap(doc, 14);
+  row(doc, 'Billed', M.money(billed));
+  row(doc, 'Received', M.money(received));
+  row(doc, 'Outstanding', M.money(billed - received), true);
+
+  gap(doc, 26);
+  para(doc, 'Bookings and receipts come from the builder\u2019s ERP. Plint reads them and '
+    + 'writes nothing back, so this statement reports what that system holds rather '
+    + 'than replacing it.', { size: 9, color: INK3, width: 460 });
+  gap(doc, 12);
+  para(doc, 'Project ' + project.name + ', ' + project.phase + '.', { size: 8, color: INK3 });
+  doc.end();
+  return doc;
+}
+
+module.exports = {
+  demandLetter, completionCertificate,
+  photographSheet, progressStatement, statementOfAccount,
+};
+

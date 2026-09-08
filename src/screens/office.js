@@ -168,10 +168,16 @@ module.exports = function office(ctx) {
     if (!rows.length) {
       return `<div class="tbl"><div class="tr hd" style="${gt}">`
         + cols.map(c => `<div>${esc(c)}</div>`).join('')
-        + `</div><div class="empty">${esc(o.empty || 'Nothing here.')}</div></div>`;
+        + `</div>${empty(o.empty || 'Nothing here.', o.out)}</div>`;
     }
     return `<div class="tbl"${o.id ? ` id="${o.id}"` : ''}><div class="tr hd" style="${gt}">`
       + cols.map(c => `<div>${esc(c)}</div>`).join('') + '</div>'
+      /* A list filtered down to nothing says what to try instead. Without it
+         the table header sits over a blank, which reads as a broken screen
+         rather than as an answer. */
+      + (o.tags ? `<div class="empty filtered-empty" hidden>${esc(o.noneMatch
+        || 'Nothing here matches those filters.')}<div style="margin-top:12px">`
+        + `<button class="btn" type="button" data-clear="${o.id}">Clear filters</button></div></div>` : '')
       + rows.map((r, i) => {
         const tags = o.tags ? ` data-tags="${esc(o.tags(i))}"` : '';
         const cells = r.map(c => `<div>${c}</div>`).join('');
@@ -181,10 +187,36 @@ module.exports = function office(ctx) {
       }).join('') + '</div>';
   }
 
+  /**
+   * One bar of chips, asking one question. A screen may carry several and they
+   * combine: a row shows only when every bar either says All or matches it.
+   * @param {string} scope  the id of the list this narrows
+   * @param {[string,string][]} opts  label and tag; the first is always All
+   */
   const filters = (scope, opts) =>
     `<div class="filters" data-scope="${scope}">${opts.map((o, i) =>
       `<button class="chip ${i === 0 ? 'on' : ''}" data-filter="${esc(o[1])}" type="button">`
       + `${esc(o[0])}</button>`).join('')}</div>`;
+
+  /* What is showing, of how many, and the way back to all of them. `.hsub` and
+     `.chip` are the reference's own; there is no counter component in it. */
+  /* A search box. Only where a list is long enough that scanning it is the
+     problem: forty-eight villas, every stage of every villa, every document.
+     It reads the row's own text, so it searches what the reader can see. */
+  const search = (scope, hint) =>
+    `<input class="chip" type="search" data-search="${scope}" placeholder="${esc(hint)}"`
+    + ` style="flex:1 1 220px;min-width:0;cursor:text;font-family:var(--body);margin-bottom:14px">`;
+
+  /* The lenders on a set of rows, so a filter offers the ones that are there
+     rather than a fixed list that goes stale. */
+  const lendersIn = rows => [...new Set(rows.map(r => r.bank).filter(Boolean))].sort();
+  const tagOf = v => String(v || 'none').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const ageBand = d => (d <= 7 ? 'age-week' : d <= 14 ? 'age-fortnight' : 'age-over');
+
+  const showing = (scope, what) =>
+    `<div class="hsub" data-count="${scope}" style="margin:-6px 0 12px;display:flex;`
+    + `align-items:center;gap:10px"><span><span class="fnum">0</span> ${esc(what)}</span>`
+    + `<button class="chip" type="button" data-clear="${scope}" hidden>Clear filters</button></div>`;
 
   const card = (title, body, acts = '') =>
     `<div class="card"><div class="ch"><div class="ct">${esc(title)}</div>${acts}</div>`
@@ -204,7 +236,12 @@ module.exports = function office(ctx) {
     + (o.icon ? ic(o.icon) : '') + ' ' + esc(label) + '</button></form>';
 
   const note = t => `<div class="note">${t}</div>`;
-  const empty = t => `<div class="empty">${esc(t)}</div>`;
+  /* An empty list is a real state and says why it is empty. It also says what
+     to do instead: a screen with nothing on it and no way off it is a dead end
+     however true its sentence is. */
+  const empty = (t, out) => `<div class="empty">${esc(t)}`
+    + (out ? `<div style="margin-top:12px"><a class="btn" href="${out.href}">${esc(out.label)}</a></div>` : '')
+    + `</div>`;
 
   const board = cols => `<div class="board">${cols.map(c =>
     `<div class="col"><div class="colh"><span class="ctt">${esc(c.label)}</span>`
@@ -215,6 +252,27 @@ module.exports = function office(ctx) {
       + (k.tags ? `<div class="lt">${k.tags}</div>` : '') + '</a>').join('')
       : `<div class="ls" style="padding:6px 5px">Nothing here.</div>`)
     + '</div>').join('')}</div>`;
+
+  /* A snag is raised as a sentence, not against a trade, so the trade is read
+     out of what was written. It is a filter, not a record: what it cannot
+     place goes under "other" rather than being guessed at. */
+  const TRADES = [['plumb', 'Plumbing'], ['elec', 'Electrical'], ['paint', 'Painting'],
+                  ['tile', 'Tiling and flooring'], ['carp', 'Joinery'],
+                  ['water', 'Water and damp'], ['civil', 'Civil and plaster'],
+                  ['other', 'Anything else']];
+  const TRADE_WORDS = {
+    plumb: /plumb|tap|drain|sanitary|wc|basin|pipe/i,
+    elec: /electric|wiring|socket|switch|light|meter|db /i,
+    paint: /paint|putty|primer|emulsion/i,
+    tile: /tile|floor|marble|granite|skirting/i,
+    carp: /door|window|joinery|shutter|wardrobe|frame/i,
+    water: /leak|damp|seep|water|moist|patch/i,
+    civil: /crack|plaster|masonry|block|concrete|render/i,
+  };
+  const tradeOf = title => {
+    for (const [k, re] of Object.entries(TRADE_WORDS)) if (re.test(title || '')) return k;
+    return 'other';
+  };
 
   const villaHref = code => '/office/villa/' + encodeURIComponent(code);
   /* A villa in a table cell. `href` makes the name itself the link, for the
@@ -487,9 +545,33 @@ module.exports = function office(ctx) {
                   w.display_name engineer_name,
                   (SELECT count(*)::int FROM unit_stages s
                     WHERE s.unit_id = u.id AND s.status = 'paid')            paid,
-                  (SELECT count(*)::int FROM unit_stages s WHERE s.unit_id = u.id) stages
+                  (SELECT count(*)::int FROM unit_stages s WHERE s.unit_id = u.id) stages,
+                  /* The stage in hand, which is what a reader filters this
+                     register by: "show me everything at plastering". */
+                  (SELECT t.name FROM unit_stages s
+                     JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
+                    WHERE s.unit_id = u.id AND s.status <> 'paid'
+                    ORDER BY t.seq LIMIT 1)                                  next_stage,
+                  /* Money that has STOPPED, which is not the same as money not
+                     yet paid: every villa has an unpaid demand inside its due
+                     window, so counting those tagged all forty-eight and the
+                     filter told a reader nothing. Stopped is past its due date,
+                     or sitting with a lender past a fortnight, or a lender
+                     chosen with no sanction letter on record. */
+                  ((SELECT count(*)::int FROM unit_stages s
+                      JOIN demands dm ON dm.unit_stage_id = s.id
+                     WHERE s.unit_id = u.id AND dm.paid_at IS NULL
+                       AND dm.due_at < CURRENT_DATE)
+                   + (SELECT count(*)::int FROM unit_stages s
+                        JOIN pack_deliveries pd ON pd.unit_stage_id = s.id
+                        JOIN demands dm ON dm.unit_stage_id = s.id
+                       WHERE s.unit_id = u.id AND pd.state = 'delivered'
+                         AND dm.paid_at IS NULL
+                         AND pd.delivered_at < now() - ($1 || ' days')::interval)
+                   + CASE WHEN u.bank IS NOT NULL AND u.sanction_recorded_at IS NULL
+                          THEN 1 ELSE 0 END)                                 stuck
              FROM units u LEFT JOIN users w ON w.id = u.assigned_engineer_id
-            ORDER BY u.code`)).rows,
+            ORDER BY u.code`, [String(PACK_LATE_DAYS)])).rows,
         handoffs: (await c.query(
           `SELECT h.id, h.token_paise, h.salesperson, h.note, h.created_at, h.picked_up_at,
                   u.code, u.buyer_name
@@ -747,7 +829,11 @@ ${pill('over', b.age + 'd')}</a>`).join('')
         + 'The fifth is the engineer’s completion certificate, which carries an external '
         + 'qualified signature. The lender still sends its own technical officer — '
         + 'the pack does not stand in for that visit.')
-      + filters('packlist', [['All', '*'], ['With a lender', 'bank'], ['Self funded', 'self']])
+      + filters('packlist', [['Every lender', '*'], ...lendersIn(queued).map(b => [b, tagOf(b)]),
+        ['Self funded', 'self']])
+      + filters('packlist', [['Any age', '*'], ['Under a week', 'age-week'],
+        ['One to two weeks', 'age-fortnight'], ['Over a fortnight', 'age-over']])
+      + showing('packlist', 'packs waiting to go out')
       + table(['Villa', 'Stage', 'Lender', 'Queued', 'Amount', ''],
         queued.map(r => [
           who(r.code, r.buyer_name, villaHref(r.code)),
@@ -760,8 +846,11 @@ ${pill('over', b.age + 'd')}</a>`).join('')
         '1.5fr 1.2fr 1fr .7fr .8fr auto',
         {
           id: 'packlist',
-          tags: i => (queued[i].bank ? 'bank' : 'self'),
+          tags: i => (queued[i].bank ? tagOf(queued[i].bank) : 'self')
+            + ' ' + ageBand(days(queued[i].queued_at)),
           empty: 'Every certified stage has gone out.',
+          out: { label: 'See what is with a lender', href: '/office/wait' },
+          noneMatch: 'No pack is waiting on that lender at that age.',
         });
   };
 
@@ -779,8 +868,11 @@ ${pill('over', b.age + 'd')}</a>`).join('')
         { l: 'Money out there', icon: 'growth', v: esc(M.crore(value)), n: 'sent and unpaid' },
         { l: 'Oldest', icon: 'cockpit', v: out.length ? Math.max(...out.map(r => days(r.delivered_at))) + 'd' : '—', n: 'since delivery' },
       ])
-      + filters('waitlist', [['All', '*'], ['Past ' + PACK_LATE_DAYS + ' days', 'late'],
+      + filters('waitlist', [['Every lender', '*'], ...lendersIn(out).map(b => [b, tagOf(b)]),
+        ['Self funded', 'self']])
+      + filters('waitlist', [['Any age', '*'], ['Past ' + PACK_LATE_DAYS + ' days', 'late'],
         ['Inside ' + PACK_LATE_DAYS, 'ok'], ['Never chased', 'unchased']])
+      + showing('waitlist', 'packs with a lender')
       + table(['Villa', 'Stage', 'Lender', 'With them', 'Chased', 'Amount', ''],
         out.map(r => [
           who(r.code, r.buyer_name, villaHref(r.code)),
@@ -801,9 +893,12 @@ ${pill('over', b.age + 'd')}</a>`).join('')
         '1.4fr 1.1fr .9fr .9fr 1.1fr .8fr auto',
         {
           id: 'waitlist',
-          tags: i => (days(out[i].delivered_at) > PACK_LATE_DAYS ? 'late' : 'ok')
+          tags: i => (out[i].bank ? tagOf(out[i].bank) : 'self')
+            + ' ' + (days(out[i].delivered_at) > PACK_LATE_DAYS ? 'late' : 'ok')
             + (out[i].attempts > 1 ? '' : ' unchased'),
           empty: 'Nothing is sitting with a lender.',
+          out: { label: 'See the packs ready to send', href: '/office/packs' },
+          noneMatch: 'No pack with that lender is at that age.',
         });
   };
 
@@ -819,7 +914,13 @@ ${pill('over', b.age + 'd')}</a>`).join('')
         { l: 'Oldest open', icon: 'risk', v: open.length ? days(open[0].asked_at) + 'd' : '—', n: 'since they asked' },
         { l: 'Villas affected', icon: 'hostel', v: String(new Set(open.map(r => r.code)).size), n: 'with a query open' },
       ])
-      + (open.length ? open.map(q => `<div class="card" style="margin-bottom:12px">
+      + (open.length ? filters('querylist', [['Every lender', '*'],
+        ...lendersIn(open).map(b => [b, tagOf(b)])])
+        + filters('querylist', [['Any age', '*'], ['Asked this week', 'age-week'],
+          ['One to two weeks', 'age-fortnight'], ['Open over a fortnight', 'age-over']])
+        + showing('querylist', 'queries open')
+        + `<div id="querylist">` : '')
+      + (open.length ? open.map(q => `<div class="card" data-tags="${esc(tagOf(q.bank))} ${ageBand(days(q.asked_at))}" style="margin-bottom:12px">
 <div class="ch"><div class="ct">${esc(q.code)} · ${esc(q.stage_name)}</div>${pill('over', esc(q.bank || 'lender'))}</div>
 <div class="cb">
 <div class="row"><div class="rico">${ic('comms')}</div><div class="rt"><b>${esc(q.question)}</b>
@@ -829,7 +930,10 @@ ${pill('over', b.age + 'd')}</a>`).join('')
 <input class="chip" name="answer" required maxlength="400" placeholder="What you are sending back"
  style="flex:1 1 260px;min-width:0;cursor:text;font-family:var(--body)">
 <button class="btn dark" type="submit">${ic('comms')} Send the answer</button></form>
-</div></div>`).join('') : empty('No lender is waiting on an answer.'))
+</div></div>`).join('') + `<div class="empty filtered-empty" hidden>No lender query matches those filters.`
+        + `<div style="margin-top:12px"><button class="btn" type="button" data-clear="querylist">Clear filters</button></div></div></div>`
+        : empty('No lender is waiting on an answer.',
+          { label: 'See what is with a lender', href: '/office/wait' }))
       + (done.length ? `<div class="ct" style="margin:18px 0 12px">Answered</div>`
         + table(['Villa', 'Stage', 'They asked', 'You sent back', 'When'],
           done.map(r => [esc(r.code), esc(r.stage_name), esc(r.question),
@@ -877,9 +981,13 @@ ${pill('over', b.age + 'd')}</a>`).join('')
         { l: 'Certified', icon: 'cert', v: String(by('certified')), n: 'signed, not yet billed' },
         { l: 'Marked on site', icon: 'growth', v: String(by('marked')), n: 'waiting on an engineer' },
       ])
-      + filters('stagelist', [['All', '*'], ['Reported blocked', 'blocked'], ['Marked', 'marked'],
-        ['Certified', 'certified'], ['Billed', 'demanded'], ['Paid', 'paid'],
-        ['Not started', 'pending']])
+      + search('stagelist', 'Find a villa or a stage')
+      + filters('stagelist', [['Every stage', '*'],
+        ...[...new Set(list.map(r => r.stage_name))].map(n => [n, tagOf(n)])])
+      + filters('stagelist', [['Any state', '*'], ['Reported blocked', 'blocked'],
+        ['Waiting to certify', 'marked'], ['Certified', 'certified'], ['Billed', 'demanded'],
+        ['Paid', 'paid'], ['Not started', 'pending']])
+      + showing('stagelist', 'stages')
       + table(['Villa', 'Stage', 'Evidence', 'Status', 'Value'],
         list.map(r => [
           who(r.code, r.buyer_name),
@@ -894,7 +1002,9 @@ ${pill('over', b.age + 'd')}</a>`).join('')
         '1.5fr 1.4fr .9fr 1.1fr .9fr',
         {
           id: 'stagelist', href: i => villaHref(list[i].code),
-          tags: i => list[i].status + (list[i].blocked_reason ? ' blocked' : ''),
+          tags: i => list[i].status + ' ' + tagOf(list[i].stage_name)
+            + (list[i].blocked_reason ? ' blocked' : ''),
+          noneMatch: 'No stage of that name is in that state.',
         });
   };
 
@@ -912,6 +1022,8 @@ ${pill('over', b.age + 'd')}</a>`).join('')
       + note('The engineer’s completion certificate is the one document in the pack that '
         + 'carries an external qualified signature. The other four generate from this record. '
         + 'None of it replaces the lender’s own technical officer, who still visits.')
+      + search('evlist', 'Find a villa, a stage or a caption')
+      + showing('evlist', 'photographs')
       + table(['Villa', 'Stage', 'Caption', 'Taken', 'Hash'],
         d.rows.list.map(r => [
           `<b>${esc(r.code)}</b>`,
@@ -921,7 +1033,13 @@ ${pill('over', b.age + 'd')}</a>`).join('')
           `<span class="num" style="color:var(--faint);font-size:11.5px">${esc(String(r.sha256 || '').slice(0, 12))}</span>`,
         ]),
         '.8fr 1.2fr 1.8fr 1fr 1fr',
-        { href: i => villaHref(d.rows.list[i].code), empty: 'No photographs have been captured yet.' });
+        {
+          id: 'evlist', href: i => villaHref(d.rows.list[i].code),
+          tags: () => 'all',
+          noneMatch: 'No photograph matches that.',
+          empty: 'No photographs have been captured yet.',
+          out: { label: 'See the villas that have gone quiet', href: '/office/silent' },
+        });
   };
 
   /* --------------------------------------------------------------- silent */
@@ -938,7 +1056,17 @@ ${pill('over', b.age + 'd')}</a>`).join('')
       + note('Asking does not take a villa off this list. It leaves when a '
         + 'photograph arrives from site, which is the only thing that answers '
         + 'the question the list is asking.')
-      + (quiet.length ? quiet.map(u => `<div class="card" style="margin-bottom:12px">
+      + (quiet.length ? filters('quietlist', [['Any silence', '*'],
+        ['Three weeks to a month', 'q-month'], ['One to two months', 'q-two'],
+        ['Over two months', 'q-long'], ['Never photographed', 'q-never']])
+        + filters('quietlist', [['Asked or not', '*'], ['Asked already', 'q-asked'],
+          ['Not asked yet', 'q-unasked']])
+        + showing('quietlist', 'villas quiet')
+        + `<div id="quietlist">` : '')
+      + (quiet.length ? quiet.map(u => `<div class="card" data-tags="${
+          !u.last_shot ? 'q-never' : days(u.last_shot) <= 30 ? 'q-month'
+            : days(u.last_shot) <= 60 ? 'q-two' : 'q-long'} ${
+          u.asked_at ? 'q-asked' : 'q-unasked'}" style="margin-bottom:12px">
 <div class="ch"><div class="ct">${esc(u.code)} · ${esc(u.buyer_name)}</div>
 ${u.last_shot ? pill('over', days(u.last_shot) + ' days quiet') : pill('over', 'never photographed')}</div>
 <div class="cb">
@@ -957,7 +1085,10 @@ ${pill('accent', 'asked')}</div>` : ''}
 ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === u.assigned_engineer_id ? ' selected' : ''}>${esc(e.display_name)}</option>`).join('')}
 </select>
 <button class="btn dark" type="submit">${ic('hr')} Move it to them</button></form>
-</div></div>`).join('') : empty('Every villa has been photographed inside ' + QUIET_DAYS + ' days.'));
+</div></div>`).join('') + `<div class="empty filtered-empty" hidden>No quiet villa matches those filters.`
+        + `<div style="margin-top:12px"><button class="btn" type="button" data-clear="quietlist">Clear filters</button></div></div></div>`
+        : empty('Every villa has been photographed inside ' + QUIET_DAYS + ' days.',
+          { label: 'See the villas', href: '/office/villas' }));
   };
 
   /* -------------------------------------------------------------- signoff */
@@ -1008,12 +1139,17 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
 <form method="post" action="/office/handoff"><input type="hidden" name="id" value="${esc(h.id)}">
 <button class="btn dark" type="submit">Pick it up</button></form></div>`).join(''))
         + '<div style="height:12px"></div>' : '')
-      + filters('villalist', [['All', '*'], ['With a lender', 'bank'], ['Self funded', 'self'],
-        ['Sanction missing', 'nosanction']])
-      + table(['Villa', 'Type', 'Lender', 'Engineer', 'Paid', 'Agreement'],
+      + search('villalist', 'Find a villa or a buyer')
+      + filters('villalist', [['Every stage', '*'],
+        ...[...new Set(list.map(r => r.next_stage).filter(Boolean))].map(n => [n, tagOf(n)])])
+      + filters('villalist', [['Every lender', '*'], ...lendersIn(list).map(b => [b, tagOf(b)]),
+        ['Self funded', 'self']])
+      + filters('villalist', [['Money moving', '*'], ['Money stuck here', 'stuck']])
+      + showing('villalist', 'villas')
+      + table(['Villa', 'Stage in hand', 'Lender', 'Engineer', 'Paid', 'Agreement'],
         list.map(r => [
           who(r.code, r.buyer_name),
-          esc(r.unit_type || '—'),
+          esc(r.next_stage || 'all stages paid'),
           r.bank ? esc(r.bank) : `<span style="color:var(--faint)">self funded</span>`,
           esc(r.engineer_name || '—'),
           num(r.paid + ' / ' + r.stages),
@@ -1022,16 +1158,26 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
         '1.6fr 1.2fr 1.1fr 1.2fr .7fr 1fr',
         {
           id: 'villalist', href: i => villaHref(list[i].code),
-          tags: i => (list[i].bank ? 'bank' : 'self')
-            + (list[i].bank && !list[i].sanction_recorded_at ? ' nosanction' : ''),
+          /* "Money stuck" is the question this screen is scanned for: a villa
+             with a lender and no sanction on record, or a stage certified and
+             not yet paid, is a villa whose money has stopped. */
+          tags: i => (list[i].bank ? tagOf(list[i].bank) : 'self')
+            + ' ' + tagOf(list[i].next_stage)
+            + ((list[i].bank && !list[i].sanction_recorded_at) || list[i].stuck > 0
+              ? ' stuck' : ''),
+          noneMatch: 'No villa at that stage is with that lender.',
         });
   };
 
   /* ------------------------------------------------------------ documents */
   SCREENS.documents = (sess, d) => head('Documents',
     'Five documents make a stage pack. Four of them generate from this record. The fifth is the engineer’s completion certificate, and that one needs an external qualified signature.')
-    + note('Nothing in the pack replaces the lender’s own technical officer. '
-      + 'The lender always sends one, and the pack is what its officer reads before the visit.')
+    + note('The five are the engineer’s completion certificate, the demand note, '
+      + 'the photograph sheet, the progress statement and the statement of account. '
+      + 'Four of them print from the record. The certificate is the one that carries '
+      + 'an external qualified signature, and only a qualified engineer may sign it. '
+      + 'None of them replaces the lender’s own technical officer — the lender always '
+      + 'sends one, and the pack is what its officer reads before the visit.')
     + kpis([
       { l: 'Stage packs', icon: 'report', v: String(d.rows.stages.length), n: 'certified or beyond' },
       { l: 'Generated', icon: 'settings', v: String(d.rows.stages.length * 4), n: 'four per pack, from the record' },
@@ -1039,16 +1185,36 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
       { l: 'Loan files', icon: 'users', v: String(d.rows.loans.length), n: 'applicants on record' },
     ])
     + `<div class="ct" style="margin:6px 0 12px">The five, per stage</div>`
-    + table(['Villa', 'Stage', 'Demand note', 'Photographs', 'Engineer certificate'],
+    + search('doclist', 'Find a villa or a buyer')
+    + filters('doclist', [['Everything', '*'], ['Waiting on the engineer', 'unsigned'],
+      ['Not billed yet', 'unbilled'], ['No photographs', 'noshots'], ['Complete', 'complete']])
+    + showing('doclist', 'stage packs')
+    + table(['Villa', 'Stage', 'The five documents', 'Signed'],
       d.rows.stages.map(r => [
-        `<b>${esc(r.code)}</b>`,
+        `<b><a href="${villaHref(r.code)}">${esc(r.code)}</a></b>`,
         esc(r.stage_name),
-        r.doc_no ? num(r.doc_no) : pill('grey', 'not raised'),
-        num(r.shots + ''),
-        r.certificate_hash ? pill('paid', 'signed') : pill('due', 'waiting'),
+        /* Every one of the five, openable. Four print from the record; the
+           fifth is the engineer's and carries their signature. The demand note
+           exists only once a stage has been billed, so it says so when it has
+           not been. */
+        `<span class="lt" style="display:flex;gap:6px;flex-wrap:wrap">`
+        + [['certificate', 'Certificate'], ['photographs', 'Photographs'],
+           ['progress', 'Progress'], ['account', 'Account']].map(([k, l]) =>
+          `<a class="pill p-accent" href="/doc/${k}/${encodeURIComponent(r.id)}.pdf">${l}</a>`).join('')
+        + (r.doc_no
+          ? `<a class="pill p-accent" href="/doc/demand/${encodeURIComponent(r.id)}.pdf">Demand</a>`
+          : pill('grey', 'demand not raised'))
+        + `</span>`,
+        r.certificate_hash ? pill('paid', 'engineer') : pill('due', 'waiting'),
       ]),
-      '.8fr 1.4fr 1.2fr .9fr 1.2fr',
-      { href: i => villaHref(d.rows.stages[i].code), empty: 'No stage has been certified yet.' })
+      '.6fr 1.1fr 2.6fr .8fr',
+      { id: 'doclist', empty: 'No stage has been certified yet.',
+        noneMatch: 'Every pack is complete on that measure.',
+        tags: i => (d.rows.stages[i].certificate_hash ? 'signed' : 'unsigned')
+          + (d.rows.stages[i].doc_no ? ' billed' : ' unbilled')
+          + (d.rows.stages[i].shots ? '' : ' noshots')
+          + (d.rows.stages[i].certificate_hash && d.rows.stages[i].doc_no
+            && d.rows.stages[i].shots ? ' complete' : '') })
     + `<div class="ct" style="margin:18px 0 12px">Loan files, by applicant</div>`
     + table(['Applicant', 'Villa', 'Relation', 'Documents seen'],
       d.rows.loans.map(r => [
@@ -1058,7 +1224,9 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
         r.asked === r.seen ? pill('paid', r.seen + ' of ' + r.asked)
           : pill('due', r.seen + ' of ' + r.asked),
       ]),
-      '1.6fr .8fr 1.2fr 1fr', { empty: 'No loan file has been opened.' });
+      '1.6fr .8fr 1.2fr 1fr',
+        { empty: 'No loan file has been opened.',
+          out: { label: 'See the sanctions not recorded', href: '/office/chase' } });
 
   /* -------------------------------------------------------------- choices */
   SCREENS.choices = (sess, d) => {
@@ -1073,7 +1241,9 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
         { l: 'Made', icon: 'attend', v: String(list.length - open.length), n: 'and recorded' },
         { l: 'Villas waiting', icon: 'hostel', v: String(new Set(open.map(r => r.code)).size), n: 'with a choice open' },
       ])
-      + filters('choicelist', [['All', '*'], ['Past the cut-off', 'late'], ['Open', 'open'], ['Made', 'made']])
+      + filters('choicelist', [['All', '*'], ['Past the cut-off', 'late'], ['Open', 'open'],
+        ['Made', 'made']])
+      + showing('choicelist', 'choices')
       + table(['Villa', 'Choice', 'Needed by', 'Status', 'Selected'],
         list.map(r => [
           who(r.code, r.buyer_name),
@@ -1090,6 +1260,7 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
           id: 'choicelist', href: i => villaHref(list[i].code),
           tags: i => (list[i].selected ? 'made' : 'open')
             + (!list[i].selected && list[i].needed_by && until(list[i].needed_by) < 0 ? ' late' : ''),
+          noneMatch: 'No choice is in that state.',
         });
   };
 
@@ -1105,7 +1276,9 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
         { l: 'Declined', icon: 'risk', v: String(list.filter(r => r.status === 'declined').length), n: 'a new slot is needed' },
         { l: 'Villas', icon: 'hostel', v: String(new Set(list.map(r => r.code)).size), n: 'with a visit on record' },
       ])
-      + filters('visitlist', [['All', '*'], ['Requested', 'requested'], ['Confirmed', 'confirmed'], ['Declined', 'declined']])
+      + filters('visitlist', [['All', '*'], ['Requested', 'requested'],
+        ['Confirmed', 'confirmed'], ['Declined', 'declined']])
+      + showing('visitlist', 'visits')
       + table(['Villa', 'Slot', 'Engineer', 'Status', 'Note'],
         list.map(r => [
           who(r.code, r.buyer_name),
@@ -1119,6 +1292,7 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
         {
           id: 'visitlist', href: i => villaHref(list[i].code),
           tags: i => list[i].status, empty: 'No visit has been asked for.',
+          noneMatch: 'No visit is in that state.',
         });
   };
 
@@ -1135,6 +1309,8 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
         { l: 'Villas', icon: 'hostel', v: String(new Set(open.map(s => s.code)).size), n: 'with something open' },
       ])
       + `<div class="ct" style="margin:6px 0 12px">Claims from buyers</div>`
+      + filters('claimlist', [['All', '*'], ['Open', 'open'], ['Closed', 'closed']])
+      + showing('claimlist', 'claims')
       + table(['Villa', 'Claim', 'Raised', 'Messages', 'Status'],
         claims.map(q => [
           `<b>${esc(q.code)}</b>`,
@@ -1144,8 +1320,19 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
           q.status === 'closed' ? pill('paid', 'closed') : pill('over', 'open'),
         ]),
         '.8fr 2fr 1fr .8fr 1fr',
-        { href: i => '/office/question/' + encodeURIComponent(claims[i].id), empty: 'No warranty claim has been opened.' })
+        {
+          id: 'claimlist',
+          href: i => '/office/question/' + encodeURIComponent(claims[i].id),
+          tags: i => (claims[i].status === 'closed' ? 'closed' : 'open'),
+          noneMatch: 'No claim is in that state.',
+          empty: 'No warranty claim has been opened.',
+          out: { label: 'See the villas', href: '/office/villas' },
+        })
       + `<div class="ct" style="margin:18px 0 12px">Snags on site</div>`
+      + search('snaglist', 'Find a villa or a trade')
+      + filters('snaglist', [['All', '*'], ['Open', 'open'], ['Fixed', 'fixed']])
+      + filters('snaglist', [['Every trade', '*'], ...TRADES.map(t => [t[1], 'trade-' + t[0]])])
+      + showing('snaglist', 'snags')
       + table(['Villa', 'Snag', 'Raised by', 'Raised', 'Status'],
         d.rows.snags.map(s => [
           `<b>${esc(s.code)}</b>`,
@@ -1154,7 +1341,14 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
           num(M.longDate(s.raised_at)),
           s.status === 'open' ? pill('over', 'open') : pill('paid', 'fixed'),
         ]),
-        '.8fr 2fr 1fr 1fr 1fr', { empty: 'No snag has been raised.' });
+        '.8fr 2fr 1fr 1fr 1fr',
+        {
+          id: 'snaglist',
+          tags: i => d.rows.snags[i].status + ' trade-' + tradeOf(d.rows.snags[i].title),
+          noneMatch: 'No snag of that trade is in that state.',
+          empty: 'No snag has been raised.',
+          out: { label: 'See after possession', href: '/office/possession' },
+        });
   };
 
   /* ----------------------------------------------------------------- rera */
@@ -1185,7 +1379,9 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
           r.filed_at ? pill('paid', M.longDate(r.filed_at)) : pill('over', 'not filed'),
           esc(r.reference || '—'),
         ]),
-        '1fr 1fr 1.2fr 1.6fr', { empty: 'No quarter is on record.' });
+        '1fr 1fr 1.2fr 1.6fr',
+        { empty: 'No quarter is on record.',
+          out: { label: 'See the evidence certificates', href: '/office/evidence' } });
   };
 
   /* --------------------------------------------------------------- escrow */
@@ -1208,7 +1404,9 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
           esc(r.reference || '—'),
           `<span class="num" style="font-weight:700">${esc(M.crore(r.amount_paise))}</span>`,
         ]),
-        '1fr .8fr .8fr 1.8fr 1fr', { empty: 'Nothing has moved through the account yet.' });
+        '1fr .8fr .8fr 1.8fr 1fr',
+        { empty: 'Nothing has moved through the account yet.',
+          out: { label: 'See what has been billed', href: '/office/stages' } });
   };
 
   /* ----------------------------------------------------------- possession */
@@ -1232,7 +1430,8 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
           esc(r.keys_to || '—'),
         ]),
         '1.5fr 1fr 1.2fr 1.2fr 1fr',
-        { href: i => villaHref(list[i].code), empty: 'No villa has reached possession.' });
+        { href: i => villaHref(list[i].code), empty: 'No villa has reached possession.',
+          out: { label: 'See the villas', href: '/office/villas' } });
   };
 
   /* ------------------------------------------------------------- schedule */
@@ -1253,7 +1452,8 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
           num(String(r.paid)),
           num(String(r.total)),
         ]),
-        '.4fr 2.2fr .7fr 1.2fr .6fr .6fr', { empty: 'No schedule is set.' });
+        '.4fr 2.2fr .7fr 1.2fr .6fr .6fr',
+        { empty: 'No schedule is set.', out: { label: 'See the stages', href: '/office/stages' } });
   };
 
   /* -------------------------------------------------------------- lenders */
@@ -1267,6 +1467,9 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
         { l: 'Villas financed', icon: 'hostel', v: String(list.reduce((t, r) => t + r.villas, 0)), n: 'across all lenders' },
         { l: 'Owed to us', icon: 'report', v: esc(M.crore(list.reduce((t, r) => t + Number(r.owed), 0))), n: 'billed and unpaid' },
       ])
+      + filters('lenderlist', [['All', '*'], ['On the panel', 'panel'], ['Off panel', 'offpanel'],
+        ['Owes us money', 'owing']])
+      + showing('lenderlist', 'lenders')
       + table(['Lender', 'APF code', 'Rate', 'Turnaround', 'Villas', 'Owed'],
         list.map(r => [
           `<b>${esc(r.name)}</b>`,
@@ -1276,7 +1479,14 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
           num(String(r.villas)),
           `<span class="num" style="font-weight:700">${esc(M.crore(r.owed))}</span>`,
         ]),
-        '1.3fr 1.5fr .7fr 1.1fr .6fr .9fr', { empty: 'No lender is on record.' });
+        '1.3fr 1.5fr .7fr 1.1fr .6fr .9fr',
+        {
+          id: 'lenderlist',
+          tags: i => (list[i].on_panel ? 'panel' : 'offpanel')
+            + (Number(list[i].owed) > 0 ? ' owing' : ''),
+          noneMatch: 'No lender matches that.',
+          empty: 'No lender is on record.',
+        });
   };
 
   /* --------------------------------------------------------------- logins */
@@ -1301,7 +1511,9 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
           esc(r.engineer_qual || '—'),
           esc(r.engineer_reg || '—'),
         ]),
-        '1.4fr 1.6fr .9fr 1.3fr 1.1fr', { empty: 'No account is readable from here.' });
+        '1.4fr 1.6fr .9fr 1.3fr 1.1fr',
+        { empty: 'No account is readable from here.',
+          out: { label: 'Back to the dashboard', href: '/office' } });
   };
 
   /* ------------------------------------------------------------- settings */
