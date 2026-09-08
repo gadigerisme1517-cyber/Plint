@@ -408,6 +408,48 @@ body { padding: 0; margin: 0; background: var(--paper); }
    It is on the Find screen instead, which the menu reaches. */
 @media (max-width: 900px) { .ab-find { display: none; } }
 
+/* The ways out of a screen sit in a row beside the title. `.kpi` is v21's
+   column-stacked figure block, so two links in it came out one above the
+   other, overlapping the heading they belonged to. */
+.mhead .kpi:has(.wbtn) { flex-direction: row; align-items: center; gap: 8px; }
+
+/* ------------------------------------------------------ a conversation
+
+   It was a worklist: the sender's name as the heading, the message demoted to
+   the grey detail line, a status pill reading "buyer" beside it and a day
+   count in the age column - a sentence somebody typed, drawn as a stage ageing
+   towards a deadline. Reusing the row meant never asking what a conversation
+   is.
+
+   The message is the content here and everything else is a caption. Mine and
+   theirs are told apart by side and by ground rather than by a label. */
+
+.talk { padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+.talkempty {
+  font: 400 13.5px/19px 'Instrument Sans', system-ui, sans-serif;
+  color: var(--ink-3); padding: 6px 2px;
+}
+
+.msg { max-width: 82%; min-width: 0; }
+.msg.them { align-self: flex-start; }
+.msg.me   { align-self: flex-end; }
+
+.who {
+  font: 400 11.5px/16px 'Instrument Sans', system-ui, sans-serif;
+  color: var(--ink-3); margin: 0 0 4px 2px;
+}
+.msg.me .who { text-align: right; margin: 0 2px 4px 0; }
+
+.say {
+  font: 400 14px/20px 'Instrument Sans', system-ui, sans-serif;
+  color: var(--ink);
+  padding: 10px 13px;
+  border-radius: var(--r-card);
+  overflow-wrap: anywhere;
+}
+.msg.them .say { background: var(--hair-2); border-bottom-left-radius: 5px; }
+.msg.me   .say { background: var(--brand-soft); border-bottom-right-radius: 5px; }
+
 /* ------------------------------------------------------------- the notice
 
    What just happened, as a line. It used to be a `.tools` block, which on a

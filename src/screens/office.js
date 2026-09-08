@@ -1170,28 +1170,27 @@ ${hero(u.code, 'buyer file', 'Villa ' + u.code,
     if (!d) return null;
     const { q, msgs } = d;
 
+    /* No summary card. A conversation does not have a headline figure, and
+       "MESSAGES 2" is not something anybody opens a thread to find out. The
+       title is the question, the line under it is who asked and when, and the
+       ways out are in the header where a way out belongs. */
     return desk(sess, null, q.subject, '', `
-${hero(msgs.length, msgs.length === 1 ? 'message' : 'messages', q.subject,
+${UI.head(q.subject,
   esc(q.code) + ' &middot; ' + esc(q.asker) + ' &middot; '
   + (q.kind === 'warranty' ? 'warranty claim' : 'question')
-  + ' &middot; raised ' + M.longDate(q.raised_at), q.status === 'open', null,
+  + ' &middot; raised ' + M.longDate(q.raised_at)
+  + (q.status === 'closed' ? ' &middot; closed' : ''), '',
   [{ href: '/office', label: 'Back' },
    { href: '/office/buyer/' + encodeURIComponent(q.code), label: 'Buyer file' }])}
 <div class="mbody anim">
 ${flash(msg)}
-${/* One card, because it is one conversation. The messages, then the box to
-      add to them, then the way to close it - a thread with its reply form in
-      a separate card below it is two boxes for one thing, and the buttons
-      that used to sit in a third are in the header where a way out belongs. */
-''}
-<div class="blk"><p class="k">The thread</p></div>
-<div class="wl">${msgs.length ? msgs.map(m => wrow({
-  title: m.author_role === 'office' ? 'You' : m.author_name,
-  detail: esc(m.body),
-  chip: `<i class="chip ${m.author_role === 'office' ? 'idle' : 'wait'}">${esc(m.author_role)}</i>`,
-  days: days(m.sent_at) + 'd',
-  daysAge: null,
-})).join('') : empty('The buyer has said nothing beyond the subject line.')}
+<div class="wl">
+${UI.talk(msgs.map(m => ({
+  body: m.body,
+  who: m.author_role === 'office' ? 'You' : m.author_name,
+  when: M.longDate(m.sent_at),
+  mine: m.author_role === 'office',
+})), 'The buyer has said nothing beyond the subject line.')}
 <form class="uprow reassign replybox" method="post" action="/office/answer">
 <input type="hidden" name="id" value="${esc(q.id)}">
 <span class="mid" style="display:flex;gap:10px;align-items:center">

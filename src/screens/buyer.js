@@ -711,24 +711,24 @@ ${d.applicants.length ? perApplicant
     if (thread) {
       const q = d.queries.find(x => x.id === thread);
       if (!q) return null;
+      /* The same conversation the office is looking at, from the other end.
+         No summary card: a thread has no headline figure, and "2 messages" is
+         not why anybody opens one. */
       return desk(sess, '/more', q.subject, '', `
-${hero(q.replies, q.replies === 1 ? 'message' : 'messages', q.subject,
+${UI.head(q.subject,
   (q.kind === 'warranty' ? 'Warranty claim' : 'Question') + ' &middot; raised '
-  + M.longDate(q.raised_at) + ' &middot; ' + esc(q.status), q.status === 'open')}
+  + M.longDate(q.raised_at) + ' &middot; ' + esc(q.status), '',
+  { href: '/questions', label: 'Back' })}
 <div class="mbody anim">
 ${flash(msg)}
-<div class="tools"><a class="wbtn st" href="/questions" style="text-decoration:none">Back</a><div class="g"></div></div>
-<div class="blk"><p class="k">The thread</p></div>
-<div class="wl" id="thread">${(d.thread || []).length ? d.thread.map(m => wrow({
-  title: m.author_role === 'buyer' ? 'You' : m.author_name,
-  detail: esc(m.body),
-  days: days(m.sent_at) + 'd',
-  daysAge: null,
-  chip: `<i class="chip ${m.author_role === 'buyer' ? 'idle' : 'wait'}">${esc(m.author_role)}</i>`,
-})).join('') : empty('Nothing has been said on this yet.')}</div>
-<div class="gap"></div>
-<div class="wl"><form class="uprow reassign" method="post" action="/questions/reply"
-  style="display:flex;gap:10px;align-items:center;padding:12px 14px;border:1px solid var(--hair);border-radius:12px;background:var(--paper)">
+<div class="wl" id="thread">
+${UI.talk((d.thread || []).map(m => ({
+  body: m.body,
+  who: m.author_role === 'buyer' ? 'You' : m.author_name,
+  when: M.longDate(m.sent_at),
+  mine: m.author_role === 'buyer',
+})), 'Nothing has been said on this yet.')}
+<form class="uprow reassign replybox" method="post" action="/questions/reply">
 <input type="hidden" name="id" value="${esc(q.id)}">
 <span class="mid" style="display:flex;gap:10px;align-items:center">
 <span class="s">Add to this thread</span>

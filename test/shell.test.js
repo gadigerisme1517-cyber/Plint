@@ -690,6 +690,38 @@ test('a screen does not draw a box around nothing', async () => {
   assert.match(h.split('class="mbody')[0], />Back</, 'the header offers no way out');
 });
 
+test('a conversation is drawn as a conversation, not as a worklist', async () => {
+  /* It was two `wrow` cards: the sender's name as the heading, the message
+     demoted to the grey detail line, a status pill reading "buyer" beside it
+     and a day count in the age column - a sentence somebody typed, drawn as a
+     stage ageing towards a deadline. Reusing the row meant never asking what
+     a conversation is.
+
+     The message is the content and everything else is a caption. Mine and
+     theirs are told apart by side and by ground rather than by a label. */
+  for (const [role, path] of [['office', '/office/question/q-b14-w'],
+                              ['buyer', '/questions']]) {
+    const listing = await body(path, role);
+    const id = role === 'buyer'
+      ? (/href="\/questions\/([^"]+)"/.exec(listing) || [])[1] : null;
+    const h = role === 'buyer' ? await body('/questions/' + id, role) : listing;
+
+    assert.match(h, /<div class="talk">/, role + ': the thread is not a conversation');
+    assert.ok(!/class="wrow/.test(h.split('class="talk"')[1] || ''),
+      role + ': the messages are still worklist rows');
+
+    /* No status pill on a person and no age on a sentence. */
+    const talk = /<div class="talk">[\s\S]*?<\/div>\s*<form/.exec(h);
+    assert.ok(talk, role + ': could not read the conversation');
+    assert.ok(!/class="chip/.test(talk[0]), role + ': a message carries a status pill');
+    assert.ok(!/class="days/.test(talk[0]), role + ': a message carries an age');
+
+    // And no headline figure: nobody opens a thread to learn it has 2 messages.
+    assert.ok(!/class="fig/.test(h), role + ': a conversation has a KPI on it');
+    assert.ok(!/class="summary"/.test(h), role + ': a conversation has a summary card');
+  }
+});
+
 // ------------------------------------------------------- responsive rules
 
 test('the sideways-scroll backstop does not cost a scrollbar', async () => {

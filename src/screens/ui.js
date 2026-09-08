@@ -241,6 +241,35 @@ ${r.days ? `<span class="days${r.daysAge == null ? '' : ' ' + (
       : `<div class="bcard">${inner}</div>`;
   }
 
+  // ------------------------------------------------------------ a conversation
+
+  /**
+   * A thread of messages, as a conversation.
+   *
+   * It was a worklist: two `wrow` cards, the sender's name as the heading, the
+   * message itself demoted to the grey detail line, a status pill reading
+   * "buyer" beside it and a day count in the age column - as though a sentence
+   * somebody typed were a stage ageing towards a deadline. Reusing the row
+   * meant never asking what a conversation is.
+   *
+   * What it is: the message is the content and everything else is a caption.
+   * Mine and theirs are told apart by side and by ground rather than by a
+   * label. Oldest at the top, newest at the bottom, because that is the order
+   * a conversation happened in and the last thing said is the thing you came
+   * back for.
+   *
+   * @param {{body,who,when,mine}[]} msgs
+   * @param {string} whenEmpty
+   */
+  function talk(msgs, whenEmpty) {
+    if (!msgs.length) return `<div class="talk"><p class="talkempty">${esc(whenEmpty)}</p></div>`;
+    return `<div class="talk">${msgs.map(m => `
+<div class="msg ${m.mine ? 'me' : 'them'}">
+<p class="who">${esc(m.who)}${m.when ? ' &middot; ' + esc(m.when) : ''}</p>
+<p class="say">${esc(m.body)}</p>
+</div>`).join('')}</div>`;
+  }
+
   // --------------------------------------------------------------- sections
 
   /**
@@ -257,5 +286,5 @@ ${r.days ? `<span class="days${r.daysAge == null ? '' : ' ' + (
       another white box holding two buttons, above the thread it was about. */
   const flash = m => m ? `<p class="notice">${esc(m)}</p>` : '';
 
-  return { head, summary, stats, mix, bars, board, section, flash, ageTone, countTone, AGE };
+  return { head, summary, stats, mix, bars, board, talk, section, flash, ageTone, countTone, AGE };
 };
