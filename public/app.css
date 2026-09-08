@@ -94,7 +94,11 @@
    prototype's own `.bar` above it. That is right for a design file and wrong
    for the product: on a phone it is a card inside a browser inside a phone,
    and on a monitor it is a strip down the middle. All of it goes. */
-body { padding: 0; margin: 0; background: var(--paper); }
+/* The ground is painted on the document, not on the shell. `.desk` stops
+   where its content stops, so on a short screen - a thread with one message -
+   the wash ended halfway down and the rest of the page was white. A page has
+   one ground. */
+body { padding: 0; margin: 0; background: var(--hair-2); }
 .wrap { max-width: none; width: 100%; }
 .bar { display: none; }               /* the prototype's chrome */
 .sysbar { display: none; }            /* the painted-on 9:41 */

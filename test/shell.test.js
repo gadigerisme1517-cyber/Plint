@@ -722,6 +722,22 @@ test('a conversation is drawn as a conversation, not as a worklist', async () =>
   }
 });
 
+test('a page has one ground, all the way down', async () => {
+  /* `.desk` carries the wash and stops where its content stops. On a short
+     screen - a thread holding one message - it ended two thirds of the way
+     down and the document's own white took over, so one page had a seam
+     across it and two backgrounds. The ground belongs to the document. */
+  const css = await (await get('/app.css')).text();
+  const rule = /\nbody \{[^}]*\}/.exec(css);
+  assert.ok(rule, 'nothing paints the document');
+  assert.match(rule[0], /background:\s*var\(--hair-2\)/,
+    'the document is not painted the same colour as the shell on it');
+
+  const shell = fs.readFileSync(path.join(__dirname, '..', 'public/plint.css'), 'utf8');
+  assert.match(/\.desk\{[^}]*\}/.exec(shell)[0], /background:var\(--hair-2\)/,
+    'the shell no longer uses --hair-2, so the document is painted the wrong colour');
+});
+
 // ------------------------------------------------------- responsive rules
 
 test('the sideways-scroll backstop does not cost a scrollbar', async () => {
