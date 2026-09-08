@@ -21,12 +21,49 @@
      between them says something: `--btn-h` is a button that sits in a line of
      other things, `--btn-h-full` is one that takes the whole width and is the
      only thing you can do on that screen. */
+  /* ------------------------------------------------------------ THE SKIN
+
+     Everything about how this application looks is these values and nothing
+     else. A skin is a token change: if the rules below need editing to restyle
+     the product then the rules are wrong, not the skin.
+
+     v21's own palette is a Stripe-ish one - #0A2540 ink on #F6F9FC, hard 1px
+     hairlines, and a fairly heavy drop shadow. This is the softer surface
+     treatment: a warmer, quieter ground, hairlines light enough to read as
+     edges rather than as lines, a larger card radius, and depth carried by a
+     diffuse shadow instead of by a border. The hues stay Plint's. */
+
+  /* Ink. Nearer black than v21's navy, which reads as ink rather than as a
+     colour, and two greys under it that are warm rather than blue. */
+  --ink:    #14171F;
+  --ink-2:  #59616E;
+  --ink-3:  #99A1AE;
+
+  /* Surfaces. `--hair-2` is the ground the cards sit on and it is warm rather
+     than blue-tinted; `--hair` is the edge, light enough that the shadow does
+     most of the work of separating a card from it. */
+  --hair:   #EAEAE7;
+  --hair-2: #F5F5F2;
+
+  /* Depth. v21's shadow is a 0.18 alpha at 5px, which on a white card against
+     a white bar reads as a line. These are diffuse and nearly invisible until
+     three of them stack, which is what makes a screen of cards look layered
+     rather than drawn. */
+  --shadow:    0 1px 2px rgba(16, 24, 40, .04), 0 1px 3px rgba(16, 24, 40, .05);
+  --shadow-lg: 0 2px 4px rgba(16, 24, 40, .04), 0 12px 28px rgba(16, 24, 40, .07);
+  --card-shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 4px 14px rgba(16, 24, 40, .05);
+
+  /* Shape. One radius for a card, one for a control, so a corner is never a
+     number typed into a rule. */
+  --r-card: 16px;
+  --r-ctl:  10px;
+
   --btn-h: 36px;
   --btn-h-full: 44px;
   /* A field is not a button. You aim at a button once and it is gone; you aim
      at a text field, miss, and aim again with the keyboard already up. */
   --field-h: 44px;
-  --btn-r: 9px;
+  --btn-r: var(--r-ctl);
   --btn-fs: 13px;
   /* Short labels next to long ones - "Accept" beside "Ask to reassign" - read
      as an accident rather than a pair. Nothing narrower than this. */
@@ -125,6 +162,25 @@ body { padding: 0; margin: 0; background: var(--paper); }
            padding: 0 12px; min-height: var(--btn-h);
            align-items: center; white-space: nowrap; }
 
+/* ---------------------------------------------------------------- depth
+
+   A card is separated from the ground by a shadow, not by a line. The border
+   stays - it is what holds the shape on a screen that cannot render a shadow,
+   and it is what the tests read - but at this hairline it reads as an edge
+   rather than as a rule drawn round a box.
+
+   One rule, every card surface, so the treatment cannot drift between the
+   worklist panel and the summary card the way it did when each screen drew
+   its own. */
+.wl, .summary, .stat, .chart, .mbody .blk:has(+ .wl), .mbody .tools:has(+ .wl) {
+  box-shadow: var(--card-shadow);
+}
+/* The heading and the list it is joined to are one card, so only the pair
+   casts a shadow - not each half of it. */
+.mbody .blk:has(+ .wl) { box-shadow: 0 -1px 0 rgba(16, 24, 40, .01); }
+.mbody .blk:has(+ .wl) + .wl,
+.mbody .tools:has(+ .wl) + .wl { box-shadow: var(--card-shadow); }
+
 /* ------------------------------------------------- the dashboard furniture
 
    One platform, three dashboards. These are the pieces every one of them is
@@ -142,7 +198,7 @@ body { padding: 0; margin: 0; background: var(--paper); }
 .summary {
   background: var(--paper);
   border: 1px solid var(--hair);
-  border-radius: 14px;
+  border-radius: var(--r-card);
   padding: 18px 16px 16px;
   margin-bottom: 12px;
 }
@@ -216,7 +272,7 @@ body { padding: 0; margin: 0; background: var(--paper); }
    another and nothing else, which is a decoration rather than a chart. */
 
 .chart {
-  background: var(--paper); border: 1px solid var(--hair); border-radius: 12px;
+  background: var(--paper); border: 1px solid var(--hair); border-radius: var(--r-card);
   padding: 15px 16px 16px; margin-bottom: 12px;
 }
 .chart .cap {
@@ -287,7 +343,7 @@ body { padding: 0; margin: 0; background: var(--paper); }
    because a number nobody can act on is a number that gets ignored. */
 .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
 .stat {
-  background: var(--paper); border: 1px solid var(--hair); border-radius: 12px;
+  background: var(--paper); border: 1px solid var(--hair); border-radius: var(--r-card);
   padding: 14px; color: inherit; min-width: 0;
 }
 .stat .n {
@@ -373,7 +429,7 @@ body { padding: 0; margin: 0; background: var(--paper); }
 
 .dpanel > a {
   display: flex; align-items: center; gap: 12px;
-  min-height: 46px; padding: 0 10px; border-radius: 10px;
+  min-height: 46px; padding: 0 10px; border-radius: var(--r-ctl);
   text-decoration: none; color: var(--ink);
   font: 500 15px/20px 'Instrument Sans', system-ui, sans-serif;
 }
@@ -640,7 +696,7 @@ body { padding: 0; margin: 0; background: var(--paper); }
   .wl {
     background: var(--paper) !important;
     border: 1px solid var(--hair) !important;
-    border-radius: 12px;
+    border-radius: var(--r-card);
     box-shadow: none;
     padding: 0 !important;
     margin-bottom: 0 !important;
@@ -656,7 +712,7 @@ body { padding: 0; margin: 0; background: var(--paper); }
     background: var(--paper);
     border: 1px solid var(--hair);
     border-bottom: 0;
-    border-radius: 12px 12px 0 0;
+    border-radius: var(--r-card) var(--r-card) 0 0;
     padding: 13px 14px 10px !important;
   }
   /* And no gap between the two halves of one card. v21 gives `.wl` an 18px top
@@ -664,18 +720,18 @@ body { padding: 0; margin: 0; background: var(--paper); }
      is not standing on its own, and 18px there is a seam straight across the
      middle of the card. A list with no heading above it keeps the margin. */
   .mbody .blk:has(+ .wl) + .wl {
-    border-radius: 0 0 12px 12px; border-top: 0 !important; margin-top: 0 !important;
+    border-radius: 0 0 var(--r-card) var(--r-card); border-top: 0 !important; margin-top: 0 !important;
   }
 
   /* Same for the count line the head office puts above a group of villas. */
   .mbody .tools:has(+ .wl) {
     background: var(--paper); border: 1px solid var(--hair); border-bottom: 0;
-    border-radius: 12px 12px 0 0;
+    border-radius: var(--r-card) var(--r-card) 0 0;
     padding: 13px 14px 10px !important;
     margin-bottom: 0 !important;
   }
   .mbody .tools:has(+ .wl) + .wl {
-    border-radius: 0 0 12px 12px; border-top: 0 !important; margin-top: 0 !important;
+    border-radius: 0 0 var(--r-card) var(--r-card); border-top: 0 !important; margin-top: 0 !important;
   }
   /* No control on the row means the money has no one to share row three
      with, so it goes up onto the detail's line instead of taking a line of
@@ -734,7 +790,7 @@ body { padding: 0; margin: 0; background: var(--paper); }
     margin: 0 var(--gutter) 10px;
     padding: 14px 16px !important;
     border: 1px solid var(--hair) !important;
-    border-radius: 12px;
+    border-radius: var(--r-card);
     background: var(--paper);
     width: auto;
   }

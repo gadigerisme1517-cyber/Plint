@@ -547,6 +547,38 @@ test('the progress bar is not named after something v21 hides', async () => {
   assert.match(css, /\.summary \.prog \{/, 'the progress bar has no rule of its own');
 });
 
+test('the skin is a token change, not a rule change', async () => {
+  /* If restyling the product means editing rules, the rules are wrong. Every
+     colour and every corner in this file has to come from `:root`, so a skin
+     is one block at the top and nothing else - which is also what stops the
+     worklist panel and the summary card drifting apart the way they did when
+     each screen carried its own numbers. */
+  const css = await (await get('/app.css')).text();
+  const root = /:root \{[\s\S]*?\n\}/.exec(css);
+  assert.ok(root, 'app.css defines no tokens of its own');
+  for (const t of ['--ink:', '--hair:', '--hair-2:', '--card-shadow:', '--r-card:', '--r-ctl:']) {
+    assert.ok(root[0].includes(t), 'the skin has no ' + t.slice(0, -1) + ' token');
+  }
+
+  // Comments and the token block itself are not rules.
+  const rules = css.replace(root[0], '').replace(/\/\*[\s\S]*?\*\//g, '');
+
+  /* No card corner typed into a rule. Anything below 10px is a chip, a swatch
+     or a bar cap and is its own shape rather than a card's. */
+  const radii = [...rules.matchAll(/border-radius:\s*([^;]+);/g)]
+    .map(m => m[1])
+    .filter(v => /\d{2,}px/.test(v) && !/var\(/.test(v))
+    .filter(v => !/999px/.test(v));
+  assert.deepStrictEqual(radii, [],
+    'a card corner is typed into a rule instead of coming from --r-card: ' + radii.join(', '));
+
+  /* And no hex colour outside the tokens. A hue in a rule is a hue that one
+     screen has and the others do not. */
+  const hexes = [...rules.matchAll(/#[0-9a-fA-F]{3,8}/g)].map(m => m[0]);
+  assert.deepStrictEqual(hexes, [],
+    'a colour is typed into a rule instead of coming from a token: ' + hexes.join(', '));
+});
+
 // ------------------------------------------------------- responsive rules
 
 test('the sideways-scroll backstop does not cost a scrollbar', async () => {
@@ -698,7 +730,9 @@ test('one gutter, and everything on a phone starts on it', async () => {
   assert.match(panel[1], /background:\s*var\(--paper\)/, 'the list card has no ground of its own');
   assert.match(panel[1], /overflow:\s*hidden/,
     "the last row's square corners will poke out of the card's radius");
-  assert.match(narrow, /\.mbody \.blk:has\(\+ \.wl\) \{[^}]*border-radius:\s*12px 12px 0 0/,
+  /* The corner is a token now, so a skin change is a token change and never a
+     rule change. It was 12px typed into eight places. */
+  assert.match(narrow, /\.mbody \.blk:has\(\+ \.wl\) \{[^}]*border-radius:\s*var\(--r-card\) var\(--r-card\) 0 0/,
     'a section heading is not joined to the list under it');
   /* And joined with no gap. v21 gives `.wl` an 18px top margin for a list that
      stands on its own; on one joined to its own heading that is a seam
