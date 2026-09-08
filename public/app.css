@@ -55,6 +55,11 @@
 
   /* Shape. One radius for a card, one for a control, so a corner is never a
      number typed into a rule. */
+  /* The ground a chart segment uses for "nothing has happened here yet" - a
+     step darker than the hairline, so it reads as a bar rather than as the
+     track behind one. */
+  --rest:   #C7D2E4;
+
   --r-card: 16px;
   --r-ctl:  10px;
 
@@ -331,7 +336,7 @@ body { padding: 0; margin: 0; background: var(--paper); }
 .col i.ok   { background: var(--ok); }
 .col i.hot  { background: var(--hot); }
 .col i.warn { background: var(--warn); }
-.col i.rest { background: #C7D2E4; }
+.col i.rest { background: var(--rest); }
 .col .cl {
   font: 400 11.5px/14px 'Instrument Sans', system-ui, sans-serif;
   color: var(--ink-3); text-align: center; overflow-wrap: anywhere;

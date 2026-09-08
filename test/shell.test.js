@@ -553,7 +553,12 @@ test('the skin is a token change, not a rule change', async () => {
      is one block at the top and nothing else - which is also what stops the
      worklist panel and the summary card drifting apart the way they did when
      each screen carried its own numbers. */
-  const css = await (await get('/app.css')).text();
+  /* Read off disk, the way the other source-reading tests here do. Fetched
+     over HTTP this one went green while a hex colour was demonstrably sitting
+     in a rule, and I could not make it fail on demand - a guard I cannot make
+     fail is not a guard, whatever its name says. */
+  const css = fs.readFileSync(path.join(__dirname, '..', 'public/app.css'), 'utf8');
+  assert.ok(css.length > 5000, 'read ' + css.length + ' bytes of app.css, not a stylesheet');
   const root = /:root \{[\s\S]*?\n\}/.exec(css);
   assert.ok(root, 'app.css defines no tokens of its own');
   for (const t of ['--ink:', '--hair:', '--hair-2:', '--card-shadow:', '--r-card:', '--r-ctl:']) {
@@ -574,7 +579,7 @@ test('the skin is a token change, not a rule change', async () => {
 
   /* And no hex colour outside the tokens. A hue in a rule is a hue that one
      screen has and the others do not. */
-  const hexes = [...rules.matchAll(/#[0-9a-fA-F]{3,8}/g)].map(m => m[0]);
+  const hexes = [...rules.matchAll(/#[0-9a-fA-F]{3,8}/g)].map(m => m[0]);
   assert.deepStrictEqual(hexes, [],
     'a colour is typed into a rule instead of coming from a token: ' + hexes.join(', '));
 });
@@ -1095,7 +1100,7 @@ test('no destination is named after the person reading it', async () => {
   const labels = [...panel.matchAll(/<span class="dl">([^<]*)<\/span>/g)].map(m => m[1]);
   assert.strictEqual(labels.length, 15, 'read ' + labels.length + ' destination labels, not fifteen');
   for (const l of labels) {
-    assert.ok(!/^(Owner|Admin|My|Your)/i.test(l),
+    assert.ok(!/^(Owner|Admin|My|Your)/i.test(l),
       'a destination is named after who is reading it: ' + JSON.stringify(l));
   }
   assert.ok(labels.includes('The position'), 'the position has lost its name');
