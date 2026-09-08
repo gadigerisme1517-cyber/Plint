@@ -57,7 +57,9 @@ module.exports = function engineerScreens(ctx) {
 
   const days = d => Math.max(0, Math.round((Date.now() - new Date(d).getTime()) / 86400000));
   const chip = n => ageChip(n);
-  const flash = m => m ? `<div class="tools"><span class="rescount s">${esc(m)}</span><div class="g"></div></div>` : '';
+  /* From the shared layer. Three files had their own copy, all three drawing a
+     `.tools` panel - a white card around the words "Sent." */
+  const flash = UI.flash;
 
   // ---------------------------------------------------------------- reads
 

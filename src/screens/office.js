@@ -38,8 +38,10 @@ module.exports = function officeScreens(ctx) {
 
   const days = d => Math.max(0, Math.round((Date.now() - new Date(d).getTime()) / 86400000));
   const until = d => Math.round((new Date(d).getTime() - Date.now()) / 86400000);
-  const flash = m => m
-    ? `<div class="tools"><span class="rescount s">${esc(m)}</span><div class="g"></div></div>` : '';
+  /* From the shared layer. Three files had their own copy of this, all three
+     drawing a `.tools` panel - which on a wide screen is a white card around
+     the words "Sent." */
+  const flash = UI.flash;
 
   /* v21's nine groups and fifteen destinations, in v21's order. The first
      group has no heading because Today and Owner view are not a category -
@@ -141,11 +143,11 @@ module.exports = function officeScreens(ctx) {
      dashboards, and they pass `parts`, `bar` and a tile grid through the same
      helper - so the difference between a worklist and a dashboard is what the
      screen has to say, not how it is built. */
-  const hero = (count, unitWord, title, sentence, hot, extra) =>
+  const hero = (count, unitWord, title, sentence, hot, extra, back) =>
     UI.head(title, sentence, UI.summary({
       cap: unitWord, figure: esc(String(count)), tone: hot ? 'hot' : null,
       parts: extra && extra.parts, bar: extra && extra.bar,
-    }) + (extra && extra.tiles ? extra.tiles : ''));
+    }) + (extra && extra.tiles ? extra.tiles : ''), back);
 
   // ------------------------------------------------------------------ counts
 
@@ -1172,12 +1174,16 @@ ${hero(u.code, 'buyer file', 'Villa ' + u.code,
 ${hero(msgs.length, msgs.length === 1 ? 'message' : 'messages', q.subject,
   esc(q.code) + ' &middot; ' + esc(q.asker) + ' &middot; '
   + (q.kind === 'warranty' ? 'warranty claim' : 'question')
-  + ' &middot; raised ' + M.longDate(q.raised_at), q.status === 'open')}
+  + ' &middot; raised ' + M.longDate(q.raised_at), q.status === 'open', null,
+  [{ href: '/office', label: 'Back' },
+   { href: '/office/buyer/' + encodeURIComponent(q.code), label: 'Buyer file' }])}
 <div class="mbody anim">
 ${flash(msg)}
-<div class="tools"><a class="wbtn st" href="/office" style="text-decoration:none">Back</a>
-<a class="wbtn st" href="/office/buyer/${esc(q.code)}" style="text-decoration:none">Buyer file</a>
-<div class="g"></div></div>
+${/* One card, because it is one conversation. The messages, then the box to
+      add to them, then the way to close it - a thread with its reply form in
+      a separate card below it is two boxes for one thing, and the buttons
+      that used to sit in a third are in the header where a way out belongs. */
+''}
 <div class="blk"><p class="k">The thread</p></div>
 <div class="wl">${msgs.length ? msgs.map(m => wrow({
   title: m.author_role === 'office' ? 'You' : m.author_name,
@@ -1185,20 +1191,17 @@ ${flash(msg)}
   chip: `<i class="chip ${m.author_role === 'office' ? 'idle' : 'wait'}">${esc(m.author_role)}</i>`,
   days: days(m.sent_at) + 'd',
   daysAge: null,
-})).join('') : empty('The buyer has said nothing beyond the subject line.')}</div>
-<div class="gap"></div>
-<div class="wl"><form class="uprow reassign" method="post" action="/office/answer"
-  style="display:flex;gap:10px;align-items:center;padding:12px 14px;border:1px solid var(--hair);border-radius:12px;background:var(--paper)">
+})).join('') : empty('The buyer has said nothing beyond the subject line.')}
+<form class="uprow reassign replybox" method="post" action="/office/answer">
 <input type="hidden" name="id" value="${esc(q.id)}">
 <span class="mid" style="display:flex;gap:10px;align-items:center">
 <span class="s">Answer the buyer</span>
 <input class="fi" type="text" name="body" maxlength="400" required placeholder="What you want to tell them"
   style="margin:0;flex:1 1 220px"></span>
-<button class="wbtn solid st" type="submit">Send</button></form></div>
-${q.status !== 'closed' ? `<div class="gap"></div>
-<div class="tools"><form method="post" action="/office/close">
+<button class="wbtn solid st" type="submit">Send</button></form>
+${q.status !== 'closed' ? `<form method="post" action="/office/close" class="replyfoot">
 <input type="hidden" name="id" value="${esc(q.id)}">
-<button class="wbtn st" type="submit">Close this</button></form><div class="g"></div></div>` : ''}
+<button class="wbtn st" type="submit">Close this</button></form>` : ''}</div>
 </div>`, sidebar(null, n), drawer(null, n));
   }
 

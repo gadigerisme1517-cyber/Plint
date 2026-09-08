@@ -56,7 +56,7 @@ module.exports = function ui({ esc }) {
    * The page title and its one sentence. Every screen, every role.
    * @param {string} title
    * @param {string} sub    pre-escaped: callers build it from several fields
-   * @param {{href,label}} [back]  the way out of a screen that sits behind a
+   * @param {{href,label}|{href,label}[]} [back]  the way out of a screen behind a
    *                        destination rather than being one. In the header
    *                        rather than the body, because a Back that scrolls
    *                        away is a Back nobody finds.
@@ -73,8 +73,9 @@ module.exports = function ui({ esc }) {
 <div class="mhead"><div class="hstrip"><div class="g">
 <h1 class="pgt">${esc(title)}</h1>
 ${sub ? `<p class="s" style="margin-top:2px">${sub}</p>` : ''}
-</div>${back ? `<div class="kpi"><a class="wbtn st" href="${back.href}"
- style="text-decoration:none">${esc(back.label || 'Back')}</a></div>` : ''}
+</div>${back ? `<div class="kpi">${(Array.isArray(back) ? back : [back]).map(b =>
+  `<a class="wbtn st" href="${b.href}" style="text-decoration:none">${esc(b.label || 'Back')}</a>`
+).join('')}</div>` : ''}
 </div>${extra ? `<div class="hero">${extra}</div>` : ''}</div>`;
 
   // ---------------------------------------------------------------- summary
@@ -249,9 +250,12 @@ ${r.days ? `<span class="days${r.daysAge == null ? '' : ' ' + (
   const section = (label, body) =>
     `<div class="blk"><p class="k">${esc(label)}</p></div><div class="wl">${body}</div>`;
 
-  /** The line that reports what just happened, after a write. */
-  const flash = m => m
-    ? `<div class="tools"><span class="rescount s">${esc(m)}</span><div class="g"></div></div>` : '';
+  /** The line that reports what just happened, after a write.
+
+      A line, not a panel. It was a `.tools` block, which on a wide screen
+      draws as a card - so "Sent." got a white box of its own, stacked above
+      another white box holding two buttons, above the thread it was about. */
+  const flash = m => m ? `<p class="notice">${esc(m)}</p>` : '';
 
   return { head, summary, stats, mix, bars, board, section, flash, ageTone, countTone, AGE };
 };

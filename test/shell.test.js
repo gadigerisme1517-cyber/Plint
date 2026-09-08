@@ -652,6 +652,44 @@ test('the board stacks where there is no room for columns', async () => {
     'a column with forty rows makes the board forty rows tall');
 });
 
+test('a screen does not draw a box around nothing', async () => {
+  /* One conversation was five boxes: the hero, a card holding only the words
+     "Sent.", a card holding only two buttons, the thread, and a card holding
+     only the reply field. Three of the five were boxes around nothing.
+
+     Two things caused it. A flash message was built as a `.tools` block, and
+     `.tools` draws as a panel on a wide screen - three files each had their
+     own copy of that helper. And a way out of a screen was being put in the
+     body when the header already has a place for one. */
+  const src = f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+  for (const f of ['src/screens/buyer.js', 'src/screens/engineer.js',
+                   'src/screens/office.js']) {
+    assert.match(src(f), /const flash = UI\.flash;/,
+      f + ' has its own flash helper again, which will draw a card around a sentence');
+  }
+  assert.match(src('src/screens/ui.js'), /class="notice"/,
+    'the shared flash is not a line');
+
+  /* A toolbar is never a card, at any width: it holds two buttons. */
+  const css = await (await get('/app.css')).text();
+  assert.match(css, /\n\.tools \{[^}]*background:\s*none\s*!important/,
+    'a toolbar still draws as a panel somewhere');
+
+  /* And the thread is one card. The messages, the box to add to them and the
+     way to close it are one conversation, so they are one object. */
+  const h = await body('/office/question/q-b14-w', 'office');
+  const panels = (h.match(/<div class="wl">/g) || []).length;
+  assert.strictEqual(panels, 1,
+    'the thread screen draws ' + panels + ' panels for one conversation');
+  assert.match(h, /class="uprow reassign replybox"/,
+    'the reply box is not part of the thread it belongs to');
+
+  // The ways out are in the header, where a way out belongs.
+  const body_ = h.split('class="mbody')[1] || '';
+  assert.ok(!/>Back</.test(body_), 'Back is in the body rather than the header');
+  assert.match(h.split('class="mbody')[0], />Back</, 'the header offers no way out');
+});
+
 // ------------------------------------------------------- responsive rules
 
 test('the sideways-scroll backstop does not cost a scrollbar', async () => {

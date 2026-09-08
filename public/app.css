@@ -408,6 +408,35 @@ body { padding: 0; margin: 0; background: var(--paper); }
    It is on the Find screen instead, which the menu reaches. */
 @media (max-width: 900px) { .ab-find { display: none; } }
 
+/* ------------------------------------------------------------- the notice
+
+   What just happened, as a line. It used to be a `.tools` block, which on a
+   wide screen draws as a card - so a screen that had just been written to
+   showed a white box saying "Sent.", stacked above another white box holding
+   two buttons, above the thread both were about. Five boxes for one
+   conversation, three of them around nothing.
+
+   A toolbar is not a card either, at any width: it holds two buttons. */
+.notice {
+  background: var(--brand-soft); color: var(--ink);
+  border-radius: var(--r-ctl);
+  padding: 10px 14px; margin-bottom: 12px;
+  font: 500 13px/18px 'Instrument Sans', system-ui, sans-serif;
+}
+.tools {
+  border: 0 !important; background: none !important; box-shadow: none !important;
+  padding-left: 0; padding-right: 0;
+}
+
+/* The reply box is the last row of the thread it belongs to, not a card under
+   it. It carries the hairline the row above it would have carried. */
+.replybox {
+  display: flex; gap: 10px; align-items: center;
+  padding: 12px 14px; border-top: 1px solid var(--hair);
+  background: var(--hair-2);
+}
+.replyfoot { padding: 12px 14px; border-top: 1px solid var(--hair); }
+
 /* ------------------------------------------------------------- the board
 
    A worklist as columns, one per state. The office's stuck money is already

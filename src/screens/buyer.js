@@ -40,8 +40,10 @@ module.exports = function buyerScreens(ctx) {
 
   const days = d => Math.max(0, Math.round((Date.now() - new Date(d).getTime()) / 86400000));
   const until = d => Math.round((new Date(d).getTime() - Date.now()) / 86400000);
-  const flash = m => m
-    ? `<div class="tools"><span class="rescount s">${esc(m)}</span><div class="g"></div></div>` : '';
+  /* From the shared layer. Three files had their own copy of this, all three
+     drawing a `.tools` panel - which on a wide screen is a white card around
+     the words "Sent." */
+  const flash = UI.flash;
 
   /* The five tabs themselves live in `destinations()` in server.js, with the
      other two roles', because the tab bar, the sidebar and the app bar all
