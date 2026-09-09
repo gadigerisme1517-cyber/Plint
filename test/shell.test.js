@@ -353,6 +353,18 @@ test('a table has a floor and scrolls, rather than crushing its middle', async (
   const h = await body('/engineer/certs', 'engineer');
   assert.match(h, /class="tbl" id="engcerts" style="--tmin:\d+px"/,
     'the certificates table declares no floor');
+
+  /* And below 560 there is no width to scroll into - 343px of content against
+     a six-column row - so the row becomes a block and every control it carries
+     is on the page. Without this the bank list, the villa register and the
+     villa's own stages all had their one control behind a sideways drag. */
+  const small = atWidth(sheet, 'max-width: 560px');
+  assert.match(small, /\.tr\s*\{[^}]*display:\s*block/,
+    'a row still keeps its columns on a small phone');
+  assert.match(small, /\.tr\.hd\s*\{[^}]*display:\s*none/,
+    'the column headings are still drawn over stacked rows');
+  assert.match(small, /\.tbl\s*\{[^}]*overflow-x:\s*visible/,
+    'the table still scrolls sideways where it has nowhere to scroll');
 });
 
 test('the KPI strip narrows, and a rupee figure never breaks', async () => {

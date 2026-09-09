@@ -422,6 +422,22 @@ textarea.fi { resize: vertical; min-height: 62px; line-height: 20px; }
 /* A link inside a table cell is the way into a row that carries a control of
    its own - the row cannot be an anchor, because a form inside an anchor is
    not valid HTML. It has to look like a link. */
-.tr a { color: var(--accent); text-decoration: none; }
-.tr a:hover { text-decoration: underline; }
+.tr a:not(.btn) { color: var(--accent); text-decoration: none; }
+.tr a:not(.btn):hover { text-decoration: underline; }
 .tr.hd a, a.tr { color: inherit; }
+
+/* ------------------------------------------------ the table on a small phone
+   Between 561 and 860 a table keeps its columns and scrolls sideways inside
+   its own edges. Below that there is no width to scroll into: 343px of content
+   against a six-column row means the reader has to drag the table to reach the
+   control at the end of it - and on the bank list, the villa register and the
+   villa's stages, that control IS the screen. A row becomes a block, the
+   header comes off, and every control is on the page where it can be tapped. */
+@media (max-width: 560px) {
+  .tbl { overflow-x: visible; }
+  .tr { display: block; min-width: 0; padding: 14px 16px; }
+  .tr.hd { display: none; }
+  .tr > div { padding: 1px 0; }
+  .tr > div:empty { display: none; }
+  .tr .cellav { padding-bottom: 4px; }
+}
