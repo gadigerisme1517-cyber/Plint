@@ -299,15 +299,23 @@ a.kpi:hover { background: var(--hair2); }
    The product's whole subject, on the screen at last. The tile links to the
    full image, so tapping one opens it larger with the browser's own viewer and
    its own back button. */
-.phg { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+/* 150, not 170: at 375 a 170px minimum leaves room for one column, and with
+   the tile now drawn at 4:3 that made every photograph 330px wide and 250px
+   tall - six of them filled fifteen hundred pixels of a phone. At 150 the grid
+   holds two on a phone and seven at 1440. */
+.phg { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
        gap: 10px; }
 .ph { display: block; border: 1px solid var(--hair); border-radius: 12px;
       overflow: hidden; background: var(--hair2); color: inherit; text-decoration: none; }
 .ph:hover { box-shadow: 0 4px 14px rgba(12,13,16,.08); }
 /* The plate is 4:3, so the tile is, whatever width the grid gives it. A fixed
    height cropped it differently at every count of photographs. */
-.ph img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover;
-          background: var(--hair); }
+/* `height: auto` matters. The tag carries width="320" height="240" so the
+   browser can reserve the space before the file arrives, and that attribute is
+   a presentational hint that beats `aspect-ratio` - the tile drew 240px tall
+   at every width and cropped the middle out of every plate. */
+.ph img { display: block; width: 100%; height: auto; aspect-ratio: 4 / 3;
+          object-fit: cover; background: var(--hair); }
 .phc { display: block; padding: 8px 10px; }
 .phc b { font-weight: 600; font-size: 12px; display: block; }
 .phc span { display: block; font-size: 10.5px; color: var(--faint); margin-top: 1px; }
