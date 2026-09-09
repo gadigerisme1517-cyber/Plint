@@ -283,7 +283,12 @@ ${dem ? titled('What was raised', table(
     num(M.longDate(dem.raised_at)),
     num(M.longDate(dem.due_at)) + (dem.paid_at ? ' &middot; paid ' + esc(M.longDate(dem.paid_at)) : ''),
     num(M.money(dem.total_paise)),
-    `<a class="btn" href="/doc/demand/${esc(s.id)}.pdf">Letter</a>`,
+    /* The same pair the payments screen offers. The letter is what was
+       billed; the receipt is proof the money was received, and this screen
+       was showing one and not the other. */
+    ((r => r ? `<a class="btn" href="/receipt/${esc(r.receipt_no)}">Receipt</a> ` : '')
+      (d.receipts.find(r => r.demand_id === dem.id)))
+      + `<a class="btn" href="/doc/demand/${esc(s.id)}.pdf">Letter</a>`,
   ]],
   '1fr 1fr 1.6fr .9fr auto', { min: 780 })) : ''}
 ${titled('Photographs from site', photos(shotRows(shots),
@@ -512,6 +517,11 @@ ${titled('The rest of the schedule', rest.length ? table(
         d.visits.length ? pill('accent', String(d.visits.length)) : pill('grey', 'None yet')],
       ['/villa/' + encodeURIComponent(d.u.code), 'Your villa', 'The unit, the lender and the engineer.',
         pill('accent', esc(d.u.code))],
+      /* This hub names every destination behind it, and the newest one was in
+         the sidebar and not here. */
+      ['/data', 'What Plint holds about you',
+        'Every field, by table and column, and a copy you can take away.',
+        pill('grey', 'Your data')],
     ];
 
     return desk(sess, '/more', 'Everything else', '', `

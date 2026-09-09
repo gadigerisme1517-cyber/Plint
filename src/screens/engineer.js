@@ -419,7 +419,9 @@ ${titled('Recent', table(
           : '/engineer/cert/' + encodeURIComponent(x.id)}"><b>${esc(x.code)}</b></a>`,
         `<b>${esc(x.stage_name)}</b><br><span class="hsub">${esc(x.buyer_name)} &middot; marked by `
           + esc(x.marked_by) + ' on ' + esc(M.longDate(x.marked_at)) + '</span>',
-        thin ? pill('due', 'Only ' + x.shots + ' photo' + (x.shots === 1 ? '' : 's')) : pill('accent', 'Ready'),
+        thin ? pill('due', x.shots === 0 ? 'No photograph yet'
+          : 'Only ' + x.shots + ' photo' + (x.shots === 1 ? '' : 's'))
+          : pill('accent', 'Ready'),
         age(days(x.marked_at), false),
         num(M.money(stageTotal(d.byProject, x))),
         /* A row that cannot be signed used to say the words "Too few photos"
