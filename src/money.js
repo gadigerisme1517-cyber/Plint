@@ -184,13 +184,50 @@ function money(paise) {
   return '\u20B9' + INR.format(Math.round(paise / 100));
 }
 
-/** ₹3.2 Cr / ₹4.5 L, the short form the prototype uses in dense lists */
+/** ₹3.20 Cr / ₹4.50 L, the short form used in dense lists.
+
+    TWO DECIMALS AT EVERY MAGNITUDE, and no stripping of a trailing zero.
+
+    It used to drop to whole crores at and above ten crore, and to one decimal
+    for lakh. So a figure of ₹20.39 Cr printed as "₹20 Cr" while the eleven rows
+    underneath it, each printed to two decimals, visibly did not add up to it -
+    thirty-nine lakh missing from a headline with its own evidence sitting
+    directly below it. A builder or a bank officer reads that in seconds and
+    then stops trusting every other number on the screen.
+
+    A rounded figure is still rounded: two decimals of a crore is a lakh, so a
+    total and the sum of its rows can still differ by up to half a lakh per row.
+    What has gone is the case where the gap is large enough to see without
+    doing the arithmetic. */
 function crore(paise) {
   const r = paise / 100;
-  if (r >= 10000000) return '\u20B9' + (r / 10000000).toFixed(r >= 100000000 ? 0 : 2).replace(/\.00$/, '') + ' Cr';
-  if (r >= 100000) return '\u20B9' + (r / 100000).toFixed(1).replace(/\.0$/, '') + ' L';
+  if (r >= 10000000) return '\u20B9' + (r / 10000000).toFixed(2) + ' Cr';
+  if (r >= 100000) return '\u20B9' + (r / 100000).toFixed(2) + ' L';
   return money(paise);
 }
+
+/** The value a row will actually PRINT, as paise.
+
+    A headline over its own rows has to equal those rows. Rounding the true
+    total once and rounding each row separately are two different numbers: the
+    lenders KPI read ₹20.38 Cr over eleven rows that printed ₹20.39 Cr between
+    them, and a reader with a calculator finds that in seconds.
+
+    `crore()` shows two decimals of a crore (a lakh), two decimals of a lakh (a
+    thousand rupees), or exact rupees, depending on magnitude. This rounds to
+    whichever of those the row will use, so a total built from it is the sum of
+    what is on the screen rather than the sum of what is in the database. Use
+    it for a figure printed above its own evidence, never for arithmetic that
+    goes back into the record. */
+function asShown(paise) {
+  const r = paise / 100;
+  if (r >= 10000000) return Math.round(r / 100000) * 100000 * 100;
+  if (r >= 100000) return Math.round(r / 1000) * 1000 * 100;
+  return Math.round(r) * 100;
+}
+
+/** The sum of what a column of figures will print. */
+const sumAsShown = list => list.reduce((t, p) => t + asShown(Number(p) || 0), 0);
 
 const DATE = { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' };
 const longDate = d => new Date(d).toLocaleDateString('en-IN', DATE);
@@ -199,5 +236,5 @@ module.exports = {
   GST_BP, DUE_DAYS, INTEREST_BP_PER_YEAR,
   priceStage, interestOn, payableNow, ledger,
   stageBase, stageBases, schedule, gstOn,
-  money, crore, longDate,
+  money, crore, asShown, sumAsShown, longDate,
 };

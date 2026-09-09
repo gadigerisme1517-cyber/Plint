@@ -46,6 +46,9 @@ module.exports = function office(ctx) {
   const PACK_LATE_DAYS = 14;
   /* Three weeks with no photograph is a villa that has gone quiet. */
   const QUIET_DAYS = 21;
+  /* How long a stage may sit blocked before the wait is worth a colour. The
+     same two thresholds the day counts elsewhere in this product use. */
+  const AGE_OVERDUE = 21, AGE_AGEING = 10;
 
   // ------------------------------------------------------------------ icons
 
@@ -213,9 +216,17 @@ module.exports = function office(ctx) {
   const tagOf = v => String(v || 'none').toLowerCase().replace(/[^a-z0-9]+/g, '-');
   const ageBand = d => (d <= 7 ? 'age-week' : d <= 14 ? 'age-fortnight' : 'age-over');
 
-  const showing = (scope, what) =>
+  /* The count is rendered by the server with the real number in it. It used
+     to be rendered as "0" for the browser to correct on load, so a reader with
+     JavaScript off saw forty-eight rows sitting under a line that said "0
+     villas". Everything else in this product works without JavaScript - the
+     forms post, the links navigate - and this was the one place a wrong number
+     was put on the screen and left there. The browser updates it while
+     filtering; it no longer creates it. */
+  const showing = (scope, what, total) =>
     `<div class="hsub" data-count="${scope}" style="margin:-6px 0 12px;display:flex;`
-    + `align-items:center;gap:10px"><span><span class="fnum">0</span> ${esc(what)}</span>`
+    + `align-items:center;gap:10px"><span><span class="fnum">${total == null ? '' : total}</span>`
+    + ` ${esc(what)}</span>`
     + `<button class="chip" type="button" data-clear="${scope}" hidden>Clear filters</button></div>`;
 
   const card = (title, body, acts = '') =>
@@ -246,6 +257,7 @@ module.exports = function office(ctx) {
   const board = cols => `<div class="board">${cols.map(c =>
     `<div class="col"><div class="colh"><span class="ctt">${esc(c.label)}</span>`
     + `<span class="cnt">${c.cards.length}</span></div>`
+    + (c.note ? `<div class="ls" style="padding:0 5px 8px">${c.note}</div>` : '')
     + (c.cards.length ? c.cards.map(k =>
       `<a class="lcard" href="${k.href}"><b>${esc(k.title)}</b>`
       + `<div class="ls">${esc(k.sub)}</div>`
@@ -273,6 +285,25 @@ module.exports = function office(ctx) {
     for (const [k, re] of Object.entries(TRADE_WORDS)) if (re.test(title || '')) return k;
     return 'other';
   };
+
+  /* WHO IS HOLDING IT UP.
+
+     The four parties a stage can be waiting on, in the order the office works
+     them: its own people first, then the outside ones, then the buyer. Every
+     blocked stage carries exactly one `holder_role`, so every villa lands in
+     exactly one column and the four columns sum to the project.
+
+     This grouping was in the product, was dropped when the console was rebuilt
+     on the reference, and is restored here as the primary view. It answers
+     "who do I chase today", which is the question this desk actually opens
+     with; the pack-state board answers "what state is this pack in", which is
+     the question you ask second. */
+  const HOLDER = [
+    ['engineer', 'The engineer'],
+    ['office', 'This office'],
+    ['lender', 'The lender'],
+    ['buyer', 'The buyer'],
+  ];
 
   const villaHref = code => '/office/villa/' + encodeURIComponent(code);
   /* A villa in a table cell. `href` makes the name itself the link, for the
@@ -411,14 +442,20 @@ module.exports = function office(ctx) {
         /* What an engineer has reported as stopping the work. It is money that
            has stopped, so it belongs at the top of this screen and not behind
            a destination of its own. */
+        /* EVERY blocker, not the longest-blocked eight: the holder board is
+           the primary view of this screen and it has to account for all
+           forty-eight villas. The pricing columns come along so a column can
+           say what it is holding up in rupees. */
         blockers: (await c.query(
           `SELECT b.reason, b.holder, b.holder_role, b.since, u.code, u.buyer_name,
-                  t.name stage_name, (CURRENT_DATE - b.since) age
+                  u.agreement_value_paise, u.project_id,
+                  t.name stage_name, t.seq, t.pct_bp,
+                  (CURRENT_DATE - b.since) age
              FROM blockers b
              JOIN unit_stages s ON s.id = b.unit_stage_id
              JOIN units u ON u.id = s.unit_id
              JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
-            ORDER BY (CURRENT_DATE - b.since) DESC LIMIT 8`)).rows,
+            ORDER BY (CURRENT_DATE - b.since) DESC`)).rows,
         pipeline: (await c.query(
           `SELECT d.state, d.queued_at, d.delivered_at, u.code, u.buyer_name, u.bank,
                   t.name stage_name, dm.total_paise, dm.paid_at,
@@ -704,11 +741,56 @@ module.exports = function office(ctx) {
   const SCREENS = {};
 
   /* ------------------------------------------------------------- dashboard */
-  SCREENS.dashboard = (sess, d) => {
+  SCREENS.dashboard = (sess, d, msg, view) => {
+    const packView = view === 'packs';
     const s = d.rows.stages, m = d.rows.money;
     const waitingValue = d.rows.waiting.reduce((t, r) => t + stageTotal(d.byProject, r), 0);
     const certified = Number(s.certified), due = Number(s.due) || 1;
     const pct = Math.round((certified / due) * 100);
+
+    /* THE PRIMARY VIEW. Every blocked villa, in the column of whoever is
+       holding it up, longest wait first.
+
+       ONE CARD PER VILLA, not one per blocked stage. `blockers` is keyed by
+       unit_stage, so a villa with two stages blocked appears twice - and if
+       the two are held by different parties, in two columns at once. The seed
+       on this machine happens to be one blocker per villa and hid it; the test
+       database has a villa with two, and the columns summed to 49 against a
+       register of 48.
+
+       The rows arrive oldest first, so the first one seen for a villa is the
+       one that has waited longest, which is the one worth chasing. The others
+       are counted on the card and their value added, never dropped. */
+    const byVilla = new Map();
+    for (const b of d.rows.blockers) {
+      const v = stageTotal(d.byProject, b);
+      const seen = byVilla.get(b.code);
+      if (seen) { seen.also++; seen.value += v; continue; }
+      byVilla.set(b.code, { ...b, value: v, also: 0 });
+    }
+    const blocked = [...byVilla.values()];
+    const holderCols = HOLDER.map(([k, label]) => {
+      const g = blocked.filter(b => b.holder_role === k)
+        .sort((a, b2) => Number(b2.age) - Number(a.age));
+      const sum = g.reduce((t, x) => t + x.value, 0);
+      return {
+        label,
+        note: g.length
+          ? esc(M.crore(sum)) + ' &middot; oldest ' + g[0].age + ' days'
+          : 'nothing waiting here',
+        cards: g.map(b => ({
+          title: b.code + ' \u00B7 ' + b.stage_name,
+          sub: b.reason + ' \u00B7 with ' + (b.holder || label.toLowerCase())
+            + (b.also ? ' \u00B7 and ' + b.also + ' more stage'
+              + (b.also === 1 ? '' : 's') + ' on this villa' : ''),
+          href: villaHref(b.code),
+          tags: (Number(b.age) >= AGE_OVERDUE ? pill('over', b.age + ' days')
+            : Number(b.age) >= AGE_AGEING ? pill('due', b.age + ' days')
+              : pill('accent', b.age + ' days'))
+            + ' ' + pill('grey', M.crore(b.value)),
+        })),
+      };
+    });
 
     const cols = [
       { label: 'Certified, pack not sent', state: r => r.state === 'queued' },
@@ -800,8 +882,23 @@ ${pill('over', b.age + 'd')}</a>`).join('')
         ]),
         '1.6fr 1.3fr .9fr 1.1fr .9fr',
         { href: i => villaHref(d.rows.worklist[i].code), empty: 'No stage is under way.' })
-      + `<div class="ct" style="margin:18px 0 12px">Packs, from certified to disbursed</div>`
-      + board(cols);
+      /* Two views of the same forty-eight villas, and the toggle is two links
+         rather than a script: the back button works, the choice survives a
+         reload, and it needs no JavaScript. `.chip` is the reference's own
+         control for exactly this. */
+      + `<div class="ct" style="margin:18px 0 12px">`
+      + (packView ? 'Packs, from certified to disbursed' : 'Stuck money, by who is holding it up')
+      + `</div>`
+      + `<div class="filters" style="margin-bottom:14px">`
+      + `<a class="chip ${packView ? '' : 'on'}" href="/office">Who is holding it up</a>`
+      + `<a class="chip ${packView ? 'on' : ''}" href="/office?view=packs">What state the pack is in</a>`
+      + `</div>`
+      + (packView ? board(cols) : board(holderCols))
+      + (packView ? '' : `<div class="hsub" style="margin-top:10px">`
+        + `${blocked.length} of ${d.rows.villas} villas have a stage blocked, `
+        + `each in exactly one column: `
+        + HOLDER.map(([k, l]) => esc(l) + ' ' + blocked.filter(b => b.holder_role === k).length)
+          .join(' &middot; ') + `</div>`);
   };
 
   /* The one place a stage's state becomes a pill, so no two screens disagree
@@ -837,7 +934,7 @@ ${pill('over', b.age + 'd')}</a>`).join('')
         ['Self funded', 'self']])
       + filters('packlist', [['Any age', '*'], ['Under a week', 'age-week'],
         ['One to two weeks', 'age-fortnight'], ['Over a fortnight', 'age-over']])
-      + showing('packlist', 'packs waiting to go out')
+      + showing('packlist', 'packs waiting to go out', queued.length)
       + table(['Villa', 'Stage', 'Lender', 'Queued', 'Amount', ''],
         queued.map(r => [
           who(r.code, r.buyer_name, villaHref(r.code)),
@@ -876,7 +973,7 @@ ${pill('over', b.age + 'd')}</a>`).join('')
         ['Self funded', 'self']])
       + filters('waitlist', [['Any age', '*'], ['Past ' + PACK_LATE_DAYS + ' days', 'late'],
         ['Inside ' + PACK_LATE_DAYS, 'ok'], ['Never chased', 'unchased']])
-      + showing('waitlist', 'packs with a lender')
+      + showing('waitlist', 'packs with a lender', out.length)
       + table(['Villa', 'Stage', 'Lender', 'With them', 'Chased', 'Amount', ''],
         out.map(r => [
           who(r.code, r.buyer_name, villaHref(r.code)),
@@ -922,7 +1019,7 @@ ${pill('over', b.age + 'd')}</a>`).join('')
         ...lendersIn(open).map(b => [b, tagOf(b)])])
         + filters('querylist', [['Any age', '*'], ['Asked this week', 'age-week'],
           ['One to two weeks', 'age-fortnight'], ['Open over a fortnight', 'age-over']])
-        + showing('querylist', 'queries open')
+        + showing('querylist', 'queries open', open.length)
         + `<div id="querylist">` : '')
       + (open.length ? open.map(q => `<div class="card" data-tags="${esc(tagOf(q.bank))} ${ageBand(days(q.asked_at))}" style="margin-bottom:12px">
 <div class="ch"><div class="ct">${esc(q.code)} · ${esc(q.stage_name)}</div>${pill('over', esc(q.bank || 'lender'))}</div>
@@ -993,7 +1090,7 @@ ${pill('over', b.age + 'd')}</a>`).join('')
       + filters('stagelist', [['Any state', '*'], ['Reported blocked', 'blocked'],
         ['Waiting to certify', 'marked'], ['Certified', 'certified'], ['Billed', 'demanded'],
         ['Paid', 'paid'], ['Not started', 'pending']])
-      + showing('stagelist', 'stages')
+      + showing('stagelist', 'stages', list.length)
       + table(['Villa', 'Stage', 'Evidence', 'Status', 'Value'],
         list.map(r => [
           who(r.code, r.buyer_name),
@@ -1029,7 +1126,7 @@ ${pill('over', b.age + 'd')}</a>`).join('')
         + 'carries an external qualified signature. The other four generate from this record. '
         + 'None of it replaces the lender’s own technical officer, who still visits.')
       + search('evlist', 'Find a villa, a stage or a caption')
-      + showing('evlist', 'photographs')
+      + showing('evlist', 'photographs', d.rows.list.length)
       + table(['Villa', 'Stage', 'Caption', 'Taken', 'Hash'],
         d.rows.list.map(r => [
           `<b>${esc(r.code)}</b>`,
@@ -1067,7 +1164,7 @@ ${pill('over', b.age + 'd')}</a>`).join('')
         ['Over two months', 'q-long'], ['Never photographed', 'q-never']])
         + filters('quietlist', [['Asked or not', '*'], ['Asked already', 'q-asked'],
           ['Not asked yet', 'q-unasked']])
-        + showing('quietlist', 'villas quiet')
+        + showing('quietlist', 'villas quiet', quiet.length)
         + `<div id="quietlist">` : '')
       + (quiet.length ? quiet.map(u => `<div class="card" data-tags="${
           !u.last_shot ? 'q-never' : days(u.last_shot) <= 30 ? 'q-month'
@@ -1151,7 +1248,7 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
       + filters('villalist', [['Every lender', '*'], ...lendersIn(list).map(b => [b, tagOf(b)]),
         ['Self funded', 'self']])
       + filters('villalist', [['Money moving', '*'], ['Money stuck here', 'stuck']])
-      + showing('villalist', 'villas')
+      + showing('villalist', 'villas', list.length)
       + table(['Villa', 'Stage in hand', 'Lender', 'Engineer', 'Paid', 'Agreement'],
         list.map(r => [
           who(r.code, r.buyer_name),
@@ -1194,7 +1291,7 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
     + search('doclist', 'Find a villa or a buyer')
     + filters('doclist', [['Everything', '*'], ['Waiting on the engineer', 'unsigned'],
       ['Not billed yet', 'unbilled'], ['No photographs', 'noshots'], ['Complete', 'complete']])
-    + showing('doclist', 'stage packs')
+    + showing('doclist', 'stage packs', d.rows.stages.length)
     + table(['Villa', 'Stage', 'The five documents', 'Signed'],
       d.rows.stages.map(r => [
         `<b><a href="${villaHref(r.code)}">${esc(r.code)}</a></b>`,
@@ -1249,7 +1346,7 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
       ])
       + filters('choicelist', [['All', '*'], ['Past the cut-off', 'late'], ['Open', 'open'],
         ['Made', 'made']])
-      + showing('choicelist', 'choices')
+      + showing('choicelist', 'choices', list.length)
       + table(['Villa', 'Choice', 'Needed by', 'Status', 'Selected'],
         list.map(r => [
           who(r.code, r.buyer_name),
@@ -1284,7 +1381,7 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
       ])
       + filters('visitlist', [['All', '*'], ['Requested', 'requested'],
         ['Confirmed', 'confirmed'], ['Declined', 'declined']])
-      + showing('visitlist', 'visits')
+      + showing('visitlist', 'visits', list.length)
       + table(['Villa', 'Slot', 'Engineer', 'Status', 'Note'],
         list.map(r => [
           who(r.code, r.buyer_name),
@@ -1316,7 +1413,7 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
       ])
       + `<div class="ct" style="margin:6px 0 12px">Claims from buyers</div>`
       + filters('claimlist', [['All', '*'], ['Open', 'open'], ['Closed', 'closed']])
-      + showing('claimlist', 'claims')
+      + showing('claimlist', 'claims', claims.length)
       + table(['Villa', 'Claim', 'Raised', 'Messages', 'Status'],
         claims.map(q => [
           `<b>${esc(q.code)}</b>`,
@@ -1338,7 +1435,7 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
       + search('snaglist', 'Find a villa or a trade')
       + filters('snaglist', [['All', '*'], ['Open', 'open'], ['Fixed', 'fixed']])
       + filters('snaglist', [['Every trade', '*'], ...TRADES.map(t => [t[1], 'trade-' + t[0]])])
-      + showing('snaglist', 'snags')
+      + showing('snaglist', 'snags', d.rows.snags.length)
       + table(['Villa', 'Snag', 'Raised by', 'Raised', 'Status'],
         d.rows.snags.map(s => [
           `<b>${esc(s.code)}</b>`,
@@ -1471,11 +1568,16 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
         { l: 'On the panel', icon: 'money', v: String(list.filter(r => r.on_panel).length), n: 'project approved' },
         { l: 'Off panel', icon: 'growth', v: String(list.filter(r => !r.on_panel).length), n: 'buyer may still use them' },
         { l: 'Villas financed', icon: 'hostel', v: String(list.reduce((t, r) => t + r.villas, 0)), n: 'across all lenders' },
-        { l: 'Owed to us', icon: 'report', v: esc(M.crore(list.reduce((t, r) => t + Number(r.owed), 0))), n: 'billed and unpaid' },
+        /* Summed from what the rows will PRINT, not from what is stored: this
+           figure sits directly above its own evidence, and a headline that
+           does not equal the column under it is the fastest way to lose a
+           reader's trust in every other number on the screen. */
+        { l: 'Owed to us', icon: 'report',
+          v: esc(M.crore(M.sumAsShown(list.map(r => r.owed)))), n: 'billed and unpaid' },
       ])
       + filters('lenderlist', [['All', '*'], ['On the panel', 'panel'], ['Off panel', 'offpanel'],
         ['Owes us money', 'owing']])
-      + showing('lenderlist', 'lenders')
+      + showing('lenderlist', 'lenders', list.length)
       + table(['Lender', 'APF code', 'Rate', 'Turnaround', 'Villas', 'Owed'],
         list.map(r => [
           `<b>${esc(r.name)}</b>`,
@@ -1675,7 +1777,8 @@ ${q.status === 'closed' ? pill('paid', 'closed') : pill('due', 'open')}</div><di
 
   return {
     KEYS, NAV, nav, counts, load, SCREENS, villaFile, questionThread,
-    render: (sess, key, d, msg) => officePage(sess, nav(key, d.n), SCREENS[key](sess, d, msg), msg),
+    render: (sess, key, d, msg, view) =>
+      officePage(sess, nav(key, d.n), SCREENS[key](sess, d, msg, view), msg),
     wrap: (sess, n, main, msg) => officePage(sess, nav(null, n), main, msg),
   };
 };

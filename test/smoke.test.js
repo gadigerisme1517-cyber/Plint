@@ -94,11 +94,15 @@ const get = (p, cookie) => fetch(BASE + p, { headers: cookie ? { cookie } : {}, 
   const rows = (v.match(/href="\/office\/villa\//g) || []).length;
   ok(rows === 48, 'the register shows all 48 villas (' + rows + ')');
 
-  /* The pipeline is a board, one column per state a pack can be in - a shape
-     you read, where a list of the same rows is one you count. */
-  ok(/<div class="board">/.test(o), 'the packs are not on a board');
-  ok(/>Certified, pack not sent</.test(o) && />With the lender</.test(o),
-     'the board is not grouped by where each pack has got to');
+  /* The dashboard leads with who is holding each villa up - the question this
+     desk opens with. The pack states are the second question and are a click
+     away, not gone. */
+  ok(/<div class="board">/.test(o), 'there is no board on the dashboard');
+  ok(/>The engineer</.test(o) && />The lender</.test(o) && />This office</.test(o)
+     && />The buyer</.test(o), 'the board is not grouped by who is holding it up');
+  const packView = await (await get('/office?view=packs', office)).text();
+  ok(/>Certified, pack not sent</.test(packView) && />With the lender</.test(packView),
+     'the pack-state view has been lost rather than moved');
   /* And the dashboard leads with the money that has stopped: what is waiting
      on evidence, as the largest thing on the screen. */
   ok(/class="eyebrow">Waiting on evidence</.test(o) && /<div class="big num">₹/.test(o),

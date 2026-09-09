@@ -830,6 +830,62 @@ test('app.css does not overrule a value v21 already sets on a phone', async () =
   assert.deepStrictEqual(bad, [],
     'app.css overrules v21 at 375px without saying why:\n  ' + bad.join('\n  '));
 });
+test('the office board groups by who is holding it up, and accounts for every villa', async () => {
+  /* THIS TEST EXISTS BECAUSE THE VIEW WAS DELETED ONCE.
+
+     "Stuck money, by who is holding it up" - four columns, The engineer / This
+     office / The lender / The buyer - was the most useful view in the product,
+     because it answers "who do I chase today" rather than "what state is this
+     pack in". It was dropped when the console was rebuilt on a new reference,
+     and the test that asserted it was rewritten at the same time to match the
+     new behaviour. That is the failure this test is here to make loud.
+
+     A test is never rewritten to agree with a regression. If these columns go
+     again, this fails, and it fails saying what is missing by name. */
+  const h = await body('/office', 'office');
+
+  for (const label of ['The engineer', 'This office', 'The lender', 'The buyer']) {
+    assert.ok(h.includes('<span class="ctt">' + label + '</span>'),
+      'the holder board has lost the "' + label + '" column');
+  }
+
+  /* And it accounts for the whole project. Every blocked stage carries exactly
+     one holder, so the four column counts must sum to the number of villas
+     that have something blocked - and that, in this seed, is all of them. A
+     column silently dropping rows is the other way this view dies. */
+  const board = (/<div class="board">[\s\S]*?(?=<div class="hsub")/.exec(h) || [''])[0];
+  assert.ok(board, 'there is no board on the office dashboard');
+  const counts = [...board.matchAll(/<span class="cnt">(\d+)<\/span>/g)].map(m => Number(m[1]));
+  assert.strictEqual(counts.length, 4,
+    'the board draws ' + counts.length + ' columns, not four');
+  const summed = counts.reduce((a, b) => a + b, 0);
+
+  const villas = await body('/office/villas', 'office');
+  const total = (villas.match(/data-tags=/g) || []).length;
+  assert.ok(total > 0, 'the villa register is empty, so this proves nothing');
+  assert.strictEqual(summed, total,
+    'the holder columns hold ' + summed + ' villas but the register has ' + total
+    + ': ' + counts.join(' + '));
+
+  /* The screen says so in words too, so a reader can check it without opening
+     the register. */
+  assert.match(h, new RegExp(summed + ' of ' + total + ' villas have a stage blocked'),
+    'the board does not say how much of the project it accounts for');
+
+  /* And the pack-state view is kept, not replaced. Both are reachable, and the
+     one that answers "who do I chase" is the one you land on. */
+  assert.match(h, /class="chip on" href="\/office"/,
+    'the holder view is not the one the dashboard opens on');
+  const packs = await body('/office?view=packs', 'office');
+  for (const label of ['Certified, pack not sent', 'With the lender',
+                       'Lender has asked', 'Disbursed']) {
+    assert.ok(packs.includes('<span class="ctt">' + label + '</span>'),
+      'the pack-state view has lost the "' + label + '" column');
+  }
+  assert.match(packs, /class="chip on" href="\/office\?view=packs"/,
+    'the pack view does not mark itself as the one showing');
+});
+
 test('the board is built out of the reference s own classes', async () => {
   /* `.board` of `.col`, each with a `.colh` naming it and counting it, holding
      `.lcard`s. Not a component of this application's invention: the reference
@@ -1473,12 +1529,14 @@ test('the office dashboard leads with the money that has stopped', async () => {
   assert.match(h, />Villas gone quiet</, 'nothing lists the villas nobody has photographed');
   assert.match(h, /class="tbl"/, 'there is no stage worklist');
 
-  /* And the pipeline, as the reference's board: one column per state a pack
-     can be in, from certified to disbursed. */
-  assert.match(h, /<div class="board">/, 'the packs are not on a board');
+  /* And a board. Which board is on it by default is the subject of its own
+     test above: the holder grouping leads, the pack states are a click away.
+     Both are four columns. */
+  assert.match(h, /<div class="board">/, 'there is no board on the dashboard');
   const cols = (h.match(/<div class="col">/g) || []).length;
   assert.strictEqual(cols, 4, 'the board has ' + cols + ' columns, not four');
+  const packs = await body('/office?view=packs', 'office');
   for (const c of ['Certified, pack not sent', 'With the lender', 'Lender has asked', 'Disbursed']) {
-    assert.ok(h.includes('>' + c + '<'), 'the board has no "' + c + '" column');
+    assert.ok(packs.includes('>' + c + '<'), 'the pack view has no "' + c + '" column');
   }
 });

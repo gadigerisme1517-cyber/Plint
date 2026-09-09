@@ -291,11 +291,22 @@ test('money prints in the Indian grouping, with the rupee sign', () => {
   assert.strictEqual(M.money(100), '₹1');
 });
 
-test('the short form is crores and lakhs, as the prototype writes them', () => {
-  // The prototype's own formatter is
-  //   n>=1e7 ? (n/1e7).toFixed(2)+' Cr' : (n/1e5).toFixed(1)+' L'
-  // so a crore figure carries two decimals. Rs 3.2 Cr prints as 3.20 Cr.
+test('the short form carries two decimals at every magnitude', () => {
+  /* CHANGED BY INSTRUCTION, not to agree with a regression.
+
+     The rule used to be the prototype's - two decimals for crore, ONE for
+     lakh, and whole crores above ten - and it produced a headline of "Rs 20
+     Cr" over eleven rows that summed to Rs 20.39 Cr. Thirty-nine lakh missing
+     from a figure with its own evidence printed underneath it.
+
+     The rule now is two decimals everywhere, and no stripping of a trailing
+     zero, so a total and its rows are read in the same unit at the same
+     precision. */
   assert.strictEqual(M.crore(3200000000), '₹3.20 Cr');
-  assert.strictEqual(M.crore(336000000), '₹33.6 L');
+  assert.strictEqual(M.crore(336000000), '₹33.60 L', 'lakh keeps two decimals now');
+  assert.strictEqual(M.crore(20390000000), '₹20.39 Cr',
+    'above ten crore it must not drop to whole crores - this is the bug');
+  assert.strictEqual(M.crore(2039000000000), '₹2039.00 Cr',
+    'and it must not drop them at any magnitude above that either');
   assert.strictEqual(M.crore(10000), '₹100', 'below a lakh it falls back to full rupees');
 });

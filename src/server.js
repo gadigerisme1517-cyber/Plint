@@ -879,6 +879,27 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (p === '/logout') {
+      /* GET has to keep working: the buyer's and the engineer's app bars sign
+         out with a link, and a link is a GET. What must not work is a GET this
+         browser did not navigate to - an <img src="/logout"> on any page
+         anywhere would otherwise end the session.
+
+         `Sec-Fetch-Site` is sent by every browser that supports it and cannot
+         be set by page script. A same-origin navigation carries `same-origin`
+         and `Sec-Fetch-Mode: navigate`; an image, a script, a fetch from
+         another site carries `cross-site` or a mode of `no-cors`. A browser
+         too old to send the header at all is let through rather than locked
+         out of signing out, which is the safer failure of the two. */
+      const site = req.headers['sec-fetch-site'];
+      const mode = req.headers['sec-fetch-dest'];
+      const forged = req.method === 'GET' && site && site !== 'same-origin'
+        && site !== 'none';
+      const notANavigation = req.method === 'GET' && mode && mode !== 'document';
+      if (forged || notANavigation) {
+        LOG.warn('logout.refused', { id: reqId, site, dest: mode });
+        res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
+        return res.end('Sign out has to be asked for from the page.');
+      }
       // Revoked in the database, not merely forgotten by the browser.
       await S.revoke(S.tokenFrom(req));
       res.writeHead(302, { location: '/', 'set-cookie': S.clearCookie() });
@@ -1137,7 +1158,10 @@ const server = http.createServer(async (req, res) => {
 
       if (key && OFF.KEYS.has(key)) {
         const d = await OFF.load(sess, key);
-        return html(200, OFF.render(sess, key, d, msg));
+        /* Which of the dashboard's two views was asked for. A query parameter
+           rather than a script, so the back button works and the choice
+           survives a reload. */
+        return html(200, OFF.render(sess, key, d, msg, url.searchParams.get('view')));
       }
 
       /* The old menu URL. The navigation is a drawer in the document now and
@@ -1520,6 +1544,12 @@ const server = http.createServer(async (req, res) => {
     if (p === '/bank' && req.method === 'POST' && sess.role === 'buyer') {
       const f = form(await body(req));
       const back = m => { res.writeHead(302, { location: '/bank?m=' + encodeURIComponent(m) }); res.end(); };
+      /* The field has to be there before the database is asked. Without it
+         `choose_lender` raises P0001 - "choose exactly one of a panel lender
+         or an outside bank" - and nothing caught it, so every one of the ten
+         Pick buttons answered 500 and the generic error page instead of the
+         one sentence every other write in this product returns. */
+      if (!f.lender) return back('Pick one of the lenders on the list.');
       const r = await asUser(sess, async c => {
         const u = (await c.query('SELECT id FROM units WHERE code = $1', [sess.unit])).rows[0];
         if (!u) return null;
@@ -1531,8 +1561,18 @@ const server = http.createServer(async (req, res) => {
            The third argument is an outside bank's name, not the actor, and the
            function raises unless exactly one of the two is given. A buyer
            picking from the panel passes null. */
-        const ok = (await c.query('SELECT choose_lender($1,$2,null) ok',
-          [u.id, f.lender])).rows[0].ok;
+        /* And the raise is caught even so: the guard above covers the field
+           being absent, this covers every other reason the function refuses -
+           a lender id that is not a lender, a race with another tab. A write
+           that fails is a sentence, never a stack trace. */
+        let ok;
+        try {
+          ok = (await c.query('SELECT choose_lender($1,$2,null) ok',
+            [u.id, f.lender])).rows[0].ok;
+        } catch (e) {
+          LOG.warn('bank.refused', { id: reqId, unit: sess.unit, err: e.message });
+          return null;
+        }
         if (!ok) return null;
         return (await c.query('SELECT name FROM lenders WHERE id = $1', [f.lender])).rows[0];
       });
