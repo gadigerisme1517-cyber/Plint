@@ -838,8 +838,10 @@ ${pill('over', b.age + 'd')}</a>`).join('')
           esc(p.location || 'not recorded'),
           esc(p.builder_name || 'not recorded'),
           p.stages ? pill('paid', p.stages + ' stages') : pill('over', 'not set'),
-          num(String(p.villas)),
-          num(p.buyers + ' of ' + p.villas),
+          /* Self-describing on purpose: below 560 a row becomes a block and the
+             column headings come off, and "48" over "2 of 48" says nothing. */
+          num(p.villas + (p.villas === 1 ? ' villa' : ' villas')),
+          num(p.buyers + ' of ' + p.villas + ' signed up'),
         ]),
         '1.6fr 1.2fr 1.4fr .8fr .5fr .7fr',
         { min: 780, empty: 'No project on this console yet. The form below makes one.' }))
