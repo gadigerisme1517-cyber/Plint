@@ -31,8 +31,10 @@
      - Five documents per stage. Four generate from the record. Only the
        engineer's completion certificate carries an external qualified
        signature, and only a qualified engineer may sign it.
-     - Bookings and receipts come from the builder's ERP. This console reads
-       them and writes nothing back to it.
+     - Bookings come from the builder's ERP. This console reads them and writes
+       nothing back to it. RECEIPTS ARE PLINT'S OWN since Pass 6: money
+       arriving is recorded here, on /office/receipts, and that is what settles
+       a demand and issues the buyer's receipt.
    ========================================================================= */
 
 module.exports = function office(ctx) {
@@ -999,10 +1001,13 @@ ${pill('over', b.age + 'd')}</a>`).join('')
         : (units.length ? titled('Issue a buyer sign-in',
           empty('Every villa on this project has a login.')) : ''))
 
-      + note('Bookings and receipts still come from the builder’s ERP and are read, '
-        + 'never written back. This screen creates the file a villa needs to exist here: '
-        + 'the schedule it is priced against, the villa itself, and the login of the '
-        + 'person who bought it.');
+      /* This said "bookings and receipts" until receipts became Plint's own.
+         A sentence about where money comes from has to be right. */
+      + note('Bookings still come from the builder’s ERP and are read, never written '
+        + 'back. Money arriving is recorded here rather than there - that is what settles '
+        + 'a demand and issues the receipt. This screen creates the file a villa needs to '
+        + 'exist at all: the schedule it is priced against, the villa itself, and the '
+        + 'login of the person who bought it.');
   }
 
   /* --------------------------------------------------- the import, previewed */
@@ -1854,8 +1859,10 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
       + row('users', 'Logins', 'office, engineers and one buyer per villa',
         `<a class="btn" href="/office/logins">Open</a>`))
     + card('What this console writes',
-      row('report', 'Bookings and receipts', 'read from your ERP — nothing is written back',
+      row('report', 'Bookings', 'read from your ERP — nothing is written back',
         pill('grey', 'read only'))
+      + row('attend', 'Receipts', 'issued here when money arrives, against the demand',
+        pill('paid', 'written here'))
       + row('cert', 'Stage certificates', 'signed by a qualified engineer, never from this desk',
         pill('grey', 'engineer only'))
       + row('money', 'Demands', 'immutable once raised; a correction is a credit note',

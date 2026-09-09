@@ -112,6 +112,18 @@ async function ensurePass6(c) {
        mode, ref, d.paid_at, d.paid_at]);
   }
   if (settled.length) out.push(settled.length + ' receipts written');
+
+  /* A visit is a day, not a minute. The server writes ten in the morning IST
+     and the engineer's list prints the time, but rows seeded before that was
+     true carry whatever minute the seed happened to run at - the deployed
+     demo was offering buyers a site visit at 8:44 in the morning. Idempotent:
+     a slot already at ten o'clock is not touched. */
+  const slots = await c.query(
+    `UPDATE visits SET slot_at = (date_trunc('day', slot_at AT TIME ZONE 'Asia/Kolkata')
+                                  + interval '10 hours') AT TIME ZONE 'Asia/Kolkata'
+      WHERE slot_at <> (date_trunc('day', slot_at AT TIME ZONE 'Asia/Kolkata')
+                        + interval '10 hours') AT TIME ZONE 'Asia/Kolkata'`);
+  if (slots.rowCount) out.push(slots.rowCount + ' visit slots moved to ten in the morning');
   return out;
 }
 

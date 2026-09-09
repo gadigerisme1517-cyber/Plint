@@ -316,9 +316,13 @@ function statementOfAccount(ctx) {
   row(doc, 'Outstanding', M.money(billed - received), true);
 
   gap(doc, 26);
-  para(doc, 'Bookings and receipts come from the builder\u2019s ERP. Plint reads them and '
-    + 'writes nothing back, so this statement reports what that system holds rather '
-    + 'than replacing it.', { size: 9, color: INK3, width: 460 });
+  /* This said "bookings and receipts" until receipts became Plint's own. A
+     statement of account cannot be wrong about where its own figures come
+     from. */
+  para(doc, 'Bookings come from the builder\u2019s ERP; Plint reads them and writes nothing '
+    + 'back. Every figure above is Plint\u2019s own: each demand was raised against a '
+    + 'certified stage, and each amount received was recorded here against a receipt.',
+    { size: 9, color: INK3, width: 460 });
   gap(doc, 12);
   para(doc, 'Project ' + project.name + ', ' + project.phase + '.', { size: 8, color: INK3 });
   doc.end();
