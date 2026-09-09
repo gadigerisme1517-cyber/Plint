@@ -710,28 +710,24 @@ ${note('This is what the office has recorded. The signed and registered copy is 
      screen says so rather than implying the choice is free. */
   function choices(sess, d, msg) {
     const open = d.choices.filter(c => !c.selected);
-    const rows = d.choices.map(c => {
+    const signed = d.choices.filter(c => c.selected);
+
+    /* AN OPEN CHOICE IS A CARD, NOT A ROW.
+
+       It was a table, and on a phone a table scrolls sideways - which put the
+       select and the Sign button, the buyer's only write on this screen, off
+       the right-hand edge. A decision gets its own surface, the way a snag
+       does on the engineer's screen. */
+    const decide = c => {
       const left = until(c.needed_by);
-      if (c.selected) {
-        return [
-          `<b>${esc(c.label)}</b>`,
-          esc(c.detail) + ' &middot; you chose ' + esc(c.selected)
-            + ' on ' + esc(M.longDate(c.signed_at)),
-          pill('paid', 'Signed'),
-          '',
-        ];
-      }
-      return [
-        `<b>${esc(c.label)}</b>`,
-        esc(c.detail) + ' &middot; needed by ' + esc(M.longDate(c.needed_by)),
+      return titled(c.label,
+        card('', `<p class="hsub">${esc(c.detail)} &middot; needed by ${esc(M.longDate(c.needed_by))}</p>
+<div style="margin-top:12px">${form('/choices',
+  field('Choose', select('option', c.options.map(o => [o, o])), { wide: true }),
+  { fields: { id: c.id }, submit: 'Sign this choice', icon: 'attend' })}</div>`),
         left < 0 ? pill('over', (-left) + 'd late')
-          : left <= AGE.ageing ? pill('due', 'in ' + left + 'd') : pill('accent', 'in ' + left + 'd'),
-        `<form class="frm" method="post" action="/choices" style="gap:8px">
-<input type="hidden" name="id" value="${esc(c.id)}">
-${select('option', c.options.map(o => [o, o]))}
-<button class="btn dark" type="submit">Sign</button></form>`,
-      ];
-    });
+          : left <= AGE.ageing ? pill('due', 'in ' + left + 'd') : pill('accent', 'in ' + left + 'd'));
+    };
 
     return desk(sess, '/choices', 'Interior choices', '', `
 ${head('What goes inside',
@@ -741,13 +737,19 @@ ${kpis([
   { l: 'Still to sign', icon: 'risk', v: String(open.length),
     n: open.length ? 'the site is waiting on these' : 'everything is decided',
     tone: open.length ? 'hot' : null },
-  { l: 'Signed', icon: 'attend', v: String(d.choices.length - open.length),
+  { l: 'Signed', icon: 'attend', v: String(signed.length),
     n: 'of ' + d.choices.length + ' choices' },
 ])}
-${titled('Every choice on your villa', d.choices.length ? table(
-  ['Choice', 'What it is', 'State', 'Choose and sign'],
-  rows, '1fr 2fr .8fr 1.4fr', { min: 760 })
-  : empty('No choices are open on this villa.'))}
+${open.length ? open.map(decide).join('')
+  : titled('Still to sign', empty('Every choice is signed. The site builds what you chose.'))}
+${signed.length ? titled('Already signed', table(
+  ['Choice', 'What you chose', 'When', 'State'],
+  signed.map(c => [
+    `<b>${esc(c.label)}</b>`,
+    esc(c.detail) + ' &middot; you chose ' + esc(c.selected),
+    esc(M.longDate(c.signed_at)),
+    pill('paid', 'Signed'),
+  ]), '1.2fr 2fr .9fr .6fr', { min: 620 })) : ''}
 ${note('Anything you choose above the allowance goes onto your next demand letter, '
   + 'not a separate bill. After plastering starts, changing a choice costs roughly '
   + 'twice as much, because work has to come out.')}
