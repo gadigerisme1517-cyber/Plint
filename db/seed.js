@@ -256,6 +256,47 @@ async function main() {
       [sid, holder, role, reason, new Date(Date.now() - v.silent * 86400000)]);
   }
 
+  /* A VILLA CAN HAVE MORE THAN ONE STAGE BLOCKED, AND THE SEED HAS TO SAY SO.
+
+     Every villa above gets exactly one blocker, on its live stage. Forty-eight
+     villas, forty-eight blockers, one each - and a seed like that cannot
+     reproduce the case where a villa appears twice on the holder board, once
+     in each of two columns, because two of its stages are held by different
+     people. That bug existed, shipped, and was invisible here; it was the test
+     database, which happened to have a villa with two, that caught it.
+
+     So two villas carry a second blocker, on the stage after the live one:
+
+       A-01  live stage held by whoever the rules above chose, and the NEXT
+             stage held by THIS OFFICE - a drawing that has not been issued.
+             The two are held by different parties, which is the case that
+             put one villa in two columns.
+       A-04  live stage as above, and the next stage held by THE BUYER, who
+             has not chosen the finishes the stage needs.
+
+     The holder board groups by villa and keeps the longest wait, so these two
+     must still appear exactly once each. `test/shell.test.js` asserts the
+     column counts sum to the villa register, and that assertion is what these
+     two rows exist to exercise. */
+  const alsoBlocked = [
+    ['A-01', 'office', 'Priya Menon',
+     'Revised drawing not issued. The next stage cannot start.'],
+    ['A-04', 'buyer', null,
+     'Finishes not chosen. The next stage cannot be set out.'],
+  ];
+  for (const [code, role2, who, reason2] of alsoBlocked) {
+    const v = villas.find(x => x.code === code);
+    if (!v) continue;
+    const next = v.at + 1;
+    if (next >= MILES.length) continue;          // nothing after the live stage
+    const sid2 = 'us-' + code + '-' + MILES[next][0];
+    const already = await c.query('SELECT 1 FROM blockers WHERE unit_stage_id = $1', [sid2]);
+    if (already.rowCount) continue;              // never write over the first one
+    await c.query(`INSERT INTO blockers VALUES ($1,$2,$3,$4,$5)`,
+      [sid2, who || v.buyer, role2, reason2,
+       new Date(Date.now() - Math.max(1, v.silent - 4) * 86400000)]);
+  }
+
   // Everything migrations 011 and 012 added. Separate file, separate random
   // streams: see its header for why it must not touch the generators above.
   await require('./seed-state').seedState(c, villas,

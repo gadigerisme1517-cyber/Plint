@@ -923,7 +923,10 @@ ${pill('over', b.age + 'd')}</a>`).join('')
   /* ---------------------------------------------------------------- packs */
   SCREENS.packs = (sess, d) => {
     const queued = d.rows.list.filter(r => r.state === 'queued');
-    const value = queued.reduce((t, r) => t + Number(r.total_paise || 0), 0);
+    /* Summed from what the rows print, not from the record, so the headline
+       cannot drift a lakh away from the column beneath it - the fault that
+       put Rs 20.39 Cr on one screen and Rs 20.38 Cr on the next. */
+    const value = M.sumAsShown(queued.map(r => r.total_paise));
     return head('Ready to send',
       'Stage verified, pack generated, not yet with the lender. Each one is a stage the buyer has already been billed for.',
       btn('At the lender', { icon: 'money', href: '/office/wait' }))
@@ -966,7 +969,7 @@ ${pill('over', b.age + 'd')}</a>`).join('')
   SCREENS.wait = (sess, d) => {
     const out = d.rows.list.filter(r => r.state === 'delivered' && !r.paid_at);
     const late = out.filter(r => days(r.delivered_at) > PACK_LATE_DAYS);
-    const value = out.reduce((t, r) => t + Number(r.total_paise || 0), 0);
+    const value = M.sumAsShown(out.map(r => r.total_paise));   // as above: sum what shows
     return head('At the lender',
       'Sent, and not yet paid. After ' + PACK_LATE_DAYS + ' days it is worth a phone call.',
       btn('Lender queries', { icon: 'comms', href: '/office/query' }))
@@ -1056,7 +1059,7 @@ ${pill('over', b.age + 'd')}</a>`).join('')
       'The buyer has chosen a lender and the sanction letter has not reached this office. Nothing can be disbursed against a sanction nobody has recorded.')
       + kpis([
         { l: 'Files waiting', icon: 'risk', v: String(list.length), n: 'no sanction on record' },
-        { l: 'Value at stake', icon: 'money', v: esc(M.crore(list.reduce((t, r) => t + Number(r.agreement_value_paise), 0))), n: 'agreement value of those villas' },
+        { l: 'Value at stake', icon: 'money', v: esc(M.crore(M.sumAsShown(list.map(r => r.agreement_value_paise)))), n: 'agreement value of those villas' },
         { l: 'Chosen a lender', icon: 'attend', v: String(list.filter(r => r.lender_chosen_at).length), n: 'and told us which' },
         { l: 'Lenders involved', icon: 'growth', v: String(new Set(list.map(r => r.bank)).size), n: 'across these files' },
       ])

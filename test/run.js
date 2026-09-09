@@ -34,7 +34,13 @@ const SUITES = [
   'state.test.js',       // the shared state 011 and 012 added, and its isolation
   'topup.test.js',       // filling that state on a database seeded before it existed
   'crossrole.test.js',   // one role acts, another sees it, over real HTTP
+  'figures.test.js',     // one quantity, one number, on every screen it appears on
   'shell.test.js',       // the frame is gone, and each role can navigate
+  /* The only suite that executes page script. Everything above reads markup,
+     which is how a SyntaxError in the filter runtime shipped with every test
+     green. It drives a real browser, so it is slower than the rest put
+     together and it runs late. */
+  'browser.test.js',
   'pwa.test.js',        // manifest, icons, and the worker's cache allowlist
   'config.test.js',
   'tls.test.js',

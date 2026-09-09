@@ -1,0 +1,288 @@
+'use strict';
+/* ============================================================================
+   THE PAGES, RUN AS A BROWSER RUNS THEM.
+
+   Every other suite in this project reads markup. Not one of them has ever
+   executed a line of page script, and that gap has shipped twice: a stray
+   `})();` left in an extracted filter runtime threw a SyntaxError in BOTH
+   shells and every filter, search box and Clear on every screen stopped
+   working. The markup was perfect. Every test was green. It was caught by a
+   person clicking a chip.
+
+   So this suite loads real pages in a real browser and runs their script.
+
+   THE BAR, ON EVERY SINGLE PAGE LOAD:
+     - no console error
+     - no uncaught exception
+     - no failed request from the page
+     - no "undefined", "NaN" or "[object Object]" in the rendered text
+   Any one of those fails the test. Not a warning.
+
+   Then it drives the things that only exist in script - a chip, a search box,
+   Clear, the drawer, a toast - because a runtime that loads without throwing
+   can still do nothing at all, which is the other half of what shipped.
+
+   THE BROWSER. playwright-core drives the Chrome or Edge already installed on
+   the machine, so nothing is downloaded. If neither is there this suite FAILS
+   rather than skipping: a browser test that quietly does not run is exactly
+   the hole this suite exists to close.
+   ========================================================================= */
+const { test, before, after } = require('node:test');
+const assert = require('node:assert');
+const fs = require('node:fs');
+const { chromium } = require('playwright-core');
+const { pool } = require('../src/db');
+
+const PORT = 3243, BASE = 'http://127.0.0.1:' + PORT;
+const server = require('../src/server');
+
+const CHROMES = [
+  'C:/Program Files/Google/Chrome/Application/chrome.exe',
+  'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
+  'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
+  '/usr/bin/google-chrome',
+  '/usr/bin/chromium',
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+];
+
+const ROLES = {
+  buyer: 'arjun@example.in',
+  engineer: 'ramachandran@nvt.in',
+  office: 'priya@nvt.in',
+};
+
+/* Every screen, by the role that owns it. Kept explicit so that adding one
+   without deciding it must survive a browser is a failure here, not an
+   orphan. */
+const SCREENS = {
+  office: ['/office', '/office?view=packs', '/office/packs', '/office/wait',
+           '/office/query', '/office/chase', '/office/stages', '/office/evidence',
+           '/office/silent', '/office/signoff', '/office/villas', '/office/documents',
+           '/office/choices', '/office/visits', '/office/warranty', '/office/rera',
+           '/office/escrow', '/office/possession', '/office/schedule', '/office/lenders',
+           '/office/logins', '/office/settings', '/office/help'],
+  engineer: ['/engineer', '/engineer/villas', '/engineer/visits', '/engineer/log',
+             '/engineer/certs', '/engineer/snags', '/engineer/log/material'],
+  buyer: ['/journey', '/villa/B-14', '/visit', '/money', '/more', '/bank', '/loan',
+          '/agreement', '/choices', '/questions', '/documents'],
+};
+
+let browser, contexts = {};
+/* Counted so the report cannot claim more coverage than was run. */
+const stats = { pages: 0, interactions: 0 };
+
+before(async () => {
+  await new Promise(r => server.listen(PORT, r));
+
+  const exe = CHROMES.find(p => { try { return fs.existsSync(p); } catch { return false; } });
+  assert.ok(exe, 'no Chrome or Edge found in any of:\n  ' + CHROMES.join('\n  ')
+    + '\nThis suite drives a real browser and will not pretend to pass without one.');
+  browser = await chromium.launch({ executablePath: exe });
+
+  for (const [role, email] of Object.entries(ROLES)) {
+    const r = await fetch(BASE + '/login', {
+      method: 'POST', redirect: 'manual',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ email, pw: 'plint' }),
+    });
+    const raw = r.headers.get('set-cookie');
+    assert.ok(raw, role + ' could not sign in');
+    const value = raw.split(';')[0].split('=')[1];
+    contexts[role] = await browser.newContext();
+    await contexts[role].addCookies([{
+      name: 'plint', value, domain: '127.0.0.1', path: '/',
+      httpOnly: true, secure: false, sameSite: 'Lax',
+    }]);
+  }
+});
+
+after(async () => {
+  for (const c of Object.values(contexts)) await c.close().catch(() => {});
+  if (browser) await browser.close().catch(() => {});
+  await new Promise(r => { server.closeAllConnections?.(); server.close(r); });
+  await pool.end();
+});
+
+/**
+ * Open a page with every alarm armed, and hand it back still armed so the
+ * caller can drive it. `check()` throws with everything that went wrong.
+ */
+async function open(role, path_, viewport) {
+  const page = await contexts[role].newPage();
+  if (viewport) await page.setViewportSize(viewport);
+  const problems = [];
+  page.on('console', m => {
+    if (m.type() === 'error') problems.push('console error: ' + m.text());
+  });
+  page.on('pageerror', e => problems.push('uncaught: ' + e.message));
+  page.on('requestfailed', r => {
+    /* A navigation the test itself abandons is not a page fault. */
+    if (r.failure() && !/ERR_ABORTED/.test(r.failure().errorText)) {
+      problems.push('request failed: ' + r.url() + ' ' + r.failure().errorText);
+    }
+  });
+  const res = await page.goto(BASE + path_, { waitUntil: 'load' });
+  stats.pages++;
+  if (!res || res.status() !== 200) problems.push('HTTP ' + (res && res.status()));
+
+  page.check = async (what) => {
+    const text = await page.evaluate(() => document.body.innerText);
+    for (const bad of ['undefined', 'NaN', '[object Object]']) {
+      if (text.includes(bad)) problems.push('renders "' + bad + '"');
+    }
+    assert.deepStrictEqual(problems, [], (what || role + ' ' + path_) + ' — ' + problems.join(' | '));
+  };
+  return page;
+}
+
+// ---------------------------------------------------------------------------
+
+test('every screen of every role loads in a browser without a single error',
+  async () => {
+    for (const [role, paths] of Object.entries(SCREENS)) {
+      for (const p of paths) {
+        const page = await open(role, p);
+        await page.check(role + ' ' + p);
+        await page.close();
+      }
+    }
+    /* Plus the two screens that sit behind a row rather than behind a
+       destination, discovered rather than hardcoded. */
+    const office = await open('office', '/office/villas');
+    const villa = await office.$eval('a[href^="/office/villa/"]', a => a.getAttribute('href'));
+    await office.close();
+    for (const p of [villa, '/office/question/q-b14-w']) {
+      const page = await open('office', p);
+      await page.check('office ' + p);
+      await page.close();
+    }
+  });
+
+test('the office filter runtime actually runs', async () => {
+  const page = await open('office', '/office/villas');
+  await page.check('office /office/villas');
+
+  const count = () => page.$eval('[data-count="villalist"] .fnum', e => e.textContent.trim());
+  const before = await count();
+  assert.match(before, /^\d+$/, 'the count is not a plain total on load: ' + before);
+
+  // a chip
+  await page.click('.filters[data-scope="villalist"] .chip[data-filter="stuck"]');
+  stats.interactions++;
+  const filtered = await count();
+  assert.match(filtered, /^\d+ of \d+$/, 'a chip did not narrow the list: ' + filtered);
+  assert.notStrictEqual(filtered, before, 'the chip changed nothing');
+
+  // the search box
+  await page.fill('[data-search="villalist"]', 'zzqqxx');
+  stats.interactions++;
+  const searched = await count();
+  assert.match(searched, /^0 of \d+$/, 'a search that matches nothing left rows showing: ' + searched);
+  const none = await page.$eval('#villalist .filtered-empty', e => !e.hidden);
+  assert.ok(none, 'a list filtered to nothing does not say so');
+
+  // Clear
+  await page.click('[data-clear="villalist"]');
+  stats.interactions++;
+  assert.strictEqual(await count(), before, 'Clear did not return the list to its full count');
+  assert.strictEqual(await page.inputValue('[data-search="villalist"]'), '',
+    'Clear left the search box full');
+  await page.check('office /office/villas after filtering');
+  await page.close();
+});
+
+test('the engineer filter runtime actually runs', async () => {
+  /* The engineer's shell is a different document from the office's and loads a
+     different stylesheet; the runtime is shared. When it was extracted it
+     broke in BOTH, so both are driven. */
+  const page = await open('engineer', '/engineer/villas');
+  await page.check('engineer /engineer/villas');
+
+  const count = () => page.$eval('[data-count="engvillas"] .fnum', e => e.textContent.trim());
+  const before = await count();
+  assert.match(before, /^\d+$/, 'the count is not a plain total on load: ' + before);
+
+  await page.click('.filters[data-scope="engvillas"] .chip[data-filter="quiet"]');
+  stats.interactions++;
+  const filtered = await count();
+  assert.match(filtered, /^\d+ of \d+$/, 'a chip did not narrow the engineer list: ' + filtered);
+
+  await page.fill('[data-search="engvillas"]', 'zzqqxx');
+  stats.interactions++;
+  assert.match(await count(), /^0 of \d+$/, 'the engineer search box does nothing');
+
+  await page.click('[data-clear="engvillas"]');
+  stats.interactions++;
+  assert.strictEqual(await count(), before, 'Clear did not restore the engineer list');
+  await page.check('engineer /engineer/villas after filtering');
+  await page.close();
+});
+
+test('the office drawer opens at 375 and the scrim closes it', async () => {
+  const page = await open('office', '/office', { width: 375, height: 812 });
+  await page.check('office /office at 375');
+
+  const shut = await page.$eval('.side', e => getComputedStyle(e).transform);
+  assert.notStrictEqual(shut, 'none', 'the sidebar is not off-canvas at 375');
+
+  await page.click('#ham');
+  stats.interactions++;
+  /* Waited for where it ENDS, not for the class. `.side` slides on a 200ms
+     transition, so reading the box the instant the class lands catches it
+     mid-flight - the first version of this measured -225 and called a working
+     drawer broken. */
+  await page.waitForFunction(
+    () => Math.round(document.querySelector('.side').getBoundingClientRect().left) === 0,
+    null, { timeout: 4000 });
+  const left = await page.$eval('.side', e => Math.round(e.getBoundingClientRect().left));
+  assert.strictEqual(left, 0, 'the drawer did not slide in: left is ' + left);
+
+  /* Clicked to the RIGHT of the drawer. `.scrim2` is `inset: 0`, so its centre
+     - where a plain click lands - is underneath the 250px drawer on a 375px
+     screen, the drawer swallows the event and the click times out waiting for
+     an element that will never receive it. A reader dismisses a drawer by
+     tapping the part of the page they can still see. */
+  await page.click('#scrim2', { position: { x: 330, y: 500 } });
+  stats.interactions++;
+  await page.waitForFunction(
+    () => Math.round(document.querySelector('.side').getBoundingClientRect().left) < 0,
+    null, { timeout: 4000 });
+  await page.check('office /office at 375 after the drawer');
+  await page.close();
+});
+
+test('a toast appears when a write says what it did', async () => {
+  /* The toast is the only thing on these screens that reports a write, and it
+     is put on the screen by script - `requestAnimationFrame` then a class.
+     Markup alone cannot prove it ever becomes visible. */
+  const page = await open('office',
+    '/office?m=' + encodeURIComponent('Swept by the browser suite.'));
+  /* Waited for the opacity it ends at. The toast fades in over 200ms, so the
+     moment the class lands it is still at 0.98 and an equality check on "1"
+     fails on a toast that works perfectly. */
+  await page.waitForFunction(
+    () => getComputedStyle(document.getElementById('toast')).opacity === '1',
+    null, { timeout: 4000 });
+  stats.interactions++;
+  const shown = await page.$eval('#toast', e => ({
+    text: e.textContent.trim(), opacity: getComputedStyle(e).opacity,
+  }));
+  assert.strictEqual(shown.text, 'Swept by the browser suite.');
+  assert.strictEqual(shown.opacity, '1', 'the toast is in the markup but never becomes visible');
+  await page.check('office toast');
+  await page.close();
+});
+
+test('the browser layer covered what it claims to have covered', async () => {
+  /* A coverage figure nobody checks is a figure that quietly falls. */
+  const planned = Object.values(SCREENS).reduce((n, l) => n + l.length, 0) + 2;
+  assert.ok(stats.pages >= planned,
+    'loaded ' + stats.pages + ' pages, planned at least ' + planned);
+  /* Nine, and they are named: three on the office list (chip, search, Clear),
+     three on the engineer's (chip, search, Clear), two on the drawer (open,
+     dismiss) and one toast. Raised only when more are actually driven. */
+  assert.ok(stats.interactions >= 9,
+    'drove ' + stats.interactions + ' interactions, expected at least 9');
+  console.log('        browser layer: ' + stats.pages + ' page loads, '
+    + stats.interactions + ' scripted interactions');
+});

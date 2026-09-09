@@ -100,8 +100,18 @@ const NOBODY = null;
   console.log('\nstaff');
   const all = await asUser(ENG, c => c.query('SELECT count(*)::int n FROM units'));
   ok(all.rows[0].n === 48, 'the certifying engineer sees all 48 villas');
-  const ho = await asUser(OFFICE, c => c.query('SELECT count(*)::int n FROM blockers'));
-  ok(ho.rows[0].n === 48, 'head office sees a blocker on every villa');
+  /* Head office is not partitioned, so it sees the whole worklist. The count
+     is stated as "every villa has one", not as a seed constant: a villa can
+     have more than one stage blocked at once, and the seed now carries two
+     that do, so a bare `= 48` would be asserting the seed rather than the
+     isolation. What matters here is that no villa is hidden from the office
+     and that the buyer sees none of it. */
+  const ho = await asUser(OFFICE, c => c.query(
+    `SELECT count(*)::int n, count(DISTINCT s.unit_id)::int villas
+       FROM blockers b JOIN unit_stages s ON s.id = b.unit_stage_id`));
+  ok(ho.rows[0].villas === 48 && ho.rows[0].n >= 48,
+     'head office sees a blocker on every villa (' + ho.rows[0].n + ' over '
+     + ho.rows[0].villas + ' villas)');
   const buyerBlockers = await asUser(BUYER, c => c.query('SELECT count(*)::int n FROM blockers'));
   ok(buyerBlockers.rows[0].n === 0, 'a buyer cannot see the internal worklist');
 
