@@ -150,6 +150,14 @@ a.item, a.lcard, a.tr, a.btn, a.chip, a.row { text-decoration: none; }
 a.item { color: var(--grey); }
 a.item.on { color: var(--accent); }
 a.lcard, a.tr, a.row { color: inherit; }
+/* AND `.lcard` HAS TO BE A BLOCK.
+
+   The reference draws it as a div, which is block by default; here it is an
+   anchor, which is inline - so its padding and its 8px margin drew around a
+   line box and every card on the holder board overlapped the one below it by
+   about fifty pixels. It has been that way since the console was built, and it
+   was found by looking at a screenshot rather than by any test. */
+a.lcard { display: block; }
 a.btn { color: var(--ink); }
 a.btn.dark { color: #fff; }
 
@@ -197,6 +205,12 @@ a.btn.dark { color: #fff; }
    The reference colours a number only inside a pill. A KPI figure sometimes has
    to carry the verdict itself - money overdue, a count nobody has answered - so
    it takes the same three colours the pills take, and no others. */
+/* A strip of tiles that are destinations rather than figures: they keep two
+   columns on a phone, because there is no rupee figure in them to break, and
+   their label is the thing you tap so it is drawn as one. */
+.kpis.tiles .kl { color: var(--ink); font-weight: 600; font-size: 13px; }
+.kpis.tiles .kn { margin-top: 3px; }
+
 .t-hot  { color: var(--red); }
 .t-warn { color: var(--amber); }
 .t-ok   { color: var(--green); }
@@ -285,12 +299,14 @@ a.kpi:hover { background: var(--hair2); }
    The product's whole subject, on the screen at last. The tile links to the
    full image, so tapping one opens it larger with the browser's own viewer and
    its own back button. */
-.phg { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+.phg { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
        gap: 10px; }
 .ph { display: block; border: 1px solid var(--hair); border-radius: 12px;
       overflow: hidden; background: var(--hair2); color: inherit; text-decoration: none; }
 .ph:hover { box-shadow: 0 4px 14px rgba(12,13,16,.08); }
-.ph img { display: block; width: 100%; height: 118px; object-fit: cover;
+/* The plate is 4:3, so the tile is, whatever width the grid gives it. A fixed
+   height cropped it differently at every count of photographs. */
+.ph img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover;
           background: var(--hair); }
 .phc { display: block; padding: 8px 10px; }
 .phc b { font-weight: 600; font-size: 12px; display: block; }
@@ -300,7 +316,10 @@ a.kpi:hover { background: var(--hair2); }
    Oldest at the top, newest at the bottom, and no scroll box: the page scrolls,
    the thread does not scroll inside it. */
 .thread { display: flex; flex-direction: column; gap: 10px; }
-.msg { max-width: 78%; border-radius: 14px; padding: 11px 14px; border: 1px solid var(--hair); }
+/* A message caps at a readable measure. At 1440 a 78% bubble is 1,100px wide
+   and a line runs past 120 characters, which is not a conversation. */
+.msg { max-width: min(78%, 560px); border-radius: 14px; padding: 11px 14px;
+       border: 1px solid var(--hair); }
 .msg p { font-size: 13.5px; line-height: 20px; }
 .msgw { display: block; font-size: 10.5px; color: var(--faint); margin-top: 6px; }
 .msg.them { align-self: flex-start; background: var(--surface); }
@@ -378,6 +397,7 @@ textarea.fi { resize: vertical; min-height: 62px; line-height: 20px; }
 @media (max-width: 560px) {
   .kpis, .kpis.k2, .kpis.k3, .kpis.k4 { grid-template-columns: minmax(0, 1fr); }
   .kpi b { white-space: nowrap; }
+  .kpis.tiles, .kpis.tiles.k3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* --------------------------------------------------------------- the app bar
@@ -440,4 +460,10 @@ textarea.fi { resize: vertical; min-height: 62px; line-height: 20px; }
   .tr > div { padding: 1px 0; }
   .tr > div:empty { display: none; }
   .tr .cellav { padding-bottom: 4px; }
+  /* A stacked row that is a link has no chevron column left to say so, and a
+     block of text gives a reader nothing to aim at. */
+  a.tr { position: relative; padding-right: 30px; }
+  a.tr::after { content: ''; position: absolute; right: 14px; top: 50%;
+    width: 7px; height: 7px; margin-top: -4px; border-right: 2px solid var(--faint);
+    border-bottom: 2px solid var(--faint); transform: rotate(-45deg); }
 }

@@ -151,6 +151,13 @@ module.exports = function office(ctx) {
 
   /* Where a villa lives in this console. The only helper this file still
      owns, because it is a route rather than a component. */
+  /* "1 days ago" was on three screens. A day count written as prose agrees
+     with itself about the plural. */
+  const ago = at => {
+    const n = days(at);
+    return n === 0 ? 'today' : n === 1 ? 'yesterday' : n + ' days ago';
+  };
+
   const villaHref = code => '/office/villa/' + encodeURIComponent(code);
 
   /* The lenders on a set of rows, so a filter offers the ones that are there
@@ -693,7 +700,7 @@ module.exports = function office(ctx) {
       + card('Villas gone quiet',
         d.rows.quiet.length
           ? d.rows.quiet.map(r => row('bell', r.code + ' · ' + r.buyer_name,
-            r.last_shot ? 'last photograph ' + days(r.last_shot) + ' days ago' : 'no photograph yet',
+            r.last_shot ? 'last photograph ' + ago(r.last_shot) : 'no photograph yet',
             pill('over', r.last_shot ? days(r.last_shot) + 'd' : 'none'))).join('')
           : empty('Every villa has been photographed inside three weeks.',
             { label: 'See the evidence', href: '/office/evidence' }),
@@ -709,12 +716,26 @@ ${pill('over', days(q.raised_at) + 'd')}</a>`).join('')
           : empty('No buyer is waiting on an answer.',
             { label: 'See the warranty claims', href: '/office/warranty' }),
         btn('Warranty', { href: '/office/warranty' }))
+      /* THE OLDEST EIGHT, AND IT SAYS SO.
+
+         This card printed every blocked stage - fifty of them - inside one
+         half of a two-column grid, so the right-hand column ran for four
+         thousand pixels while the left ended after four rows, and the holder
+         board underneath was pushed off the bottom of the screen. The oldest
+         eight is what a dashboard card is for; the line under it names the
+         rest and links to them, which is not the same thing as a silent
+         truncation. */
       + card('Reported as stopping the work',
         d.rows.blockers.length
-          ? d.rows.blockers.map(b => `<a class="row" href="${villaHref(b.code)}">
+          ? d.rows.blockers.slice(0, 8).map(b => `<a class="row" href="${villaHref(b.code)}">
 <div class="rico">${ic('risk')}</div><div class="rt"><b>${esc(b.reason)}</b>
 <span>${esc(b.code)} · ${esc(b.stage_name)} · with ${esc(b.holder || b.holder_role)}</span></div>
 ${pill('over', b.age + 'd')}</a>`).join('')
+            + (d.rows.blockers.length > 8
+              ? `<div class="ls" style="padding:10px 0 2px">The oldest eight of `
+                + d.rows.blockers.length + `. <a href="/office/stages">See every stage</a>,`
+                + ` or the board below groups all of them by who is holding it up.</div>`
+              : '')
           : empty('Nothing has been reported as blocked.',
             { label: 'See every stage', href: '/office/stages' }),
         btn('Stages', { href: '/office/stages' }))
@@ -876,7 +897,7 @@ ${pill('over', b.age + 'd')}</a>`).join('')
 <div class="ch"><div class="ct">${esc(q.code)} · ${esc(q.stage_name)}</div>${pill('over', esc(q.bank || 'lender'))}</div>
 <div class="cb">
 <div class="row"><div class="rico">${ic('comms')}</div><div class="rt"><b>${esc(q.question)}</b>
-<span>asked ${esc(M.longDate(q.asked_at))} · ${days(q.asked_at)} days ago</span></div></div>
+<span>asked ${esc(M.longDate(q.asked_at))} · ${ago(q.asked_at)}</span></div></div>
 <form method="post" action="/office/query" style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap">
 <input type="hidden" name="id" value="${esc(q.id)}">
 <input class="chip" name="answer" required maxlength="400" placeholder="What you are sending back"
@@ -1089,7 +1110,7 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
       + (d.rows.handoffs.length ? card('New from sales, not picked up',
         d.rows.handoffs.map(h => `<div class="row"><div class="rico">${ic('plus')}</div>
 <div class="rt"><b>${esc(h.code)} · ${esc(h.buyer_name)}</b>
-<span>${esc(h.salesperson)} · token ${esc(M.crore(h.token_paise))} · ${days(h.created_at)} days ago</span></div>
+<span>${esc(h.salesperson)} · token ${esc(M.crore(h.token_paise))} · ${ago(h.created_at)}</span></div>
 <form method="post" action="/office/handoff"><input type="hidden" name="id" value="${esc(h.id)}">
 <button class="btn dark" type="submit">Pick it up</button></form></div>`).join(''))
         + '<div style="height:12px"></div>' : '')

@@ -346,7 +346,7 @@ ${kpis([
   { l: 'Today', icon: 'cal', v: String(d.log.filter(e => days(e.logged_at) === 0).length),
     n: 'logged since midnight' },
 ])}
-${titled('What can be logged', `<div class="kpis k3">${
+${titled('What can be logged', `<div class="kpis tiles k3">${
   Object.entries(LOG_KINDS).map(([k, [label, detail]]) =>
     `<a class="kpi" href="/engineer/log/${k}"><div class="kl">${K.ic('doc')} ${esc(label)}</div>`
     + `<div class="kn" style="margin-top:4px;font-size:12px">${esc(detail)}</div></a>`).join('')
