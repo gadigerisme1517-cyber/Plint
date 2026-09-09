@@ -555,121 +555,6 @@ buyers get their journey, the office gets the dashboard.</p>
 </div></div>`);
 }
 
-/* ------------------------------------------------- THE ORPHAN, NOT ROUTED
-
-   The original buyer view, as it shipped in the first commit: one page, the
-   `.marks` progress dots, the `.duebar`, ten `.stage` rows and the photograph
-   strip. A buyer stopped seeing it when src/screens/buyer.js was built; staff
-   kept reaching it at /villa/CODE until this pass, where that URL became a
-   redirect to the villa screen of their own role.
-
-   Nothing calls this function. It is kept, unrouted, because the pass that
-   found it said not to delete it - and it is the only place in the repository
-   where that first design is still written down as code rather than as a diff.
-   It no longer renders correctly either: the stylesheet it was written for is
-   retired. My recommendation is in the report; the decision is yours. */
-async function buyerScreen(sess, code) {
-  const data = await asUser(sess, async c => {
-    const u = (await c.query('SELECT * FROM units WHERE code=$1', [code])).rows[0];
-    if (!u) return null;
-    const stages = (await c.query(
-      `SELECT s.*, t.name, t.pct_bp, t.description, t.seq
-         FROM unit_stages s JOIN stage_templates t
-           ON t.code = s.stage_code AND t.project_id = $2
-        WHERE s.unit_id = $1 ORDER BY t.seq`, [u.id, u.project_id])).rows;
-    const dm = (await c.query(
-      `SELECT d.*, s.stage_code FROM demands d JOIN unit_stages s ON s.id = d.unit_stage_id
-        WHERE s.unit_id = $1 ORDER BY d.raised_at`, [u.id])).rows;
-    const ev = (await c.query(
-      `SELECT e.*, s.stage_code FROM evidence e JOIN unit_stages s ON s.id = e.unit_stage_id
-        WHERE s.unit_id = $1 ORDER BY e.taken_at DESC`, [u.id])).rows;
-    return { u, stages, dm, ev };
-  });
-  if (!data) return null;
-  const { u, stages, dm, ev } = data;
-
-  const led = M.ledger({ agreementValuePaise: u.agreement_value_paise, stages });
-  const open = dm.filter(d => !d.paid_at).slice(-1)[0];
-  const openStage = open && stages.find(s => s.stage_code === open.stage_code);
-  const payable = open ? M.payableNow(open) : 0;
-
-  const marks = stages.map(s =>
-    `<i class="${s.status === 'paid' ? 'on' : s.status === 'demanded' ? 'due' : ''}"></i>`).join('');
-
-  // The whole schedule at once: the last stage carries the rounding residual,
-  // so no stage on this screen is priced on its own. `stages` is ordered by
-  // t.seq above, which is what makes the residual land on the right one.
-  const priced = M.schedule(u.agreement_value_paise, stages.map(s => s.pct_bp));
-
-  // v21 states a stage three ways: done, now, wait. The old markup only had
-  // "wait", so a finished stage and the live one looked alike.
-  const stageRows = stages.map((s, i) => {
-    const amt = priced[i].totalPaise;
-    const done = s.status === 'paid';
-    const live = s.status === 'demanded' || s.status === 'marked' || s.status === 'certified';
-    const pics = ev.filter(e => e.stage_code === s.stage_code);
-    return `<div class="stage ${done ? 'done' : live ? 'now' : 'wait'}">
-<span class="idx s n">${String(i + 1).padStart(2, '0')}</span>
-<span class="body"><span class="row"><h4 class="h2">${esc(s.name)}</h4>
-<span class="amt${s.status === 'demanded' ? ' hot' : ''}">${M.money(amt)}</span></span>
-<p class="s meta">${esc(s.description)} &middot; ${
-  done ? 'Paid' : s.status === 'demanded' ? 'Demanded, due ' + M.longDate(dm.find(d => d.stage_code === s.stage_code).due_at)
-  : s.status === 'certified' ? 'Certified, demand being raised'
-  : s.status === 'marked' ? 'Marked on site, awaiting the engineer\u2019s certificate'
-  : 'Not started'}</p>
-${pics.length ? `<span class="strip">${pics.map(p => `<button class="st" title="${esc(p.gps)}">
-<span class="cap">${esc(p.caption)} &middot; ${M.longDate(p.taken_at)}</span></button>`).join('')}</span>` : ''}
-</span></div>`;
-  }).join('');
-
-  const sanctioned = !!u.sanction_recorded_at;
-
-  return page('Villa ' + u.code, sess, `
-<div class="top"><div class="g"><p class="s">Villa ${esc(u.code)}</p></div></div>
-<div class="gap s"></div>
-<div class="lede"><p class="k">Due now</p>
-<span class="mega ${open ? 'hot' : ''}">${open ? M.money(payable) : M.money(0)}</span>
-<p class="b cap">${open
-  ? esc(openStage.name) + ', ' + (openStage.pct_bp / 100) + ' per cent, plus GST. Due '
-    + M.longDate(open.due_at) + '. After that date interest runs at twelve per cent a year.'
-  : 'Nothing is due. The next demand is raised only when a stage is verified on site.'}</p>
-${open ? `<div class="duebar"><span class="ddot"></span><span class="dtx">
-<strong>Next payment ${M.money(payable)}</strong> due ${M.longDate(open.due_at)}, on ${esc(openStage.name.toLowerCase())}</span></div>` : ''}
-<div class="marks">${marks}</div></div>
-<div class="gap"></div>
-${open ? `<div class="blk">
-<a class="item st" style="text-decoration:none" href="/doc/demand/${esc(open.unit_stage_id)}.pdf">
-<span class="mid"><p class="h2">Demand letter ${esc(open.doc_no)}</p><p class="s">PDF</p></span></a>
-<a class="item st" style="text-decoration:none" href="/doc/certificate/${esc(open.unit_stage_id)}.pdf">
-<span class="mid"><p class="h2">Engineer&rsquo;s completion certificate</p><p class="s">PDF</p></span></a></div>
-<div class="gap"></div>` : ''}
-<div class="rule"></div><div class="gap s"></div>
-<div class="blk"><p class="k">Your loan</p></div>
-<div class="item"><span class="mid"><p class="h2">${sanctioned ? 'Sanction recorded' : 'Sanction not recorded'}</p>
-<p class="s">${sanctioned
-  ? esc(u.bank) + ' &middot; ' + M.money(u.sanction_paise) + ' sanctioned, '
-    + M.money(u.own_contribution_paise) + ' your own contribution'
-  : u.bank
-    ? 'Bring your sanction letter to the sales office. Until it is recorded, no stage can release money.'
-    : 'Self funded. Nothing to record.'}</p></span></div>
-<a class="item st" style="text-decoration:none" href="/documents">
-<span class="mid"><p class="h2">What the bank will ask for</p>
-<p class="s">The papers to keep ready. A list only.</p></span></a>
-<div class="gap"></div><div class="rule"></div><div class="gap s"></div>
-<div class="blk"><p class="k">Your villa</p></div>
-<div class="item"><span class="mid"><p class="h2">Unit</p></span><span class="amt n">${esc(u.unit_type)}</span></div>
-<div class="item"><span class="mid"><p class="h2">Agreement value</p></span><span class="amt n">${M.money(u.agreement_value_paise)}</span></div>
-<div class="item"><span class="mid"><p class="h2">Paid so far</p></span><span class="amt n">${M.money(led.paidPaise)}</span></div>
-<div class="item"><span class="mid"><p class="h2">Demanded, unpaid</p></span><span class="amt n">${M.money(led.demandedPaise)}</span></div>
-<div class="item"><span class="mid"><p class="h2">Not yet due</p></span><span class="amt n">${M.money(led.remainingPaise)}</span></div>
-<div class="item"><span class="mid"><p class="h2">Lender</p></span><span class="amt n">${esc(u.bank || 'Self funded')}</span></div>
-<div class="item"><span class="mid"><p class="h2">Site engineer</p></span><span class="amt n">${esc(u.site_engineer)}</span></div>
-<div class="gap"></div><div class="rule"></div><div class="gap s"></div>
-<div class="blk"><p class="k">Stage by stage</p></div><div class="gap s"></div>
-${stageRows}
-<div class="gap l"></div>`, true, '/villa/' + u.code);
-}
-
 /**
  * The ordered basis points of every project's schedule, so a stage can be
  * priced inside the schedule it belongs to rather than on its own. A screen
@@ -1047,17 +932,16 @@ const server = http.createServer(async (req, res) => {
 
     /* A member of staff opening a buyer's URL.
 
-       This used to render `buyerScreen()` below - the original single-page
-       buyer view, in the retired phone shell, with the office's twenty-two
+       This used to render `buyerScreen()`: the original single-page buyer
+       view, in the retired phone shell, with the office's twenty-two
        destinations wrapping across the top of it. It was the last thing in the
        product still drawing that system, nothing linked to it, and it was
-       found by the audit rather than by anybody using it.
+       found by an audit rather than by anybody using it. It is deleted - the
+       design it held is in git, in plint-v15.html and in plint-v21.html.
 
-       Staff have a villa screen of their own in their own role, so the URL now
-       lands on it. Nothing is lost: the office keeps /office/villa/CODE and
-       the engineer keeps /engineer/villa/CODE, both of which show more than
-       that page did. `buyerScreen()` itself is left in this file, unrouted and
-       marked, because deleting it is your call and not mine. */
+       Staff have a villa screen of their own in their own role, so the URL
+       lands on it: the office keeps /office/villa/CODE and the engineer keeps
+       /engineer/villa/CODE, and both show more than that page did. */
     if (p.startsWith('/villa/')) {
       const code = decodeURIComponent(p.slice(7));
       const to = sess.role === 'office' ? '/office/villa/' : '/engineer/villa/';
