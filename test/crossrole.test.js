@@ -476,15 +476,15 @@ test('office marks a quarter filed: it needs the acknowledgement reference', asy
   assert.ok(after.html.includes(ref), 'the reference is not on the screen');
 });
 
-test('every one of the twenty-two destinations opens, and none of them is a stub', async () => {
-  /* "A tab whose controls do nothing is not built." Twenty-two screens is
-     twenty-two chances to ship a heading with nothing under it, so each one is
+test('every one of the twenty-three destinations opens, and none of them is a stub', async () => {
+  /* "A tab whose controls do nothing is not built." Twenty-three screens is
+     twenty-three chances to ship a heading with nothing under it, so each one is
      opened and checked for the things that would mean it is a drawing: no
      title, nothing to read, and no way out. An empty queue is a real state and
      says so; an empty screen is not. */
   const KEYS = ['', 'packs', 'wait', 'query', 'chase', 'stages', 'evidence', 'silent',
                 'signoff', 'villas', 'documents', 'choices', 'visits', 'warranty',
-                'rera', 'escrow', 'possession', 'schedule', 'lenders', 'logins',
+                'rera', 'escrow', 'possession', 'setup', 'schedule', 'lenders', 'logins',
                 'settings', 'help'];
   for (const k of KEYS) {
     const path = k ? '/office/' + k : '/office';
@@ -502,18 +502,19 @@ test('every one of the twenty-two destinations opens, and none of them is a stub
       assert.ok(/class="tr /.test(html) || /class="empty"/.test(html),
         path + ' shows neither rows, nor a reason there are none');
     }
-    /* And the way to the other twenty-one is on it. */
+    /* And the way to the other twenty-two is on it. */
     assert.ok(/class="item /.test(html), path + ' has no navigation out of it');
   }
 });
-test('the sidebar is the five groups, on every one of the twenty-two', async () => {
+test('the sidebar is the five groups, on every one of the twenty-three', async () => {
   for (const path of ['/office', '/office/stages', '/office/help']) {
     const { html } = await get('office', path);
     for (const g of ['Money stuck', 'The site', 'Buyers', 'Compliance', 'Setup']) {
       assert.ok(html.includes('>' + g + '<'), path + ': the sidebar is missing the group "' + g + '"');
     }
     const items = (html.match(/class="item /g) || []).length;
-    assert.strictEqual(items, 22, path + ': the sidebar has ' + items + ' destinations, not 22');
+    /* Twenty-three since a project could be created here rather than seeded. */
+    assert.strictEqual(items, 23, path + ': the sidebar has ' + items + ' destinations, not 23');
 
     /* One sidebar, not two. It is the same element at both widths - sticky
        beside the content on a desktop, and slid in from the left under 860px

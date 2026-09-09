@@ -62,7 +62,8 @@ const SCREENS = {
    Pass 4's third job: they were five, because v21's bottom bar held five, and
    Bank, Loan, Papers, Agreement, Choices and Questions were folded behind one
    called More - which is where a buyer could not find their bank. */
-const DESTINATIONS = { buyer: 11, engineer: 6, office: 22 };
+/* The office gained one when a project could be created rather than seeded. */
+const DESTINATIONS = { buyer: 11, engineer: 6, office: 23 };
 
 const cookies = {};
 before(async () => {
@@ -518,12 +519,23 @@ test('the office board groups by who is holding it up, and accounts for every vi
   const villas = await body('/office/villas', 'office');
   const total = (villas.match(/data-tags=/g) || []).length;
   assert.ok(total > 0, 'the villa register is empty, so this proves nothing');
-  assert.strictEqual(summed, total,
-    'the holder columns hold ' + summed + ' villas but the register has ' + total
-    + ': ' + counts.join(' + '));
 
-  assert.match(h, new RegExp(summed + ' of ' + total + ' villas have a stage blocked'),
-    'the board does not say how much of the project it accounts for');
+  /* THE COLUMNS SUM TO WHAT THE SCREEN SAYS THEY SUM TO.
+
+     It used to be `summed === total`: every villa on the console had a blocked
+     stage, so the board and the register were the same number. A second
+     project put on through the setup screens has villas with nothing blocked
+     yet, and the two are no longer equal - which is not the board dropping
+     rows, it is the board counting the right thing. So the sentence under it
+     is read: the first number is what the columns must add to, and the second
+     is the register. */
+  const says = /(\d+) of (\d+) villas have a stage blocked/.exec(h);
+  assert.ok(says, 'the board does not say how much of the project it accounts for');
+  assert.strictEqual(summed, Number(says[1]),
+    'the holder columns hold ' + summed + ' villas and the screen claims ' + says[1]
+    + ': ' + counts.join(' + '));
+  assert.strictEqual(Number(says[2]), total,
+    'the screen says there are ' + says[2] + ' villas and the register has ' + total);
 
   assert.match(h, /class="chip on" href="\/office"/,
     'the holder view is not the one the dashboard opens on');

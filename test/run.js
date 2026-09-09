@@ -34,6 +34,10 @@ const SUITES = [
   'state.test.js',       // the shared state 011 and 012 added, and its isolation
   'topup.test.js',       // filling that state on a database seeded before it existed
   'crossrole.test.js',   // one role acts, another sees it, over real HTTP
+  /* A second project, created through the screens the office uses. It runs
+     after the suites that assert things about the seeded project, and its last
+     tests check that project is exactly as it was. */
+  'onboard.test.js',
   'figures.test.js',     // one quantity, one number, on every screen it appears on
   'shell.test.js',       // the frame is gone, and each role can navigate
   /* The only suite that executes page script. Everything above reads markup,

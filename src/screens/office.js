@@ -60,7 +60,8 @@ module.exports = function office(ctx) {
      screens are drawn from the same kit now rather than from a second one. */
   const K = require('./kit')({ esc });
   const { I, ic, head, kpis, pill, btn, act, table, filters, search, showing,
-          card, row, note, empty, board, who, initials, num, tagOf, ageBand } = K;
+          card, titled, row, dl, note, empty, board, who, initials, num, tagOf, ageBand,
+          field, input, select, file, form } = K;
 
   // -------------------------------------------------------------------- nav
 
@@ -88,6 +89,7 @@ module.exports = function office(ctx) {
     { item: { id: 'escrow', label: 'Escrow drawdown', icon: 'money' } },
     { item: { id: 'possession', label: 'After possession', icon: 'home' } },
     { grp: 'Setup' },
+    { item: { id: 'setup', label: 'Projects', icon: 'hostel' } },
     { item: { id: 'schedule', label: 'Payment schedule', icon: 'cal' } },
     { item: { id: 'lenders', label: 'Lenders', icon: 'money' } },
     { item: { id: 'logins', label: 'Logins', icon: 'users' } },
@@ -204,6 +206,17 @@ module.exports = function office(ctx) {
   async function forScreen(c, k) {
     switch (k) {
 
+      /* Every project this office runs, with what each one has so far. */
+      case 'setup': return {
+        projects: (await c.query(
+          `SELECT p.*,
+                  (SELECT count(*)::int FROM stage_templates t WHERE t.project_id = p.id) stages,
+                  (SELECT count(*)::int FROM units u WHERE u.project_id = p.id) villas,
+                  (SELECT count(*)::int FROM units u
+                    WHERE u.project_id = p.id AND u.buyer_user_id IS NOT NULL) buyers
+             FROM projects p ORDER BY p.created_at NULLS FIRST, p.name`)).rows,
+      };
+
       case 'dashboard': return {
         money: (await c.query(
           `SELECT coalesce(sum(total_paise) FILTER (WHERE paid_at IS NOT NULL), 0) collected,
@@ -220,6 +233,7 @@ module.exports = function office(ctx) {
                                      >= date_trunc('month', now()))           this_month
              FROM unit_stages`)).rows[0],
         villas: Number((await c.query(`SELECT count(*) n FROM units`)).rows[0].n),
+        projects: Number((await c.query(`SELECT count(*) n FROM projects`)).rows[0].n),
         /* Delivered and NOT yet paid. Counting every delivery ever made put
            195 on the dashboard while the screen behind it said nothing was
            sitting with a lender - both were true and they contradicted each
@@ -434,6 +448,7 @@ module.exports = function office(ctx) {
           `SELECT u.id unit_id, u.code, u.buyer_name, u.unit_type, u.bank,
                   u.agreement_value_paise, u.sanction_recorded_at,
                   w.display_name engineer_name,
+                  pr.name || ' · ' || pr.phase project_name,
                   (SELECT count(*)::int FROM unit_stages s
                     WHERE s.unit_id = u.id AND s.status = 'paid')            paid,
                   (SELECT count(*)::int FROM unit_stages s WHERE s.unit_id = u.id) stages,
@@ -461,7 +476,7 @@ module.exports = function office(ctx) {
                          AND pd.delivered_at < now() - ($1 || ' days')::interval)
                    + CASE WHEN u.bank IS NOT NULL AND u.sanction_recorded_at IS NULL
                           THEN 1 ELSE 0 END)                                 stuck
-             FROM units u LEFT JOIN users w ON w.id = u.assigned_engineer_id
+             FROM units u JOIN projects pr ON pr.id = u.project_id LEFT JOIN users w ON w.id = u.assigned_engineer_id
             ORDER BY u.code`, [String(PACK_LATE_DAYS)])).rows,
         handoffs: (await c.query(
           `SELECT h.id, h.token_paise, h.salesperson, h.note, h.created_at, h.picked_up_at,
@@ -682,7 +697,9 @@ module.exports = function office(ctx) {
   </div>
 </div>`
       + kpis([
-        { l: 'Villas sold', icon: 'hostel', v: String(d.rows.villas), n: 'Eterna Phase 1' },
+        { l: 'Villas sold', icon: 'hostel', v: String(d.rows.villas),
+          n: d.rows.projects === 1 ? 'on one project'
+            : 'across ' + d.rows.projects + ' projects', href: '/office/setup' },
         { l: 'Certified this month', icon: 'cert', v: String(Number(s.this_month)), n: 'stages signed off' },
         { l: 'Packs at the lender', icon: 'money', v: String(d.rows.atLender), n: 'sent, awaiting disbursement' },
         { l: 'Receivable from lenders', icon: 'growth',
@@ -780,6 +797,227 @@ ${pill('over', b.age + 'd')}</a>`).join('')
     if (r.status === 'certified') return pill('paid', 'Certified');
     if (r.status === 'paid') return pill('paid', 'Paid');
     return pill('grey', 'Not started');
+  }
+
+  // ================================================================ SETTING UP
+
+  /* PUTTING A CUSTOMER ON PLINT.
+
+     Everything else in this console reads a project that db/seed.js wrote.
+     These screens are how a project gets here instead: create it, give it a
+     payment schedule, load its villas from a file, and issue a login to the
+     person who bought each one.
+
+     The order is not a preference. A villa cannot exist without a schedule,
+     because a villa's stages are created from it; a buyer cannot exist without
+     a villa; and a schedule cannot be changed once villas exist, because every
+     stage row and every priced demand hangs off those percentages. The screen
+     says so at each step rather than letting the database say it afterwards. */
+
+  const projHref = id => '/office/setup/' + encodeURIComponent(id);
+
+  SCREENS.setup = (sess, d, msg) => {
+    const list = d.rows.projects;
+    return head('Projects',
+      'Every project this office runs, and the way to add one. A project needs '
+      + 'a payment schedule before it can hold villas, and a villa before it can '
+      + 'hold a buyer.')
+      + kpis([
+        { l: 'Projects', icon: 'hostel', v: String(list.length), n: 'on this console' },
+        { l: 'Villas', icon: 'home', v: String(list.reduce((t, p) => t + p.villas, 0)),
+          n: 'across all of them' },
+        { l: 'Buyers signed up', icon: 'users',
+          v: String(list.reduce((t, p) => t + p.buyers, 0)),
+          n: 'villas with a login issued' },
+      ])
+      + titled('Every project', table(
+        ['Project', 'Where', 'Builder', 'Schedule', 'Villas', 'Buyers'],
+        list.map(p => [
+          `<a href="${projHref(p.id)}"><b>${esc(p.name)}</b></a><br>`
+            + `<span class="hsub">${esc(p.phase)}</span>`,
+          esc(p.location || 'not recorded'),
+          esc(p.builder_name || 'not recorded'),
+          p.stages ? pill('paid', p.stages + ' stages') : pill('over', 'not set'),
+          num(String(p.villas)),
+          num(p.buyers + ' of ' + p.villas),
+        ]),
+        '1.6fr 1.2fr 1.4fr .8fr .5fr .7fr',
+        { min: 780, empty: 'No project on this console yet. The form below makes one.' }))
+      + titled('Add a project', card('', form('/office/project',
+        field('Project id', input('id', { required: true, max: 40, placeholder: 'eterna-p2' }))
+        + field('Name', input('name', { required: true, max: 80, placeholder: 'NVT Eterna' }))
+        + field('Phase', input('phase', { required: true, max: 40, placeholder: 'Phase 2' }))
+        + field('Location', input('location', { required: true, max: 80, placeholder: 'Devanahalli, Bengaluru' }))
+        + field('Builder', input('builder', { required: true, max: 80, placeholder: 'NVT Quality Lifestyle' }))
+        + field('Builder RERA or CIN', input('builder_ref', { max: 80, placeholder: 'PRM/KA/RERA/...' })),
+        { submit: 'Create the project', icon: 'plus' })
+        + `<p class="hsub" style="margin-top:10px">The id goes in every URL and in
+        every villa's identifier, so it is lower case letters, digits and hyphens,
+        and it cannot be changed afterwards.</p>`))
+      + note('Nothing on this screen deletes. A project, a villa or a buyer with '
+        + 'stages, evidence and demands behind it is not something a form should be '
+        + 'able to remove, and this product does not delete money.');
+  };
+
+  /* ------------------------------------------------------------ one project */
+
+  async function projectFile(sess, id, n) {
+    return asUser(sess, async c => {
+      const p = (await c.query('SELECT * FROM projects WHERE id = $1', [id])).rows[0];
+      if (!p) return null;
+      const stages = (await c.query(
+        'SELECT * FROM stage_templates WHERE project_id = $1 ORDER BY seq', [id])).rows;
+      /* No join to `users`. The policy `u_self` lets staff read staff rows and
+         nobody else's, because that table holds password hashes - so a buyer's
+         email cannot be read back here even by the office that issued it. The
+         screen says whether a login exists, which is what this office can
+         truthfully know. */
+      const units = (await c.query(
+        `SELECT u.id, u.code, u.unit_type, u.buyer_name, u.agreement_value_paise,
+                u.bank, u.buyer_user_id
+           FROM units u WHERE u.project_id = $1 ORDER BY u.code`, [id])).rows;
+      return { n, main: projectScreen(p, stages, units) };
+    });
+  }
+
+  function projectScreen(p, stages, units) {
+    const withBuyer = units.filter(u => u.buyer_user_id).length;
+    const bp = stages.reduce((t, s) => t + s.pct_bp, 0);
+    const free = units.filter(u => !u.buyer_user_id);
+
+    return head(p.name + ' · ' + p.phase,
+      esc(p.location || 'no location recorded') + ' &middot; built by '
+      + esc(p.builder_name || 'not recorded')
+      + (p.builder_ref ? ' &middot; ' + esc(p.builder_ref) : ''),
+      btn('Every project', { href: '/office/setup', icon: 'back' }))
+      + kpis([
+        { l: 'Schedule', icon: 'cal', v: stages.length ? stages.length + ' stages' : 'Not set',
+          n: stages.length ? (bp / 100).toFixed(2) + ' per cent in total' : 'set it before loading villas',
+          tone: stages.length ? null : 'hot' },
+        { l: 'Villas', icon: 'hostel', v: String(units.length),
+          n: stages.length ? 'each with ' + stages.length + ' stages' : 'none can be loaded yet' },
+        { l: 'Buyers signed up', icon: 'users', v: withBuyer + ' of ' + units.length,
+          n: 'villas with a login issued',
+          tone: units.length && withBuyer < units.length ? 'warn' : null },
+      ])
+
+      + titled('The payment schedule', stages.length
+        ? table(['Stage', 'Code', 'Per cent', 'What it is'],
+          stages.map(s => [
+            `<b>${esc(s.name)}</b>`, num(s.code), num((s.pct_bp / 100).toFixed(2) + '%'),
+            esc(s.description),
+          ]), '1.2fr .7fr .6fr 2fr', { min: 620 })
+        : card('', form('/office/schedule',
+          field('The stages, one per line: name, per cent',
+            '<textarea class="fi" name="stages" rows="10" required placeholder="'
+            + 'Booking, 10&#10;Agreement and registration, 15&#10;Foundation, 10'
+            + '"></textarea>', { wide: true }),
+          { fields: { project: p.id }, submit: 'Set the schedule', icon: 'cal' })
+          + `<p class="hsub" style="margin-top:10px">One stage a line: its name, then its
+          share of the agreement value. They must add to a hundred. A code is made from
+          the name, and a third field on the line becomes its description.</p>`),
+        stages.length && units.length ? pill('grey', 'fixed: this project has villas')
+          : stages.length ? pill('accent', 'set') : '')
+      + (stages.length && units.length
+        ? note('The schedule is fixed now, because every stage row and every priced '
+          + 'demand on this project hangs off these percentages.')
+        : '')
+
+      + titled('The villas', units.length
+        ? table(['Villa', 'Type', 'Agreement value', 'Lender', 'Buyer', 'Sign-in'],
+          units.map(u => [
+            `<b>${esc(u.code)}</b>`,
+            esc(u.unit_type),
+            num(M.money(u.agreement_value_paise)),
+            esc(u.bank || 'self funded'),
+            esc(u.buyer_name),
+            u.buyer_user_id ? pill('paid', 'issued') : pill('over', 'not issued'),
+          ]), '.6fr 1fr 1fr .9fr 1.1fr 1.4fr', { min: 860 })
+        : empty(stages.length
+          ? 'No villas on this project yet. The file below is how they get here.'
+          : 'Set the payment schedule first. A villa’s stages are created from it.'))
+
+      + (stages.length ? '<span id="load"></span>' + titled('Load villas from a file',
+        card('', form('/office/villas/preview',
+          '<span class="ffile">'
+          + file('csv', { id: 'villafile', label: 'Choose a CSV', accept: '.csv,text/csv,text/plain' })
+          + '</span>'
+          + field('Or paste it here',
+            '<textarea class="fi" name="pasted" rows="6" placeholder="'
+            + 'code,unit_type,agreement_value,buyer_name,bank,site_engineer&#10;'
+            + 'D-01,4 BHK 3200 sq ft,32000000,R. Iyer,SBI,S. Kumar'
+            + '"></textarea>', { wide: true }),
+          { fields: { project: p.id }, upload: true,
+            submit: 'Show me what this would do', icon: 'report' })
+          + `<p class="hsub" style="margin-top:10px">The first line may be a header.
+          Columns: <b>code, unit_type, agreement_value, buyer_name</b>, and optionally
+          <b>bank, site_engineer, channel_partner, relationship_manager</b>. The
+          agreement value is in rupees. Nothing is written until you have seen what
+          this would create and what it would skip.</p>`)) : '')
+
+      + (free.length ? titled('Issue a buyer sign-in',
+        card('', form('/office/buyer',
+          field('Villa', select('unit', free.map(u => [u.id, u.code + ' · ' + u.buyer_name])))
+          + field('Their name', input('name', { required: true, max: 80, placeholder: 'R. Iyer' }))
+          + field('Their email', input('email', { required: true, type: 'email', max: 120, placeholder: 'r.iyer@example.in' })),
+          { fields: { project: p.id }, submit: 'Create the login', icon: 'users' })
+          + `<p class="hsub" style="margin-top:10px">A password is generated and shown
+          once, here, when the login is made. Plint does not email it: you hand it over.
+          A villa takes one buyer. The address is not readable back from this desk -
+          a buyer's own row is theirs alone, because that table holds password
+          hashes - so this screen says whether a login exists, not what it is.</p>`))
+        : (units.length ? titled('Issue a buyer sign-in',
+          empty('Every villa on this project has a login.')) : ''))
+
+      + note('Bookings and receipts still come from the builder’s ERP and are read, '
+        + 'never written back. This screen creates the file a villa needs to exist here: '
+        + 'the schedule it is priced against, the villa itself, and the login of the '
+        + 'person who bought it.');
+  }
+
+  /* --------------------------------------------------- the import, previewed */
+
+  /* WHAT WOULD HAPPEN, BEFORE ANYTHING HAPPENS.
+
+     The text is parsed here and shown back: every row that would be created,
+     every row that would be skipped and why. The same text is carried in a
+     hidden field to the write, which parses it again - so what is confirmed is
+     exactly what was shown, and the preview holds no server-side state that
+     could go stale between the two. */
+  function importPreview(p, parsed, existing) {
+    const ok = parsed.rows.filter(r => !r.why);
+    const bad = parsed.rows.filter(r => r.why);
+    return head('Load villas into ' + p.name,
+      ok.length + ' would be created, ' + bad.length + ' skipped. Nothing has been written yet.',
+      btn('Back to the project', { href: projHref(p.id), icon: 'back' }))
+      + kpis([
+        { l: 'Would be created', icon: 'plus', v: String(ok.length), n: 'villas, with their stages',
+          tone: ok.length ? 'ok' : null },
+        { l: 'Would be skipped', icon: 'risk', v: String(bad.length), n: 'named below, with the reason',
+          tone: bad.length ? 'warn' : null },
+        { l: 'Already on the project', icon: 'hostel', v: String(existing), n: 'untouched by this' },
+      ])
+      + titled('These would be created', ok.length
+        ? table(['Villa', 'Type', 'Agreement value', 'Buyer', 'Lender'],
+          ok.map(r => [
+            `<b>${esc(r.code)}</b>`, esc(r.unit_type), num(M.money(r.agreement_value_paise)),
+            esc(r.buyer_name), esc(r.bank || 'self funded'),
+          ]), '.7fr 1.2fr 1fr 1.1fr .9fr', { min: 720 })
+        : empty('Nothing in this file can be created.'))
+      + (bad.length ? titled('These would be skipped', table(
+        ['Line', 'Villa', 'Why'],
+        bad.map(r => [num('line ' + r.line), `<b>${esc(r.code || '(blank)')}</b>`, esc(r.why)]),
+        '.6fr .8fr 2.4fr', { min: 520 })) : '')
+      + card('', (ok.length
+        ? form('/office/villas/import',
+          `<input type="hidden" name="csv" value="${esc(parsed.text)}">`,
+          { fields: { project: p.id },
+            submit: 'Create these ' + ok.length + ' villa' + (ok.length === 1 ? '' : 's'),
+            icon: 'attend' })
+        : '<p class="hsub">There is nothing here to create. Fix the file and try again.</p>')
+        + `<p class="hsub" style="margin-top:10px">The same text is read again when you
+        confirm, so what is written is what is listed above. A row is created whole -
+        the villa and every one of its stages - or not at all.</p>`);
   }
 
   /* ---------------------------------------------------------------- packs */
@@ -1099,10 +1337,13 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
   SCREENS.villas = (sess, d) => {
     const list = d.rows.list;
     return head('Villas',
-      'Every villa in Eterna Phase 1, its buyer, its lender and how far through the book it is.',
+      'Every villa this console can see, its project, its buyer, its lender and how '
+      + 'far through the book it is.',
       btn('Stages', { icon: 'growth', href: '/office/stages' }))
       + kpis([
-        { l: 'Villas', icon: 'hostel', v: String(list.length), n: 'Eterna Phase 1' },
+        { l: 'Villas', icon: 'hostel', v: String(list.length),
+          n: 'across ' + new Set(list.map(r => r.project_name)).size + ' project'
+            + (new Set(list.map(r => r.project_name)).size === 1 ? '' : 's') },
         { l: 'With a lender', icon: 'money', v: String(list.filter(r => r.bank).length), n: 'the rest are self funded' },
         { l: 'Sanction recorded', icon: 'attend', v: String(list.filter(r => r.sanction_recorded_at).length), n: 'of those with a lender' },
         { l: 'New from sales', icon: 'plus', v: String(d.rows.handoffs.length), n: 'no owner in this office yet' },
@@ -1121,18 +1362,19 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
         ['Self funded', 'self']])
       + filters('villalist', [['Money moving', '*'], ['Money stuck here', 'stuck']])
       + showing('villalist', 'villas', list.length)
-      + table(['Villa', 'Stage in hand', 'Lender', 'Engineer', 'Paid', 'Agreement'],
+      + table(['Villa', 'Project', 'Stage in hand', 'Lender', 'Engineer', 'Paid', 'Agreement'],
         list.map(r => [
           who(r.code, r.buyer_name),
+          esc(r.project_name),
           esc(r.next_stage || 'all stages paid'),
           r.bank ? esc(r.bank) : `<span style="color:var(--faint)">self funded</span>`,
           esc(r.engineer_name || '—'),
           num(r.paid + ' / ' + r.stages),
           `<span class="num" style="font-weight:700">${esc(M.crore(r.agreement_value_paise))}</span>`,
         ]),
-        '1.6fr 1.2fr 1.1fr 1.2fr .7fr 1fr',
+        '1.5fr 1.1fr 1.1fr 1fr 1.1fr .6fr .9fr',
         {
-          id: 'villalist', href: i => villaHref(list[i].code),
+          id: 'villalist', href: i => villaHref(list[i].code), min: 900,
           /* "Money stuck" is the question this screen is scanned for: a villa
              with a lender and no sanction on record, or a stage certified and
              not yet paid, is a villa whose money has stopped. */
@@ -1649,6 +1891,7 @@ ${q.status === 'closed' ? pill('paid', 'closed') : pill('due', 'open')}</div><di
 
   return {
     KEYS, NAV, nav, counts, load, SCREENS, villaFile, questionThread,
+    projectFile, importPreview, projHref,
     render: (sess, key, d, msg, view) =>
       officePage(sess, nav(key, d.n), SCREENS[key](sess, d, msg, view), msg),
     wrap: (sess, n, main, msg) => officePage(sess, nav(null, n), main, msg),

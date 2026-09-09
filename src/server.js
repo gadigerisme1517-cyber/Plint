@@ -3,7 +3,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { asUser, login, pool } = require('./db');
+const { asUser, login, pool, hash } = require('./db');
 const M = require('./money');
 const PDF = require('./pdf');
 
@@ -11,6 +11,7 @@ const S = require('./session');
 const config = require('./config');
 const EV = require('./evidence');
 const MP = require('./multipart');
+const VILLAFILE = require('./villafile');
 const LOG = require('./log');
 const THROTTLE = require('./throttle');
 
@@ -465,7 +466,7 @@ function shell(sess, o) {
 <div class="scrim2" id="scrim2"></div>
 <aside class="side" id="side">
 <div class="brand">${OLOGO()}
-<div><div class="bname">Plint</div><div class="bsub">NVT Eterna &middot; Phase 1</div></div></div>
+<div><div class="bname">Plint</div><div class="bsub">Stage-payment evidence</div></div></div>
 ${sess.role === 'buyer' ? '' : `<form class="sidefind" method="get" action="/find" role="search">
 <input class="chip srch" type="search" name="q" placeholder="Find a villa, a buyer, a stage"
  aria-label="Find a villa, a buyer or a stage" autocomplete="off"></form>`}
@@ -516,7 +517,7 @@ function page(title, sess, body) {
   }
   return `${HEAD(title)}<div class="app plainapp"><main class="main plain">
 <div class="plainbrand">${OLOGO(26)}<div><div class="bname">Plint</div>
-<div class="bsub">NVT Eterna &middot; Phase 1</div></div></div>
+<div class="bsub">Stage-payment evidence</div></div></div>
 ${body}</main></div>${SW}</body></html>`;
 }
 
@@ -1118,6 +1119,14 @@ const server = http.createServer(async (req, res) => {
         return res.end();
       }
 
+      if (p.startsWith('/office/setup/')) {
+        const n = await asUser(sess, c => OFF.counts(c));
+        const out = await OFF.projectFile(sess, decodeURIComponent(p.slice(14)), n);
+        return out ? html(200, OFF.wrap(sess, out.n, out.main, msg))
+          : html(404, OFF.wrap(sess, n, '<div class="head"><div><div class="h1">No such project.</div>'
+            + '<div class="hsub">Nothing on this console carries that id.</div></div></div>'));
+      }
+
       if (p.startsWith('/office/villa/')) {
         const n = await asUser(sess, c => OFF.counts(c));
         const out = await OFF.villaFile(sess, decodeURIComponent(p.slice(14)), n);
@@ -1360,6 +1369,160 @@ const server = http.createServer(async (req, res) => {
       return back(r
         ? r.code + ': asked for a photograph. It stays on this list until one arrives.'
         : 'That villa could not be found.');
+    }
+
+    /* ------------------------------------------------- putting a project on
+
+       The write side of onboarding. Every one of these goes through a
+       SECURITY DEFINER function that checks the transaction's own role, so a
+       buyer or an engineer posting to them gets the same refusal from the
+       database that they get from the guard here. */
+
+    if (p === '/office/project' && req.method === 'POST' && sess.role === 'office') {
+      const f = form(await body(req));
+      const back = m => { res.writeHead(302, { location: '/office/setup?m=' + encodeURIComponent(m) }); res.end(); };
+      const id = (f.id || '').trim().toLowerCase();
+      try {
+        const made = await asUser(sess, c => c.query(
+          'SELECT project_create($1,$2,$3,$4,$5,$6) ok',
+          [id, f.name, f.phase, f.location, f.builder, f.builder_ref || null]));
+        if (!made.rows[0].ok) return back('A project with that id already exists.');
+      } catch (e) {
+        return back(e.message.replace(/^.*?:\s*/, '') || 'That project could not be created.');
+      }
+      res.writeHead(302, { location: OFF.projHref(id) + '?m='
+        + encodeURIComponent('Project created. Give it a payment schedule next.') });
+      return res.end();
+    }
+
+    if (p === '/office/schedule' && req.method === 'POST' && sess.role === 'office') {
+      const f = form(await body(req));
+      const project = (f.project || '').trim();
+      const back = m => { res.writeHead(302, { location: OFF.projHref(project) + '?m=' + encodeURIComponent(m) }); res.end(); };
+      /* One stage a line: a name, a percentage, and optionally a description.
+         The code is made from the name, because a builder writing their
+         schedule out is not going to invent stable identifiers. */
+      const rows = [];
+      const used = new Set();
+      for (const line of String(f.stages || '').split('\n')) {
+        if (!line.trim()) continue;
+        /* Two commas, not every comma: "Finishes, 15, Flooring, joinery and
+           paint" is three fields, and the third one has a comma in it. */
+        const at1 = line.indexOf(',');
+        const at2 = at1 < 0 ? -1 : line.indexOf(',', at1 + 1);
+        const name = (at1 < 0 ? line : line.slice(0, at1)).trim();
+        const pctText = at1 < 0 ? '' : (at2 < 0 ? line.slice(at1 + 1) : line.slice(at1 + 1, at2));
+        const rest = at2 < 0 ? '' : line.slice(at2 + 1).trim();
+        const pct = Number(String(pctText).replace('%', '').trim());
+        if (!name || !Number.isFinite(pct) || pct <= 0) {
+          return back('This line is not a stage and a percentage: ' + line.trim());
+        }
+        /* A code a person can read in a URL, cut at a word rather than mid
+           word: "Blockwork and plaster" is `blockwork`, not `blockworkand`. */
+        let code = '';
+        for (const w of name.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)) {
+          if (code && code.length + w.length > 12) break;
+          code += w;
+          if (code.length >= 8) break;
+        }
+        code = code.slice(0, 12) || 'stage';
+        let n = 2;
+        while (used.has(code)) code = (code.slice(0, 10) + n++).slice(0, 12);
+        used.add(code);
+        rows.push({ code, name: name.slice(0, 60), pct_bp: Math.round(pct * 100),
+                    description: (rest || name).slice(0, 120) });
+      }
+      try {
+        const r = await asUser(sess, c => c.query(
+          'SELECT stage_schedule_set($1,$2::jsonb) n', [project, JSON.stringify(rows)]));
+        return back(r.rows[0].n + ' stages set. Villas can be loaded now.');
+      } catch (e) {
+        return back(e.message.replace(/^.*?:\s*/, '') || 'That schedule was not set.');
+      }
+    }
+
+    /* The preview. It reads the file, shows what it would do, and writes
+       nothing at all. */
+    if (p === '/office/villas/preview' && req.method === 'POST' && sess.role === 'office') {
+      let fields = {};
+      let text = '';
+      if (/multipart\/form-data/i.test(req.headers['content-type'] || '')) {
+        try {
+          const raw = await MP.read(req, 2 * 1024 * 1024);
+          const parsed = MP.parse(raw, req.headers['content-type']);
+          fields = parsed.fields;
+          if (parsed.files.csv && parsed.files.csv.data && parsed.files.csv.data.length) {
+            text = parsed.files.csv.data.toString('utf8');
+          }
+        } catch (e) {
+          fields = {};
+        }
+      } else {
+        fields = form(await body(req));
+      }
+      if (!text) text = fields.pasted || '';
+      const project = (fields.project || '').trim();
+      const back = m => { res.writeHead(302, { location: OFF.projHref(project) + '?m=' + encodeURIComponent(m) }); res.end(); };
+      if (!text.trim()) return back('There was nothing in that file.');
+
+      const n = await asUser(sess, c => OFF.counts(c));
+      const out = await asUser(sess, async c => {
+        const proj = (await c.query('SELECT * FROM projects WHERE id = $1', [project])).rows[0];
+        if (!proj) return null;
+        const existing = new Set((await c.query(
+          'SELECT code FROM units WHERE project_id = $1', [project])).rows.map(r => r.code));
+        return { proj, existing, parsed: VILLAFILE.parse(text, existing) };
+      });
+      if (!out) return back('No such project.');
+      return html(200, OFF.wrap(sess, n,
+        OFF.importPreview(out.proj, out.parsed, out.existing.size)));
+    }
+
+    if (p === '/office/villas/import' && req.method === 'POST' && sess.role === 'office') {
+      const f = form(await body(req));
+      const project = (f.project || '').trim();
+      const back = m => { res.writeHead(302, { location: OFF.projHref(project) + '?m=' + encodeURIComponent(m) }); res.end(); };
+      const text = f.csv || '';
+      if (!text.trim()) return back('There was nothing to import.');
+      try {
+        /* Parsed again, by the same reader, so what is written is what was
+           shown. The database decides a second time as well: a code that
+           appeared between the preview and the button is skipped there. */
+        const rows = VILLAFILE.parse(text).rows.filter(r => !r.why).map(r => ({
+          code: r.code, unit_type: r.unit_type, buyer_name: r.buyer_name,
+          agreement_value_paise: r.agreement_value_paise, bank: r.bank,
+          site_engineer: r.site_engineer, channel_partner: r.channel_partner,
+          relationship_manager: r.relationship_manager,
+        }));
+        if (!rows.length) return back('Nothing in that file could be created.');
+        const r = await asUser(sess, c => c.query(
+          'SELECT units_import($1,$2::jsonb) out', [project, JSON.stringify(rows)]));
+        const out = r.rows[0].out;
+        const made = out.created.length, skipped = out.skipped.length;
+        return back(made + ' villa' + (made === 1 ? '' : 's') + ' created'
+          + (skipped ? ', ' + skipped + ' skipped' : '') + '.');
+      } catch (e) {
+        return back(e.message.replace(/^.*?:\s*/, '') || 'Those villas were not created.');
+      }
+    }
+
+    if (p === '/office/buyer' && req.method === 'POST' && sess.role === 'office') {
+      const f = form(await body(req));
+      const project = (f.project || '').trim();
+      const back = m => { res.writeHead(302, { location: OFF.projHref(project) + '?m=' + encodeURIComponent(m) }); res.end(); };
+      /* Generated here, hashed here, shown once. The plain text never reaches
+         the database and is never stored anywhere: if it is lost, the office
+         issues another. */
+      const pw = crypto.randomBytes(6).toString('base64url');
+      try {
+        await asUser(sess, c => c.query(
+          'SELECT buyer_create($1,$2,$3,$4) id',
+          [f.unit, f.email, f.name, hash(pw)]));
+      } catch (e) {
+        return back(e.message.replace(/^.*?:\s*/, '') || 'That login was not created.');
+      }
+      return back('Sign-in created for ' + (f.email || '').trim()
+        + '. The password is ' + pw + ' — write it down, it is not shown again.');
     }
 
     if (p === '/office/sanction' && req.method === 'POST' && sess.role === 'office') {

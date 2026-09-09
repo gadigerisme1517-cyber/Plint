@@ -98,8 +98,18 @@ const NOBODY = null;
   ok(leak.rows[0].n === 0, 'and the connection returns to seeing nothing');
 
   console.log('\nstaff');
+  /* Staff are not partitioned: `un_read` on units is `true` for the engineer
+     and for the office, because an engineer certifying a stage works across
+     the project and the assignment is a work allocation rather than a
+     confidentiality boundary. So the property is "every villa there is", not
+     a seed constant of 48 - a second project put on the console through the
+     setup screens adds villas that staff can see, and that is the policy
+     working, not the isolation breaking. What must never move is the buyer,
+     and that is asserted above and below. */
   const all = await asUser(ENG, c => c.query('SELECT count(*)::int n FROM units'));
-  ok(all.rows[0].n === 48, 'the certifying engineer sees all 48 villas');
+  const every = await asUser(OFFICE, c => c.query('SELECT count(*)::int n FROM units'));
+  ok(all.rows[0].n === every.rows[0].n && all.rows[0].n >= 48,
+     'the certifying engineer sees every villa there is (' + all.rows[0].n + ')');
   /* Head office is not partitioned, so it sees the whole worklist. The count
      is stated as "every villa has one", not as a seed constant: a villa can
      have more than one stage blocked at once, and the seed now carries two
