@@ -20,6 +20,12 @@ const lcg = seed => { let s = seed; return () => { s = (s * 9301 + 49297) % 2332
 const day = 86400000;
 const ago = d => new Date(Date.now() - d * day);
 const ahead = d => new Date(Date.now() + d * day);
+/* A VISIT IS A DAY, NOT A MINUTE. The buyer's form asks for a date and the
+   server writes ten in the morning IST. `ahead()` carries the minute the seed
+   happened to run, and the engineer's list prints the time - so all three
+   seeded visits read "5:16 pm", a slot nobody had chosen. */
+const istDay = t => new Date(t.getTime() + 5.5 * 3600e3).toISOString().slice(0, 10);
+const slotAhead = d => new Date(istDay(new Date(Date.now() + d * day)) + 'T10:00:00+05:30');
 
 /* v21's lender panel, verbatim: each bank vets the project once and issues an
    APF code. Rates are basis points. The six after them are banks a buyer may
@@ -112,8 +118,11 @@ async function seedState(c, villas, engineers) {
     const id = 'lender-' + name.toLowerCase().replace(/[^a-z]+/g, '');
     byName[name] = id;
     await c.query(
+      /* No APF code and no rate: this lender has quoted nothing on this
+         project. It used to be written as 900bp, which the buyer's bank
+         screen printed as "9.00 per cent" against all six of them. */
       `INSERT INTO lenders VALUES ($1,$2,null,$3,$4,$5,false,$6)`,
-      [id, name, 900, 10, 21, seq++]);
+      [id, name, null, 10, 21, seq++]);
   }
 
   // ------------------------------------------------- who is on which villa
@@ -214,7 +223,7 @@ async function seedState(c, villas, engineers) {
       ['unit-' + code])).rows[0].assigned_engineer_id;
     await c.query(
       `INSERT INTO visits VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,null)`,
-      ['visit-' + i, 'unit-' + code, ahead(inDays), note, who, ago(3), eng, status,
+      ['visit-' + i, 'unit-' + code, slotAhead(inDays), note, who, ago(3), eng, status,
        status === 'requested' ? null : ago(2)]);
   }
 

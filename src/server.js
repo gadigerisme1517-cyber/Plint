@@ -53,6 +53,8 @@ const STATIC = {
   /* The product's system, from inbell_office_dashboard.html. Every screen of
      every role is drawn in it. */
   '/office.css':                  ['office.css', 'text/css; charset=utf-8', 'no-cache'],
+  /* The engineer's outbox. Served to that role only, and to nobody else. */
+  '/queue.js':                    ['queue.js', 'text/javascript; charset=utf-8', 'no-cache'],
 };
 
 /* Read and hashed once, at boot. Two things need the hash: an ETag, so the
@@ -110,6 +112,11 @@ const BUILD = crypto.createHash('sha256')
 const CSS = { office: '/office.' + BUILD + '.css' };
 for (const [name, url] of Object.entries(CSS)) {
   ASSETS[url] = { ...ASSETS['/' + name + '.css'], cache: IMMUTABLE };
+}
+/* The same argument for the one script this product serves as a file. */
+const JS = { queue: '/queue.' + BUILD + '.js' };
+for (const [name, url] of Object.entries(JS)) {
+  ASSETS[url] = { ...ASSETS['/' + name + '.js'], cache: IMMUTABLE };
 }
 
 /* If-None-Match is a WEAK comparison and a list, not a string equality.
@@ -251,6 +258,7 @@ const NAV = {
     { item: { href: '/choices', label: 'Interior choices', icon: 'settings' } },
     { item: { href: '/questions', label: 'Questions', icon: 'comms' } },
     { item: { href: '/more', label: 'Everything else', icon: 'bolt' } },
+    { item: { href: '/data', label: 'What Plint holds', icon: 'users' } },
   ],
   engineer: [
     { item: { href: '/engineer', label: 'On you today', icon: 'home' } },
@@ -308,6 +316,7 @@ function navList(sess, current) {
 const BUYER_GET = new Set([
   'journey', 'villa', 'visit', 'money', 'more',
   'bank', 'loan', 'agreement', 'choices', 'questions', 'stage', 'documents',
+  'receipt', 'data', 'data.json',
 ]);
 
 /* THE FILTER RUNTIME, SHARED BY EVERY SHELL.
@@ -484,11 +493,13 @@ ${sess.role === 'buyer' ? '' : `<form class="sidefind" method="get" action="/fin
 <div style="display:flex;align-items:center;gap:8px">${OLOGO(20, 4, 7)}<b style="font-family:var(--disp);font-size:15px">Plint</b></div>
 ${title ? `<span class="tbt">${esc(title)}</span>` : ''}
 </div>
-<main class="main"><div id="screen">${o.main}</div></main>
+<main class="main">${sess.role === 'engineer'
+  ? `<div class="outbox" id="outbox" hidden data-who="${esc(sess.id)}" data-whoname="${esc(sess.name || '')}"></div>` : ''}<div id="screen">${o.main}</div></main>
 </div>
 </div>
 <div class="toast" id="toast">${o.msg ? esc(o.msg) : ''}</div>
-${FILTER_JS}${SHELL_JS}${SW}</body></html>`;
+${FILTER_JS}${SHELL_JS}${SW}${sess.role === 'engineer'
+  ? `<script src="${JS.queue}" defer></script>` : ''}</body></html>`;
 }
 
 /** The head office console's document. Its nav is drawn in screens/office.js. */
@@ -710,6 +721,37 @@ function body(req) {
   return new Promise(res => { let b = ''; req.on('data', d => b += d); req.on('end', () => res(b)); });
 }
 const form = b => Object.fromEntries(new URLSearchParams(b));
+
+/* ---------------------------------------------------------------------------
+   AN ANSWER THE ENGINEER'S OUTBOX CAN READ.
+
+   Four writes are made standing on a site with no signal - a stage marked
+   done, a photograph, a log entry, a snag photographed - and public/queue.js
+   holds them on the phone until there is one. When it replays a write it
+   carries `x-plint-queued: 1`, and these four routes answer JSON instead of
+   the redirect a browser gets: whether it worked, the sentence the screen
+   would have shown, and where that screen is.
+
+   WHY IT MATTERS THAT THE ROUTE SAYS SO EXPLICITLY. A 302 is a 302 whether the
+   stage was marked or refused for having no photograph. Without a yes or no in
+   the answer the outbox would have to guess from the prose, and the row it
+   guessed wrong about would disappear as though it had been filed. A refusal
+   is a 409 here, and the queue keeps that row and shows what the server said.
+
+   Nothing else changes: with no `x-plint-queued` header - every ordinary form
+   post, and every reader with JavaScript off - the redirect is exactly the one
+   these routes have always sent. */
+const isQueued = req => (req.headers['x-plint-queued'] || '') === '1';
+const answer = (req, res, dest, ok, m) => {
+  if (isQueued(req)) {
+    res.writeHead(ok ? 200 : 409, { 'content-type': 'application/json; charset=utf-8' });
+    return res.end(JSON.stringify({ ok, said: m, to: dest }));
+  }
+  res.writeHead(302, {
+    location: dest + (dest.includes('?') ? '&' : '?') + 'm=' + encodeURIComponent(m),
+  });
+  return res.end();
+};
 // Sessions live in the database. Nothing about authentication is held in
 // this process, so a restart signs nobody out.
 const sessionOf = req => S.lookup(S.tokenFrom(req));
@@ -904,6 +946,18 @@ const server = http.createServer(async (req, res) => {
       if (p === '/choices')   return html(200, BUY.choices(sess, d, msg));
       if (p === '/questions') return html(200, BUY.questions(sess, d, null, msg));
       if (p === '/documents') return html(200, BUY.documents(sess, d, msg));
+      if (p === '/data')      return html(200, BUY.data(sess, d, msg));
+
+      /* THE COPY THEY CAN TAKE AWAY. Assembled from the same session and the
+         same rows the screen shows, so what leaves is exactly what they were
+         shown. `no-store` because it is one person's whole file. */
+      if (p === '/data.json') {
+        return send(200, 'application/json; charset=utf-8',
+          JSON.stringify(BUY.dataFile(sess, d), null, 2) + '\n',
+          { 'content-disposition': 'attachment; filename="plint-'
+              + String(sess.unit || 'file').toLowerCase() + '.json"',
+            'cache-control': 'no-store' });
+      }
 
       if (p.startsWith('/questions/')) {
         const id = decodeURIComponent(p.slice(11));
@@ -911,6 +965,15 @@ const server = http.createServer(async (req, res) => {
         const out = BUY.questions(sess, d, id, msg);
         return out ? html(200, out) : html(404, page('Not found', sess,
           notFound('No such question.')));
+      }
+      /* One receipt, by its number. Nothing is looked up across the buyer's
+         own data to find it: `d.receipts` is already bounded by the policy on
+         the table, so a number belonging to another villa simply is not in
+         the list and this answers the same 404 an unknown one does. */
+      if (p.startsWith('/receipt/')) {
+        const out = BUY.receipt(sess, d, decodeURIComponent(p.slice(9)));
+        return out ? html(200, out) : html(404, page('Not found', sess,
+          notFound('No such receipt.')));
       }
       if (p.startsWith('/stage/')) {
         const out = BUY.stage(sess, d, decodeURIComponent(p.slice(7)), msg);
@@ -973,7 +1036,8 @@ const server = http.createServer(async (req, res) => {
       }
       if (p.startsWith('/engineer/villa/')) {
         const out = await ENG.villa(sess, decodeURIComponent(p.slice(16)),
-          url.searchParams.get('mode') || 'update', d, msg);
+          url.searchParams.get('mode') || 'update', d, msg,
+          url.searchParams.get('photo') || '');
         return out ? html(200, out) : html(404, page('Not found', sess,
           notFound('No such villa.')));
       }
@@ -999,7 +1063,7 @@ const server = http.createServer(async (req, res) => {
        buyer who booked it; closing a snag needs the photograph of the fix. */
     if (p === '/engineer/mark' && req.method === 'POST' && sess.role === 'engineer') {
       const f = form(await body(req));
-      const back = m => { res.writeHead(302, { location: '/engineer/villas?m=' + encodeURIComponent(m) }); res.end(); };
+      const back = (m, ok) => answer(req, res, '/engineer/villas', !!ok, m);
       const r = await asUser(sess, async c => {
         /* A stage cannot be marked without evidence. The rule lives here and
            not only in the markup, because a form is not a constraint. */
@@ -1009,7 +1073,20 @@ const server = http.createServer(async (req, res) => {
              FROM unit_stages s JOIN units u ON u.id = s.unit_id
              JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
             WHERE s.id = $1`, [f.id])).rows[0];
-        if (!s || s.status !== 'pending') return null;
+        if (!s) return null;
+        /* A REPLAY OF A WRITE THAT ALREADY LANDED IS NOT A REFUSAL.
+
+           The outbox cannot always know whether a write it sent arrived: a
+           navigation, or a force quit, between the request and the response
+           leaves the row looking unsent, and it goes again. If this stage is
+           already marked done BY THIS ENGINEER then the thing he asked for is
+           true, and telling him it was refused would be a lie about his own
+           site. Marked by somebody else is a different fact, and still a
+           refusal. */
+        if (s.status !== 'pending') {
+          return s.status === 'marked' && s.marked_by === sess.name
+            ? { already: s } : null;
+        }
         if (s.shots < 1) return { refused: s };
         await c.query(
           `UPDATE unit_stages SET status = 'marked', marked_by = $2, marked_at = now()
@@ -1019,8 +1096,10 @@ const server = http.createServer(async (req, res) => {
       if (!r) return back('That stage could not be marked.');
       if (r.refused) return back(r.refused.code + ' ' + r.refused.name.toLowerCase()
         + ' needs a photograph before it can be marked done.');
+      if (r.already) return back(r.already.code + ' ' + r.already.name.toLowerCase()
+        + ' was already marked done by you. Nothing changed.', true);
       return back(r.s.code + ' ' + r.s.name.toLowerCase()
-        + ' marked done on site. It is now waiting for a certificate.');
+        + ' marked done on site. It is now waiting for a certificate.', true);
     }
 
     if (p === '/engineer/visit' && req.method === 'POST' && sess.role === 'engineer') {
@@ -1047,16 +1126,25 @@ const server = http.createServer(async (req, res) => {
       const ok = kind && title && await asUser(sess, async c => {
         const project = (await c.query(`SELECT project_id FROM units LIMIT 1`)).rows[0];
         if (!project) return false;
+        /* THE SAME ENTRY TWICE IS ONE ENTRY.
+
+           A queued write can be replayed - a force quit in the middle of
+           sending one leaves the outbox unable to know whether it landed -
+           and of the four the engineer's outbox holds, this is the only one
+           that is not naturally idempotent: a photograph's row id is derived
+           from its content hash and a stage is marked once. So the outbox
+           sends a key with each write and the row id is derived from it. */
+        const qkey = /^[A-Za-z0-9-]{8,40}$/.test(f.qkey || '') ? f.qkey : null;
         await c.query(
           `INSERT INTO site_log (id, project_id, kind, title, detail, logged_by)
-           VALUES ($1,$2,$3,$4,$5,$6)`,
-          ['log-' + crypto.randomUUID(), project.project_id, kind, title,
+           VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING`,
+          [qkey ? 'log-q-' + qkey : 'log-' + crypto.randomUUID(),
+           project.project_id, kind, title,
            (f.detail || '').trim().slice(0, 200), sess.id]);
         return true;
       });
-      res.writeHead(302, { location: '/engineer/log?m=' + encodeURIComponent(
-        ok ? 'Logged: ' + title : 'That entry could not be logged.') });
-      return res.end();
+      return answer(req, res, '/engineer/log', !!ok,
+        ok ? 'Logged: ' + title : 'That entry could not be logged.');
     }
 
     if (p === '/engineer/flag' && req.method === 'POST' && sess.role === 'engineer') {
@@ -1242,6 +1330,40 @@ const server = http.createServer(async (req, res) => {
     /* Reassigning a villa. The write goes through assign_engineer(), which is
        SECURITY DEFINER because units has no UPDATE policy - the same route
        record_sanction takes, and for the same reason. */
+    /* MONEY IN.
+
+       The one route that settles a demand, and it cannot settle one without
+       issuing the receipt: `receipt_issue` does both in one transaction, and
+       it settles through `demand_settle` rather than touching the demand
+       itself. No amount is posted from this form - the amount is the
+       demand's, in full - so there is no figure here to get wrong. */
+    if (p === '/office/receipt' && req.method === 'POST' && sess.role === 'office') {
+      const f = form(await body(req));
+      const back = m => {
+        res.writeHead(302, { location: '/office/receipts?m=' + encodeURIComponent(m) });
+        res.end();
+      };
+      const modes = ['neft', 'rtgs', 'imps', 'upi', 'cheque', 'draft', 'cash'];
+      if (!modes.includes(f.mode)) return back('That is not a way money arrives.');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(f.received || '')) return back('That is not a date.');
+      const r = await asUser(sess, async c => {
+        const no = (await c.query('SELECT receipt_issue($1,$2,$3,$4::date) no',
+          [f.demand, f.mode, (f.reference || '').trim().slice(0, 60), f.received])).rows[0].no;
+        if (!no) return null;
+        return (await c.query(
+          `SELECT r.receipt_no, dm.doc_no, dm.total_paise, u.code
+             FROM receipts r JOIN demands dm ON dm.id = r.demand_id
+             JOIN unit_stages s ON s.id = dm.unit_stage_id
+             JOIN units u ON u.id = s.unit_id
+            WHERE r.receipt_no = $1`, [no])).rows[0];
+      }).catch(e => ({ err: e.message }));
+      if (r && r.err) return back(r.err.replace(/^.*?:\s*/, ''));
+      return back(r
+        ? r.receipt_no + ' issued to ' + r.code + ' for ' + M.money(r.total_paise)
+          + '. ' + r.doc_no + ' is settled and the buyer can see the receipt.'
+        : 'That demand could not be settled. It may already be paid.');
+    }
+
     if (p === '/office/assign' && req.method === 'POST' && sess.role === 'office') {
       const f = form(await body(req));
       const r = f.unit && f.engineer && await asUser(sess, async c => {
@@ -1728,10 +1850,7 @@ const server = http.createServer(async (req, res) => {
          being thrown back to a list. Only a local path is honoured: a `back`
          value is attacker-controlled input like any other. */
       let dest = '/engineer/certs';
-      const back = m => {
-        res.writeHead(302, { location: dest + (dest.includes('?') ? '&' : '?') + 'm=' + encodeURIComponent(m) });
-        res.end();
-      };
+      const back = (m, ok) => answer(req, res, dest, !!ok, m);
       let parsed;
       try {
         const raw = await MP.read(req, EV.MAX_BYTES + 4096);
@@ -1774,7 +1893,7 @@ const server = http.createServer(async (req, res) => {
       } catch (e) {
         return back('That stage would not accept the photograph.');
       }
-      return back('Photograph filed against ' + stage + '.');
+      return back('Photograph filed against ' + stage + '.', true);
     }
 
     /* Closing a snag is the same act as filing evidence - a photograph, taken
@@ -1782,7 +1901,7 @@ const server = http.createServer(async (req, res) => {
        check. What differs is where the hash lands: a snag closed without one
        is a claim rather than a record, which the table's own constraint says. */
     if (p === '/engineer/snag' && req.method === 'POST' && sess.role === 'engineer') {
-      const back = m => { res.writeHead(302, { location: '/engineer/snags?m=' + encodeURIComponent(m) }); res.end(); };
+      const back = (m, ok) => answer(req, res, '/engineer/snags', !!ok, m);
       let parsed;
       try {
         const raw = await MP.read(req, EV.MAX_BYTES + 4096);
@@ -1804,13 +1923,32 @@ const server = http.createServer(async (req, res) => {
                   : 'That photograph could not be stored.');
       }
 
-      const r = await asUser(sess, async c => (await c.query(
-        `UPDATE snags SET status = 'fixed', fixed_at = now(), fixed_by = $2, fix_sha256 = $3
-          WHERE id = $1 AND status = 'open'
-          RETURNING title, (SELECT code FROM units WHERE id = unit_id) code`,
-        [id, sess.id, stored.sha256])).rows[0]);
-      return back(r ? r.code + ': "' + r.title + '" photographed and sent to the buyer to sign off.'
-                    : 'That snag is not open.');
+      const r = await asUser(sess, async c => {
+        const done = (await c.query(
+          `UPDATE snags SET status = 'fixed', fixed_at = now(), fixed_by = $2, fix_sha256 = $3
+            WHERE id = $1 AND status = 'open'
+            RETURNING title, (SELECT code FROM units WHERE id = unit_id) code`,
+          [id, sess.id, stored.sha256])).rows[0];
+        if (done) return { done };
+        /* As on the mark: a queued write replayed after it had already landed
+           must not come back as a refusal. Same snag, same engineer, same
+           photograph - that is this write arriving twice, not a second claim. */
+        return {
+          already: (await c.query(
+            `SELECT title, (SELECT code FROM units WHERE id = unit_id) code FROM snags
+              WHERE id = $1 AND status = 'fixed' AND fixed_by = $2 AND fix_sha256 = $3`,
+            [id, sess.id, stored.sha256])).rows[0] || null,
+        };
+      });
+      if (r.done) {
+        return back(r.done.code + ': "' + r.done.title
+          + '" photographed and sent to the buyer to sign off.', true);
+      }
+      if (r.already) {
+        return back(r.already.code + ': "' + r.already.title
+          + '" had already gone to the buyer with this photograph. Nothing changed.', true);
+      }
+      return back('That snag is not open.', false);
     }
 
     /* The five documents of a stage pack. Four print from the record; the
@@ -1855,6 +1993,29 @@ const server = http.createServer(async (req, res) => {
 function start() {
   const port = config.port();
   server.listen(port, () => LOG.info('listening', { port }));
+
+  /* THE ONE THING PLINT DELETES, AND IT WAS NOT DELETING IT.
+
+     `session_sweep()` has existed since migration 002 and nothing had ever
+     called it: every session row this product has ever issued was still in
+     the table, each one naming a person and the villa they were signed in
+     against. Nothing else here is deleted on a timer, deliberately - a
+     demand, a receipt, a certificate and a photograph are evidence and a tax
+     record - but a session that expired a month ago is not evidence of
+     anything, and keeping it is holding personal data for no reason at all.
+
+     At boot and once a day. `unref` so it never holds the process open. */
+  const sweep = () => {
+    S.sweep().then(n => { if (n) LOG.info('sessions.swept', { rows: n }); })
+      .catch(e => LOG.error('sessions.sweep', e));
+    /* The same for the sign-in counters, which key on an email address and on
+       an IP address. Both functions were written when the table was; neither
+       had a caller. */
+    THROTTLE.sweep().then(n => { if (n) LOG.info('logins.swept', { rows: n }); })
+      .catch(e => LOG.error('logins.sweep', e));
+  };
+  sweep();
+  setInterval(sweep, 24 * 60 * 60 * 1000).unref();
 
   // A crash that is not caught is still a crash, but it is a logged one.
   process.on('unhandledRejection', e => LOG.error('unhandledRejection', e));

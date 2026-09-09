@@ -31,9 +31,18 @@ const VERSION = 'plint-shell-__BUILD__';
 
    One stylesheet now: v21's two were retired when the buyer and the engineer
    moved onto the office's system. */
+/* queue.js is in this list for the reason the whole outbox exists: the moment
+   it is needed is the moment there is no network. An app reopened after a
+   force quit on site has to be able to say what it is still holding, and it
+   cannot fetch the script that says so. It is not personal - it is the same
+   few hundred lines for everybody, and it reads its data from IndexedDB on
+   the device rather than from anything cached here.
+
+   Nothing else changes: no screen, no photograph, no document. */
 const SHELL = [
   '/offline',
   '/office.__BUILD__.css',
+  '/queue.__BUILD__.js',
   '/manifest.webmanifest',
   '/icons/icon-192.png',
   '/icons/icon-512.png',

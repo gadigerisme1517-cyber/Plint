@@ -365,6 +365,82 @@ test('a styled file input still says which file was chosen', async () => {
   await page.close();
 });
 
+test('a write made with no signal is held on the phone, and goes when it comes back',
+  async () => {
+    /* THE OUTBOX, IN A REAL BROWSER, WITH THE NETWORK ACTUALLY CUT.
+
+       The force quit half of this - killing the browser with rows in it and
+       finding them on reopen - needs a persistent profile, which Chromium
+       will not give a working CacheStorage under automation. It is proved
+       separately and by hand. What is guarded here is the part that can
+       regress silently: with the network down a write does not navigate, does
+       not claim to be saved, and is still there afterwards; when the network
+       returns it goes, in order, and the outbox empties. */
+    const ctx = contexts.engineer;
+    const page = await open('engineer', '/engineer/log/labour');
+    await page.check('engineer log before the network goes');
+
+    await ctx.setOffline(true);
+    const before = await page.$eval('#outbox', e => e.hidden);
+    assert.strictEqual(before, true, 'the outbox is showing with nothing in it');
+
+    /* Two quick entries, in order, both while offline. */
+    const buttons = await page.$$('form[action="/engineer/log"] button[type="submit"]');
+    await buttons[0].click(); stats.interactions++;
+    await page.waitForFunction(() => !document.getElementById('outbox').hidden, null,
+      { timeout: 5000 });
+    await buttons[1].click(); stats.interactions++;
+    await page.waitForFunction(
+      () => document.querySelectorAll('#outbox .obl li').length === 2, null, { timeout: 5000 });
+
+    const held = await page.evaluate(() => ({
+      text: document.getElementById('outbox').innerText.replace(/\s+/g, ' '),
+      url: location.pathname,
+      pressed: [...document.querySelectorAll('form[action="/engineer/log"] button')]
+        .map(b => b.textContent.trim()),
+    }));
+    assert.match(held.text, /waiting on this phone/i,
+      'the outbox does not say the writes are held here: ' + held.text);
+    assert.match(held.text, /not sent/i,
+      'the outbox does not say they have not reached the office');
+    assert.ok(!/saved|filed|logged:/i.test(held.text),
+      'the outbox says something that reads as saved: ' + held.text);
+    assert.strictEqual(held.url, '/engineer/log/labour',
+      'the page moved on as though the write had gone through');
+    assert.ok(held.pressed.some(t => /held on this phone/i.test(t)),
+      'the button that was pressed does not say where the write actually is');
+
+    /* And nothing reached the office. */
+    const seen = await page.evaluate(() => new Promise(res => {
+      const rq = indexedDB.open('plint-outbox', 1);
+      rq.onsuccess = () => {
+        const g = rq.result.transaction('writes', 'readonly').objectStore('writes').getAll();
+        g.onsuccess = () => res(g.result.map(r => r.kind + ':' + r.state));
+      };
+      rq.onerror = () => res([]);
+    }));
+    assert.deepStrictEqual(seen, ['log:waiting', 'log:waiting'],
+      'the queue does not hold both writes as waiting: ' + seen.join(', '));
+
+    await ctx.setOffline(false);
+    stats.interactions++;
+    await page.waitForFunction(
+      () => document.getElementById('outbox').hidden
+        || /reached the office/i.test(document.getElementById('outbox').innerText),
+      null, { timeout: 15000 });
+    const after = await page.evaluate(() => new Promise(res => {
+      const rq = indexedDB.open('plint-outbox', 1);
+      rq.onsuccess = () => {
+        const g = rq.result.transaction('writes', 'readonly').objectStore('writes').getAll();
+        g.onsuccess = () => res(g.result.length);
+      };
+      rq.onerror = () => res(-1);
+    }));
+    assert.strictEqual(after, 0, after + ' writes are still held after the network came back');
+    await page.check('engineer log after the queue flushed');
+    await page.close();
+  });
+
 test('the browser layer covered what it claims to have covered', async () => {
   /* A coverage figure nobody checks is a figure that quietly falls. */
   const planned = Object.values(SCREENS).reduce((n, l) => n + l.length, 0) + 2;
@@ -375,8 +451,8 @@ test('the browser layer covered what it claims to have covered', async () => {
      four on the buyer's and the engineer's drawers, two photographs opened
      full size, one file chosen and one toast. Raised only when more are
      actually driven. */
-  assert.ok(stats.interactions >= 16,
-    'drove ' + stats.interactions + ' interactions, expected at least 16');
+  assert.ok(stats.interactions >= 19,
+    'drove ' + stats.interactions + ' interactions, expected at least 19');
   console.log('        browser layer: ' + stats.pages + ' page loads, '
     + stats.interactions + ' scripted interactions');
 });

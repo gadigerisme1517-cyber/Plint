@@ -73,6 +73,7 @@ module.exports = function office(ctx) {
     { item: { id: 'wait', label: 'At the lender', icon: 'money', count: 'wait' } },
     { item: { id: 'query', label: 'Lender queries', icon: 'comms', count: 'query' } },
     { item: { id: 'chase', label: 'Sanction not recorded', icon: 'risk' } },
+    { item: { id: 'receipts', label: 'Payments in', icon: 'attend', count: 'unpaid' } },
     { grp: 'The site' },
     { item: { id: 'stages', label: 'Stages', icon: 'growth' } },
     { item: { id: 'evidence', label: 'Evidence certificates', icon: 'cert' } },
@@ -186,7 +187,8 @@ module.exports = function office(ctx) {
              WHERE s.unit_id = u.id AND e.taken_at > now() - ($2 || ' days')::interval)) silent,
         (SELECT count(*) FROM choices
           WHERE selected IS NULL AND needed_by < CURRENT_DATE)                          choices,
-        (SELECT count(*) FROM snags WHERE status = 'open')                              warranty
+        (SELECT count(*) FROM snags WHERE status = 'open')                              warranty,
+        (SELECT count(*) FROM demands WHERE paid_at IS NULL)                             unpaid
       `, [String(PACK_LATE_DAYS), String(QUIET_DAYS)])).rows[0];
     for (const k of Object.keys(r)) r[k] = Number(r[k]);
     return r;
@@ -205,6 +207,32 @@ module.exports = function office(ctx) {
   /* One read per destination, written beside the screen that consumes it. */
   async function forScreen(c, k) {
     switch (k) {
+
+      /* MONEY IN. Two lists: what has been billed and not settled, and every
+         receipt issued. The receipt rows carry no amount - every figure on
+         that screen comes from the demand joined to it here. */
+      case 'receipts': return {
+        owed: (await c.query(
+          `SELECT dm.id, dm.doc_no, dm.raised_at, dm.due_at, dm.total_paise,
+                  u.code, u.buyer_name, u.bank, t.name stage_name
+             FROM demands dm
+             JOIN unit_stages s ON s.id = dm.unit_stage_id
+             JOIN units u ON u.id = s.unit_id
+             JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
+            WHERE dm.paid_at IS NULL
+            ORDER BY dm.due_at`)).rows,
+        got: (await c.query(
+          `SELECT r.*, dm.doc_no, dm.total_paise, dm.paid_at,
+                  u.code, u.buyer_name, t.name stage_name,
+                  coalesce(w.display_name, 'the office') issuer
+             FROM receipts r
+             JOIN demands dm ON dm.id = r.demand_id
+             JOIN unit_stages s ON s.id = dm.unit_stage_id
+             JOIN units u ON u.id = s.unit_id
+             JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
+             LEFT JOIN users w ON w.id = r.issued_by
+            ORDER BY r.issued_at DESC LIMIT 60`)).rows,
+      };
 
       /* Every project this office runs, with what each one has so far. */
       case 'setup': return {
@@ -1067,6 +1095,79 @@ ${pill('over', b.age + 'd')}</a>`).join('')
         });
   };
 
+  /* ------------------------------------------------------------- receipts
+
+     WHERE MONEY COMING IN IS RECORDED, AND THE ONLY PLACE IT IS.
+
+     Until this screen existed Plint could raise a demand and could mark one
+     settled - `demand_settle`, since migration 004 - but nothing in the
+     product ever called it. Money arrived in a bank account and the buyer's
+     screen went on saying it was owed.
+
+     Recording it and issuing the receipt are one act: `receipt_issue` settles
+     the demand through that same function and writes the receipt in the same
+     transaction. There is no way in this product to do one without the other. */
+  SCREENS.receipts = (sess, d, msg, view) => {
+    const owed = d.rows.owed, got = d.rows.got;
+    const picked = owed.find(r => r.id === view) || null;
+    const overdue = owed.filter(r => new Date(r.due_at) < new Date());
+    const MODES = [['neft', 'NEFT'], ['rtgs', 'RTGS'], ['imps', 'IMPS'], ['upi', 'UPI'],
+      ['cheque', 'Cheque'], ['draft', 'Demand draft'], ['cash', 'Cash']];
+    const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
+
+    return head('Payments in',
+      'A demand is settled by recording the money that came in against it. '
+      + 'That issues the buyer’s receipt in the same breath - there is no way here '
+      + 'to do one and not the other.')
+      + kpis([
+        { l: 'Billed, unpaid', icon: 'report', v: String(owed.length), n: 'demands outstanding' },
+        { l: 'Value outstanding', icon: 'money',
+          v: esc(M.crore(M.sumAsShown(owed.map(r => r.total_paise)))), n: 'billed and not settled' },
+        { l: 'Past the due date', icon: 'risk', v: String(overdue.length),
+          n: 'due date gone', tone: overdue.length ? 'hot' : null },
+        { l: 'Receipts issued', icon: 'attend', v: String(got.length), n: 'the last sixty' },
+      ])
+      + (picked ? titled('Record the money for ' + picked.doc_no,
+        card('', `<p class="hsub">${esc(picked.code)} · ${esc(picked.buyer_name)} · `
+          + `${esc(picked.stage_name)} · <b>${esc(M.money(picked.total_paise))}</b>, `
+          + `due ${esc(M.longDate(picked.due_at))}.</p><div style="margin-top:12px">`
+          + form('/office/receipt',
+            field('How it came', select('mode', MODES, { value: 'neft', required: true }))
+            + field('Reference', input('reference', { required: true, max: 60,
+              placeholder: 'NEFT UTR, cheque number, UPI id' }))
+            + field('Received on', input('received', { type: 'date', required: true, value: today })),
+            { fields: { demand: picked.id }, submit: 'Record it and issue the receipt',
+              icon: 'money' })
+          + `</div>`)
+        + note('The amount is not asked for. It is the demand’s, in full, and a receipt '
+          + 'that could carry its own figure is a receipt that can disagree with the bill.'))
+        : '')
+      + titled('Billed and not settled', table(
+        ['Villa', 'Stage and demand', 'Due', 'Amount', ''],
+        owed.map(r => [
+          who(r.code, r.buyer_name, villaHref(r.code)),
+          `<b>${esc(r.stage_name)}</b><br><span class="hsub">${esc(r.doc_no)} · `
+            + `${esc(r.bank || 'self funded')}</span>`,
+          num(M.longDate(r.due_at)),
+          `<span class="num" style="font-weight:700">${esc(M.crore(r.total_paise))}</span>`,
+          `<a class="btn${picked && picked.id === r.id ? '' : ' dark'}" `
+            + `href="/office/receipts?view=${encodeURIComponent(r.id)}">Record</a>`,
+        ]),
+        '1.5fr 1.6fr .8fr .8fr auto',
+        { min: 780, empty: 'Every demand raised has been settled.' }))
+      + titled('Receipts issued', table(
+        ['Receipt', 'Villa and stage', 'How', 'Received', 'Amount'],
+        got.map(r => [
+          `<b>${esc(r.receipt_no)}</b><br><span class="hsub">${esc(r.doc_no)}</span>`,
+          who(r.code, r.stage_name, villaHref(r.code)),
+          esc(r.mode.toUpperCase()) + ' · ' + esc(r.reference),
+          num(M.longDate(r.received_on)),
+          `<span class="num" style="font-weight:700">${esc(M.crore(r.total_paise))}</span>`,
+        ]),
+        '1.2fr 1.6fr 1.4fr .8fr .8fr',
+        { min: 820, empty: 'No payment has been recorded yet.' }));
+  };
+
   /* ----------------------------------------------------------------- wait */
   SCREENS.wait = (sess, d) => {
     const out = d.rows.list.filter(r => r.state === 'delivered' && !r.paid_at);
@@ -1698,7 +1799,7 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
         list.map(r => [
           `<b>${esc(r.name)}</b>`,
           `<span class="num" style="font-size:11.5px;color:var(--faint)">${esc(r.apf_code || '—')}</span>`,
-          num((r.rate_bp / 100).toFixed(2) + '%'),
+          num(r.rate_bp == null ? 'not quoted' : (r.rate_bp / 100).toFixed(2) + '%'),
           r.on_panel ? num(r.turnaround_low + '–' + r.turnaround_high + ' days') : pill('grey', 'not on panel'),
           num(String(r.villas)),
           `<span class="num" style="font-weight:700">${esc(M.crore(r.owed))}</span>`,

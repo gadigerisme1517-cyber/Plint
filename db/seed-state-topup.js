@@ -62,12 +62,66 @@ async function ensureStaff(c) {
   return { added, spreadOver };
 }
 
+/* TWO THINGS PASS 6 ADDED THAT A DATABASE SEEDED BEFORE IT WILL NOT HAVE.
+
+   Both are gated on their own absence, separately from the tables below,
+   because a database can need one and not the other - and the deployed demo
+   needs exactly these two and none of the rest. */
+async function ensurePass6(c) {
+  const out = [];
+
+  /* A rate nobody quoted. Off the panel there is no quote, and the buyer's
+     bank screen was printing 9.00 per cent against six lenders that had said
+     nothing at all. Migration 016 lets the column be null; this empties the
+     figures that are already there. */
+  const fake = await c.query(
+    `UPDATE lenders SET rate_bp = NULL WHERE on_panel = false AND rate_bp IS NOT NULL`);
+  if (fake.rowCount) out.push(fake.rowCount + ' off-panel rates cleared');
+
+  /* A receipt for every demand this history shows as settled. Without it a
+     demo that has taken money for five stages shows the buyer no receipt for
+     any of them, and the office's Payments in screen is empty. Same derivation
+     as db/seed.js, so a database seeded fresh and one topped up here carry the
+     same numbers. */
+  const settled = (await c.query(
+    `SELECT dm.id, dm.paid_at, u.code,
+            (SELECT count(*)::int FROM demands d2
+               JOIN unit_stages s2 ON s2.id = d2.unit_stage_id
+              WHERE s2.unit_id = u.id AND d2.raised_at <= dm.raised_at) seq
+       FROM demands dm
+       JOIN unit_stages s ON s.id = dm.unit_stage_id
+       JOIN units u ON u.id = s.unit_id
+      WHERE dm.paid_at IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM receipts r WHERE r.demand_id = dm.id)
+      ORDER BY u.code, dm.raised_at`)).rows;
+  const MODES = ['neft', 'rtgs', 'imps', 'cheque', 'upi'];
+  for (const d of settled) {
+    const i = d.seq - 1;
+    const mode = MODES[i % MODES.length];
+    const flat = d.code.replace('-', '');
+    const day = new Date(d.paid_at).toISOString().slice(0, 10).replace(/-/g, '');
+    const ref = mode === 'cheque'
+      ? 'Cheque 4' + String(10000 + i * 37 + d.code.charCodeAt(2)).slice(0, 5)
+      : mode === 'upi' ? flat.toLowerCase() + '@okhdfcbank ' + day
+      : 'UTR' + day + flat + String(d.seq).padStart(2, '0');
+    await c.query(
+      `INSERT INTO receipts (id, demand_id, receipt_no, mode, reference,
+                             received_on, issued_by, issued_at)
+       VALUES ($1,$2,$3,$4,$5,$6,'u-office',$7) ON CONFLICT DO NOTHING`,
+      ['rc-' + d.id, d.id, 'RC/' + flat + '/' + String(d.seq).padStart(2, '0'),
+       mode, ref, d.paid_at, d.paid_at]);
+  }
+  if (settled.length) out.push(settled.length + ' receipts written');
+  return out;
+}
+
 async function topUp(c) {
   const staff = await ensureStaff(c);
+  const pass6 = await ensurePass6(c);
 
   const already = (await c.query('SELECT count(*)::int n FROM lenders')).rows[0].n;
   if (already > 0) {
-    return { skipped: 'lenders already present (' + already + ')', staff };
+    return { skipped: 'lenders already present (' + already + ')', staff, pass6 };
   }
 
   const units = (await c.query('SELECT count(*)::int n FROM units')).rows[0].n;
@@ -106,7 +160,7 @@ async function topUp(c) {
   if (!engineers.length) return { skipped: 'no engineers on file' };
 
   await seedState(c, villas, engineers);
-  return { filled: villas.length + ' villas, ' + engineers.length + ' engineers' };
+  return { filled: villas.length + ' villas, ' + engineers.length + ' engineers', pass6 };
 }
 
 async function main() {
@@ -122,6 +176,7 @@ async function main() {
     const staff = out.staff || {};
     if (staff.added && staff.added.length) console.log('  staff added: ' + staff.added.join(', '));
     if (staff.spreadOver) console.log('  villas spread over ' + staff.spreadOver + ' engineers');
+    (out.pass6 || []).forEach(line => console.log('  ' + line));
     console.log('state top-up: ' + (out.skipped ? 'skipped, ' + out.skipped : 'filled ' + out.filled));
   } catch (e) {
     await c.query('ROLLBACK').catch(() => {});

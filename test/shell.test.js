@@ -63,7 +63,9 @@ const SCREENS = {
    Bank, Loan, Papers, Agreement, Choices and Questions were folded behind one
    called More - which is where a buyer could not find their bank. */
 /* The office gained one when a project could be created rather than seeded. */
-const DESTINATIONS = { buyer: 11, engineer: 6, office: 23 };
+/* Pass 6 adds one to each of two roles: the office can record money coming in
+   ("Payments in"), and the buyer can see what Plint holds about them. */
+const DESTINATIONS = { buyer: 12, engineer: 6, office: 24 };
 
 const cookies = {};
 before(async () => {
@@ -310,7 +312,7 @@ test('no list is truncated under a count that claims more', async () => {
 
   const villa = await body('/engineer/villa/A-01', 'engineer');
   const marked = (villa.match(/action="\/engineer\/mark"/g) || []).length
-    + (villa.match(/href="#addphoto"/g) || []).length
+    + (villa.match(/#addphoto"/g) || []).length
     + (villa.match(/href="\/engineer\/cert\//g) || []).length;
   assert.ok(marked >= 3,
     'the villa offers ' + marked + ' stages to act on; it used to show two of however many');

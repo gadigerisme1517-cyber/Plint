@@ -467,6 +467,14 @@ textarea.fi { resize: vertical; min-height: 62px; line-height: 20px; }
   .tr.hd { display: none; }
   .tr > div { padding: 1px 0; }
   .tr > div:empty { display: none; }
+  /* ADDED. The header is gone, so the cell says which column it came from.
+     `:empty` still matches an element whose only content is this ::before,
+     so a blank cell stays hidden rather than becoming a bare label. */
+  .tr > div[data-l]::before {
+    content: attr(data-l); margin-right: 6px;
+    font-family: var(--disp); font-weight: 700; font-size: 10.5px;
+    letter-spacing: .06em; text-transform: uppercase; color: var(--faint);
+  }
   .tr .cellav { padding-bottom: 4px; }
   /* A stacked row that is a link has no chevron column left to say so, and a
      block of text gives a reader nothing to aim at. */
@@ -475,3 +483,37 @@ textarea.fi { resize: vertical; min-height: 62px; line-height: 20px; }
     width: 7px; height: 7px; margin-top: -4px; border-right: 2px solid var(--faint);
     border-bottom: 2px solid var(--faint); transform: rotate(-45deg); }
 }
+
+/* ------------------------------------------------------------- the outbox
+   ADDED. What the engineer's phone is holding that the office has not seen.
+
+   It sits above the screen rather than inside it, because it is true of the
+   whole application and not of the page that happens to be open, and it is
+   amber rather than green for the reason the whole feature exists: a write
+   held here has NOT been filed. The refused block is red - those reached the
+   office and were turned down, which is a different fact and reads as one. */
+.outbox { border: 1px solid var(--amber); background: var(--amberbg);
+  border-radius: 14px; padding: 14px 16px; margin-bottom: 18px; }
+.outbox .obh { display: flex; flex-direction: column; gap: 2px; }
+.outbox .obh b { font-family: var(--disp); font-weight: 800; font-size: 14px;
+  color: var(--amber); }
+.outbox .obh span { font-size: 12.5px; color: var(--grey); }
+/* The divider only where there is something above it to divide from: as the
+   first block it drew an empty amber strip over the heading. */
+.outbox .obh.obr:not(:first-child) {
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--hair);
+}
+.outbox .obh.obr b { color: var(--red); }
+.outbox .obl { list-style: none; margin: 10px 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 8px; }
+.outbox .obl li { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--surface); border-radius: 10px; padding: 9px 12px; font-size: 13px; }
+.outbox .obk { font-family: var(--disp); font-weight: 700; font-size: 11.5px;
+  color: var(--amber); background: var(--amberbg); border-radius: 999px; padding: 3px 9px; }
+.outbox .obk.obkr { color: var(--red); background: var(--redbg); }
+.outbox .obw { font-weight: 600; }
+.outbox .obt, .outbox .obs { color: var(--grey); font-size: 12.5px; }
+.outbox .obs { flex: 1 1 100%; }
+.outbox .oba { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+.outbox .obe { font-size: 12.5px; color: var(--red); }
+.outbox .obn { margin-top: 10px; font-size: 12.5px; color: var(--grey); }

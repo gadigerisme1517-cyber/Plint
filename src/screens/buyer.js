@@ -91,8 +91,25 @@ module.exports = function buyerScreens(ctx) {
       const snags = (await c.query(
         'SELECT * FROM snags WHERE unit_id = $1 ORDER BY raised_at DESC', [u.id])).rows;
 
-      return { u, stages, demands, evidence, visits, queries, choices,
-               agreement, possession, lenders, applicants, papers, snags };
+      /* The receipts against this villa's demands. No amount is read from
+         here and none is held here: a receipt row carries the reference, the
+         mode and the day the money was received, and every figure beside it
+         on screen comes from the demand it points at. */
+      const receipts = (await c.query(
+        `SELECT r.* FROM receipts r
+           JOIN demands d ON d.id = r.demand_id
+           JOIN unit_stages s ON s.id = d.unit_stage_id
+          WHERE s.unit_id = $1 ORDER BY r.received_on DESC`, [u.id])).rows;
+
+      /* The buyer's own row in `users`, for the screen that says what Plint
+         holds about them. `u_self` lets them read it and nobody else's, and
+         the password hash is never selected: this file has no reason to hold
+         it and a screen that prints one is a screen that can leak one. */
+      const me = (await c.query(
+        'SELECT id, email, role, display_name FROM users WHERE id = $1', [sess.id])).rows[0] || null;
+
+      return { u, stages, demands, evidence, visits, queries, choices, me,
+               agreement, possession, lenders, applicants, papers, snags, receipts };
     });
   }
 
@@ -394,6 +411,8 @@ ${titled('Your visits', d.visits.length ? table(
     const rest = d.stages.map((s, i) => [s, i])
       .filter(([s]) => s.status !== 'paid' && s.status !== 'demanded');
 
+    const rcOf = x => d.receipts.find(r => r.demand_id === x.id);
+
     return desk(sess, '/money', 'Payments', '', `
 ${head('What you owe today', (o
   ? esc(o.stage.name) + ', ' + (o.stage.pct_bp / 100) + ' per cent, plus GST. Due '
@@ -421,10 +440,15 @@ ${titled('Demands raised', d.demands.length ? table(
       x.paid_at ? pill('paid', 'Paid') : late ? pill('over', 'Overdue') : pill('due', 'Due'),
       age(days(x.raised_at), !!x.paid_at),
       num(M.money(x.paid_at ? x.total_paise : M.payableNow(x))),
-      `<a class="btn" href="/doc/demand/${esc(x.unit_stage_id)}.pdf">Letter</a>`,
+      /* A settled demand has a receipt against it, and the receipt is what a
+         buyer is actually asked for - by their bank, by their accountant, at
+         registration. The letter is what was billed; the receipt is proof
+         the money was received. */
+      (rcOf(x) ? `<a class="btn" href="/receipt/${esc(rcOf(x).receipt_no)}">Receipt</a> ` : '')
+        + `<a class="btn" href="/doc/demand/${esc(x.unit_stage_id)}.pdf">Letter</a>`,
     ];
   }),
-  '1.1fr 1.8fr .8fr .5fr .9fr auto', { min: 720 })
+  '1.1fr 1.8fr .8fr .5fr .9fr auto', { min: 780 })
   : empty('No demand has been raised yet. One follows each verified stage.',
     { href: '/journey', label: 'See where the building has got to' }))}
 ${titled('The rest of the schedule', rest.length ? table(
@@ -535,7 +559,11 @@ ${card('Signing out', `<p class="hsub">This signs you out of this browser only.<
 
     const rows = list => list.map(l => [
       `<b>${esc(l.name)}</b>`,
-      (l.rate_bp / 100).toFixed(2) + ' per cent &middot; '
+      /* A rate Plint does not hold is not printed as one. Off the panel there
+         is no quote, and saying "9.00 per cent" because a column needed a
+         number is the kind of figure a buyer picks a bank on. */
+      (l.rate_bp == null ? 'Rate not quoted here' : (l.rate_bp / 100).toFixed(2) + ' per cent')
+        + ' &middot; '
         + (l.apf_code ? 'project approved, ' + esc(l.apf_code) : 'not approved for this project'),
       num('releases in ' + l.turnaround_low + ' to ' + l.turnaround_high + ' days'),
       picked === l.name ? pill('paid', 'Yours')
@@ -874,9 +902,200 @@ ${titled('What you have asked', d.queries.length ? table(
         WHERE m.query_id = $1 ORDER BY m.sent_at`, [id])).rows);
   }
 
+  /* ------------------------------------------------------------ a receipt
+
+     ONE DOCUMENT, DRAWN ENTIRELY FROM THE DEMAND.
+
+     The receipt row supplies four facts - the number, how it was paid, the
+     reference and the day the money was received. Every rupee on this screen
+     is read from the demand, which is immutable from the moment it was
+     issued. There is no second figure anywhere in this feature, so there is
+     nothing that can drift. */
+  function receipt(sess, d, no) {
+    const r = d.receipts.find(x => x.receipt_no === no);
+    if (!r) return null;
+    const dm = d.demands.find(x => x.id === r.demand_id);
+    if (!dm) return null;
+    const st = d.stages.find(x => x.stage_code === dm.stage_code);
+    const MODE = { neft: 'NEFT', rtgs: 'RTGS', imps: 'IMPS', upi: 'UPI',
+      cheque: 'Cheque', draft: 'Demand draft', cash: 'Cash' };
+
+    return desk(sess, '/money', 'Receipt', '', `
+${head('Receipt ' + r.receipt_no,
+  'For ' + esc(M.money(dm.total_paise)) + ' received on '
+  + esc(M.longDate(r.received_on)) + '. This is the office’s acknowledgement '
+  + 'that the money arrived.',
+  btn('Every payment', { href: '/money', icon: 'back' }))}
+${kpis([
+  { l: 'Received', icon: 'attend', v: esc(M.money(dm.total_paise)),
+    n: 'in full settlement of ' + esc(dm.doc_no) },
+  { l: 'On', icon: 'cal', v: esc(M.longDate(r.received_on)),
+    n: esc(MODE[r.mode] || r.mode) + ' · ' + esc(r.reference) },
+])}
+${titled('What it is for', dl([
+  ['Villa', esc(d.u.code) + ' · ' + esc(d.u.unit_type || '')],
+  ['Buyer', esc(d.u.buyer_name || '')],
+  ['Stage', esc(st ? st.name : dm.stage_code)],
+  ['Demand', esc(dm.doc_no) + ' · raised ' + esc(M.longDate(dm.raised_at))],
+  ['Amount before GST', esc(M.money(dm.base_paise))],
+  ['GST', esc(M.money(dm.gst_paise))],
+  ...(Number(dm.extras_paise) ? [['Extras', esc(M.money(dm.extras_paise))]] : []),
+  ['Total received', esc(M.money(dm.total_paise))],
+  ['How', esc(MODE[r.mode] || r.mode) + ' · ' + esc(r.reference)],
+  ['Received on', esc(M.longDate(r.received_on))],
+  ['Settled in Plint', esc(M.longDate(dm.paid_at))],
+]))}
+${note('Every figure here is read from demand ' + esc(dm.doc_no) + ', which cannot be '
+  + 'edited once issued. The receipt holds no amount of its own, so this document and '
+  + 'that demand cannot come to disagree.')}
+`);
+  }
+
+  /* --------------------------------------------- what Plint holds about you
+
+     THE TECHNICAL HALF OF A DPDP ACCESS REQUEST, AND ONLY THAT HALF.
+
+     What is built here is what can be built without guessing at law: an
+     inventory of the personal data this product holds about the person
+     reading it, named by table and by column, with who else can read each
+     part, and the whole of it as a file they can take away. Every row in it
+     is read in the buyer's own database role, so this screen cannot show them
+     one field more than the policies already allow.
+
+     WHAT IS DELIBERATELY NOT HERE. No erasure button, no retention countdown
+     and no consent record. Each of those needs an answer this codebase cannot
+     supply - who the Data Fiduciary is, how long a construction and tax
+     record must be kept, what a buyer may withdraw while a contract is
+     running - and a screen that guessed would be worse than no screen. */
+  const HOLDS = d => [
+    ['Who you are', 'users', 'email, display_name, role',
+      d.me ? 1 : 0, 'You. The office cannot read it - see below.',
+      'Given when your login was issued'],
+    ['Your villa and your price', 'units',
+      'buyer_name, unit_type, agreement_value_paise, bank, sanction_paise, '
+      + 'own_contribution_paise, sanction_letter_ref, channel_partner, '
+      + 'site_engineer, relationship_manager',
+      1, 'You, the office, the engineer', 'From the builder’s sales record'],
+    ['What has been billed', 'demands',
+      'doc_no, raised_at, due_at, base_paise, gst_paise, total_paise, paid_at',
+      d.demands.length, 'You, the office, the engineer',
+      'Raised by Plint when a stage is certified'],
+    ['What you have paid', 'receipts', 'receipt_no, mode, reference, received_on',
+      d.receipts.length, 'You, the office, the engineer',
+      'Recorded by the office when the money arrives'],
+    ['Your agreement', 'agreements',
+      'sent_to_sign_at, signed_at, registered_at, registration_ref',
+      d.agreement ? 1 : 0, 'You, the office, the engineer', 'Entered by the office'],
+    ['Who is on the loan', 'loan_applicants', 'full_name, earns, relation',
+      d.applicants.length, 'You, the office, the engineer', 'Entered by the office'],
+    ['Which papers the office has seen', 'loan_documents',
+      'label, seen_at, seen_by', d.papers.length, 'You, the office, the engineer',
+      'Ticked off by the office. Plint holds no copy of any paper'],
+    ['Photographs of your villa', 'evidence',
+      'caption, taken_at, gps, sha256', d.evidence.length,
+      'You, the office, the engineer, and your lender in the evidence pack',
+      'Taken on site by the engineer'],
+    ['Site visits you asked for', 'visits',
+      'slot_at, note, requested_at, status, response_note', d.visits.length,
+      'You, the office, the engineer', 'Written by you and answered by the engineer'],
+    ['Questions you have asked', 'queries, query_messages',
+      'subject, body, sent_at', d.queries.length,
+      'You, the office, the engineer', 'Written by you and by the office'],
+    ['Interior choices', 'choices', 'selected, signed_at, signed_by',
+      d.choices.length, 'You, the office, the engineer', 'Signed by you'],
+    ['Snags you have raised', 'snags', 'title, raised_at, status, fix_sha256',
+      d.snags.length, 'You, the office, the engineer', 'Raised by you or by the office'],
+    ['Possession', 'possessions', 'offered_at, snags_cleared_at, handed_over_at, keys_to',
+      d.possession ? 1 : 0, 'You, the office, the engineer', 'Entered by the office'],
+  ];
+
+  function data(sess, d, msg) {
+    const rows = HOLDS(d);
+    const total = rows.reduce((t, r) => t + r[3], 0);
+
+    return desk(sess, '/data', 'What Plint holds', '', `
+${head('What Plint holds about you',
+  'Every field, named. This page is built out of your own records, read in your '
+  + 'own account, so it cannot show you anything the rest of Plint would not.',
+  btn('Take a copy', { href: '/data.json', icon: 'doc', dark: true }))}
+${kpis([
+  { l: 'Records about you', icon: 'doc', v: String(total), n: 'across ' + rows.length + ' kinds' },
+  { l: 'Photographs', icon: 'cam', v: String(d.evidence.length), n: 'of your villa, not of you' },
+  { l: 'Kept', icon: 'cal', v: 'For good', n: 'nothing here is deleted on a timer' },
+])}
+${titled('Every kind, by table and column', table(
+  ['What it is', 'Where it is kept', 'Rows', 'Who can read it'],
+  rows.map(r => [
+    `<b>${esc(r[0])}</b><br><span class="hsub">${esc(r[5])}</span>`,
+    `<span class="num" style="font-size:12px">${esc(r[1])}</span>`
+      + `<br><span class="hsub">${esc(r[2])}</span>`,
+    num(String(r[3])),
+    esc(r[4]),
+  ]),
+  /* The column list is the longest text on the screen and it was running
+     into the row count beside it. */
+  '1.2fr 2.2fr .35fr 1.1fr', { min: 860 }))}
+${titled('What Plint does not hold', card('', `
+<p class="hsub">No PAN, no Aadhaar number, no bank statement, no salary slip and no
+copy of any paper the bank asks you for. The office ticks off that it has SEEN each
+one; the papers themselves go from you to your bank and never come here.</p>
+<p class="hsub" style="margin-top:10px">No card number, no bank account number, and no
+payment instrument of any kind. A receipt records the reference your bank produced -
+a UTR, a cheque number - because that is what proves the transfer.</p>
+<p class="hsub" style="margin-top:10px">No location of you. The GPS on a photograph is
+where the camera stood on your plot, which is your villa and not your movements.</p>`))}
+${titled('Two things this page cannot do', card('', `
+<p class="hsub"><b>It cannot show you the audit log.</b> Every certification, every
+settlement and every correction writes a row naming who did it. The policy on that
+table lets the office and the engineer read it and lets nobody edit or delete it,
+including them. It is the record that protects you, and it is deliberately not
+readable from a buyer session.</p>
+<p class="hsub" style="margin-top:10px"><b>It cannot delete anything.</b> A demand, a
+receipt, a certificate and a photograph are the evidence a bank released money
+against, and they are also a tax record. What may be erased, and when, is a legal
+answer the builder has to give - it is not a switch for software to guess at.</p>`))}
+${note('If you want a copy of all of this, the button at the top gives you the whole '
+  + 'of it as one file. If you want something in it corrected, ask the office - a '
+  + 'demand is never edited, so a correction is a credit against it, which leaves both '
+  + 'the mistake and the fix on your file.')}
+`, msg);
+  }
+
+  /* The same inventory as a file. Assembled from the rows this session can
+     already read - there is no privileged query behind it - and it names the
+     same columns the screen names, so the two cannot come to disagree. */
+  function dataFile(sess, d) {
+    return {
+      what: 'Everything Plint holds about ' + (d.u.buyer_name || 'this buyer'),
+      made_at: new Date().toISOString(),
+      read_as: { user: sess.id, role: sess.role, villa: d.u.code },
+      not_held: [
+        'no PAN, Aadhaar, salary slip, bank statement or copy of any loan paper',
+        'no card, account number or payment instrument',
+        'no location of the buyer; the GPS on a photograph is the plot',
+        'the password hash is never read into this file',
+      ],
+      you: d.me,
+      villa: d.u,
+      stages: d.stages,
+      demands: d.demands,
+      receipts: d.receipts,
+      agreement: d.agreement,
+      loan_applicants: d.applicants,
+      loan_documents: d.papers,
+      photographs: d.evidence,
+      visits: d.visits,
+      questions: d.queries,
+      choices: d.choices,
+      snags: d.snags,
+      possession: d.possession,
+    };
+  }
+
   return {
     load, threadOf,
     journey, stage, villa, visit, money, more,
-    bank, loan, agreement, choices, questions, documents,
+    bank, loan, agreement, choices, questions, documents, receipt,
+    data, dataFile,
   };
 };

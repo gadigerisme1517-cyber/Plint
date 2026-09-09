@@ -93,8 +93,8 @@ module.exports = function kit({ esc }) {
 
   /** The same three bands as a pill, where the age is what the row is about. */
   const agePill = (n, words) => {
-    const [ok, mid, bad] = words || ['on time', 'ageing', 'overdue'];
-    if (n == null) return pill('grey', 'no date');
+    const [ok, mid, bad] = words || ['On time', 'Ageing', 'Overdue'];
+    if (n == null) return pill('grey', 'No date');
     return n >= AGE.overdue ? pill('over', bad)
       : n >= AGE.ageing ? pill('due', mid) : pill('accent', ok);
   };
@@ -173,6 +173,19 @@ module.exports = function kit({ esc }) {
    *                     width below which the table scrolls sideways instead
    *                     of crushing its middle column.
    */
+  /* BELOW 561px A ROW IS A BLOCK AND THE HEADER COMES OFF, so a cell carries
+     the name of its own column. Without it the buyer's demand list read
+     "22d" and the office register read "5 / 10" with nothing saying what
+     either number was - eight of the thirty screenshots this pass showed a
+     stacked figure with no name against it. The label is written once here
+     and shown only by the phone rule in office.css.
+
+     Not on the first cell, which is the row's own name, and not on a cell
+     holding a control: "ACTION Review" reads worse than "Review". */
+  const lab = (cols, j, cell) =>
+    j > 0 && cols[j] && !/^(action|answer)$/i.test(cols[j]) && !/<(form|button)\b/.test(cell)
+      ? ` data-l="${esc(cols[j])}"` : '';
+
   function table(cols, rows, tmpl, o = {}) {
     const gt = `grid-template-columns:${tmpl}`;
     const min = o.min === 0 ? '' : ` style="--tmin:${o.min || 620}px"`;
@@ -189,7 +202,7 @@ module.exports = function kit({ esc }) {
         + `<button class="btn" type="button" data-clear="${o.id}">Clear filters</button></div></div>` : '')
       + rows.map((r, i) => {
         const tags = o.tags ? ` data-tags="${esc(o.tags(i))}"` : '';
-        const cells = r.map(c => `<div>${c}</div>`).join('');
+        const cells = r.map((c, j) => `<div${lab(cols, j, c)}>${c}</div>`).join('');
         return o.href
           ? `<a class="tr click" style="${gt}"${tags} href="${o.href(i)}">${cells}</a>`
           : `<div class="tr" style="${gt}"${tags}>${cells}</div>`;
@@ -417,8 +430,13 @@ module.exports = function kit({ esc }) {
     + `<span class="ffn" data-for="${esc(o.id)}">No file chosen</span></span>`;
 
   /** A row of fields that posts. The one shape every write on these screens uses. */
+  /* `o.q` marks a form the engineer's outbox may hold when the write does not
+     reach the office - see public/queue.js. `o.ql` is what the outbox calls
+     it on screen, so a queued row says "A-01 · Blockwork" rather than "a
+     write". With no script both attributes are inert and the form posts. */
   const form = (action, inner, o = {}) =>
     `<form class="frm" method="post" action="${action}"`
+    + (o.q ? ` data-q="${esc(o.q)}" data-ql="${esc(o.ql || '')}"` : '')
     + (o.upload ? ' enctype="multipart/form-data"' : '') + '>'
     + Object.entries(o.fields || {}).map(([k, v]) =>
       `<input type="hidden" name="${esc(k)}" value="${esc(String(v))}">`).join('')

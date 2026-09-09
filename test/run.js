@@ -38,6 +38,9 @@ const SUITES = [
      after the suites that assert things about the seeded project, and its last
      tests check that project is exactly as it was. */
   'onboard.test.js',
+  /* Receipts, the outbox's server half and the buyer's data inventory. After
+     onboard, because it settles a seeded demand and issues receipts. */
+  'receipts.test.js',
   'figures.test.js',     // one quantity, one number, on every screen it appears on
   'shell.test.js',       // the frame is gone, and each role can navigate
   /* The only suite that executes page script. Everything above reads markup,

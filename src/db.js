@@ -5,6 +5,19 @@ const { Pool, types } = require('pg');
 // string concatenation. Parse them to Number here, once, for every query.
 types.setTypeParser(20, v => parseInt(v, 10));
 types.setTypeParser(1700, v => parseFloat(v));
+
+/* A DATE IS A DAY, NOT AN INSTANT.
+   1082 is `date`. The driver turns it into a JS Date at the SERVER PROCESS'S
+   local midnight, and every date this product prints is formatted in
+   Asia/Kolkata - so on a machine east of India, 2026-09-09 rendered as
+   "8 Sept 2026". The demo runs in Singapore and this one is in Sydney, and it
+   was about to put the wrong day on a buyer's receipt. Handed through as the
+   string Postgres sent, `new Date('2026-09-09')` is UTC midnight, which is
+   half past five in the morning in Kolkata and the right day everywhere the
+   product is read.
+   Four columns are affected: blockers.since, choices.needed_by,
+   qpr_filings.due_on and receipts.received_on. */
+types.setTypeParser(1082, v => v);
 const crypto = require('crypto');
 const config = require('./config');
 

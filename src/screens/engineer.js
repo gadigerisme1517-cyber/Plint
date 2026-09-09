@@ -27,7 +27,7 @@ module.exports = function engineerScreens(ctx) {
   const K = require('./kit')({ esc });
   const {
     head, kpis, pill, btn, table, card, titled, dl, note, empty, photos,
-    filters, search, showing, field, input, file, form, age, agePill, num, tagOf, AGE,
+    filters, search, showing, field, input, select, file, form, age, agePill, num, tagOf, AGE,
   } = K;
 
   /* v21's six kinds of log entry, with the quick entries it offers under each.
@@ -101,10 +101,19 @@ module.exports = function engineerScreens(ctx) {
           WHERE v.status IN ('requested','confirmed','reassign')
           ORDER BY v.slot_at`)).rows;
 
+      /* SIX OF SEVEN OPEN SNAGS WERE INVISIBLE HERE.
+
+         `u_self` lets a member of staff read staff rows and nobody else's,
+         because that table holds password hashes. An inner join against a row
+         the policy hides returns nothing at all - so every snag a BUYER
+         raised, which is most of them, dropped out of the engineer's list
+         while the office's count of the same table said seven. The name comes
+         off the villa, which the engineer can read, and the join is outer. */
       const snags = (await c.query(
-        `SELECT sn.*, u.code, w.display_name raiser
+        `SELECT sn.*, u.code,
+                coalesce(w.display_name, u.buyer_name, 'the buyer') raiser
            FROM snags sn JOIN units u ON u.id = sn.unit_id
-           JOIN users w ON w.id = sn.raised_by
+           LEFT JOIN users w ON w.id = sn.raised_by
           ORDER BY sn.status, sn.raised_at`)).rows;
 
       const log = (await c.query(
@@ -156,7 +165,7 @@ ${chased.length ? titled('Office is chasing you', table(
     `<b>${esc(v.next_stage || 'All stages done')}</b><br><span class="hsub">`
       + esc(v.buyer_name) + ' &middot; ' + esc(v.blocker_reason || '') + '</span>',
     pill('over', 'Chased'),
-    v.last_shot ? age(days(v.last_shot), false) : pill('over', 'no photograph'),
+    v.last_shot ? age(days(v.last_shot), false) : pill('over', 'No photograph'),
   ]),
   '.6fr 2.4fr .7fr .9fr',
   { href: i => '/engineer/villa/' + encodeURIComponent(chased[i].code), min: 620 })) : ''}
@@ -245,7 +254,12 @@ ${table(['Villa', 'Next stage and buyer', 'Evidence', 'Last seen', 'Action'],
     const rows = d.visits.map(v => {
       const mine = v.engineer_id === sess.id;
       const when = M.longDate(v.slot_at) + ', ' +
-        new Date(v.slot_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+        /* IST, like every other date this product prints. Without the zone
+           this took the server's own - the demo runs in Singapore and this
+           machine is in Sydney - and a ten o'clock site visit was shown to
+           the engineer as half past two. */
+        new Date(v.slot_at).toLocaleTimeString('en-IN',
+          { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
       return [
         `<b>${esc(v.code)}</b>`,
         `<b>${esc(v.buyer_name)}</b><br><span class="hsub">${esc(when)} &middot; `
@@ -292,7 +306,8 @@ ${titled('Every visit asked for', table(
       `<span class="ffile">${file('photo', { id: 'snag-' + s.id, label: 'Photograph of the fix' })}</span>`
       + field('What was done', input('caption', { required: true, max: 120, placeholder: 'Tile replaced and grouted' }))
       + field('Where', input('gps', { required: true, max: 40, placeholder: '12.8391, 77.7724' })),
-      { fields: { id: s.id }, upload: true, submit: 'Send for sign-off', icon: 'cam' });
+      { fields: { id: s.id }, upload: true, submit: 'Send for sign-off', icon: 'cam',
+        q: 'snag', ql: s.code + ' · ' + s.title });
 
     return desk(sess, '/engineer/snags', 'Snags', '', `
 ${head('Snags to close', 'Photograph the fix. The buyer signs it off, not you.')}
@@ -327,7 +342,7 @@ ${titled('Quick entries', table(
   quick.map(q => [
     `<b>${esc(q)}</b>`,
     'One tap. Recorded against you, now.',
-    `<form method="post" action="/engineer/log">
+    `<form method="post" action="/engineer/log" data-q="log" data-ql="${esc(q)}">
 <input type="hidden" name="kind" value="${esc(kind)}">
 <input type="hidden" name="title" value="${esc(q)}">
 <button class="btn dark" type="submit">Add</button></form>`,
@@ -335,14 +350,32 @@ ${titled('Quick entries', table(
 ${titled('Or write it', card('', form('/engineer/log',
   field('What happened', input('title', { required: true, max: 120, placeholder: 'Slab pour deferred' }))
   + field('Detail, optional', input('detail', { max: 200, placeholder: '14:00 to 16:00' })),
-  { fields: { kind }, submit: 'Add entry', icon: 'plus' })))}
+  { fields: { kind }, submit: 'Add entry', icon: 'plus', q: 'log', ql: label })))}
+${/* WHAT WAS ALREADY LOGGED OF THIS KIND. The screen took entries and showed
+     none back, so the only way to see whether the cement was already recorded
+     this morning was to go back a screen and filter. An entry is added here
+     and it appears here. */
+  titled('Already logged, ' + label.toLowerCase(), (() => {
+    const mine = d.log.filter(e => e.kind === kind);
+    return mine.length ? table(
+      ['Entry', 'Detail and who', 'When'],
+      mine.map(e => [
+        `<b>${esc(e.title)}</b>`,
+        esc(e.detail || '') + (e.detail ? ' &middot; ' : '') + esc(e.logger),
+        age(days(e.logged_at), true),
+      ]), '1.4fr 2fr .5fr', { min: 560 })
+      : empty('Nothing of this kind logged yet.');
+  })())}
 `, msg);
     }
 
     return desk(sess, '/engineer/log', 'Site log', '', `
 ${head('Site log', 'Two taps. This is what settles a dispute six months later.')}
 ${kpis([
-  { l: 'Entries', icon: 'doc', v: String(d.log.length), n: 'the last forty on this site' },
+  /* The query takes forty. Saying "the last forty" over five entries names a
+     cap the reader cannot see and makes them wonder what is missing. */
+  { l: 'Entries', icon: 'doc', v: String(d.log.length),
+    n: d.log.length >= 40 ? 'the last forty on this site' : 'everything logged on this site' },
   { l: 'Today', icon: 'cal', v: String(d.log.filter(e => days(e.logged_at) === 0).length),
     n: 'logged since midnight' },
 ])}
@@ -386,7 +419,7 @@ ${titled('Recent', table(
           : '/engineer/cert/' + encodeURIComponent(x.id)}"><b>${esc(x.code)}</b></a>`,
         `<b>${esc(x.stage_name)}</b><br><span class="hsub">${esc(x.buyer_name)} &middot; marked by `
           + esc(x.marked_by) + ' on ' + esc(M.longDate(x.marked_at)) + '</span>',
-        thin ? pill('due', x.shots + ' photo' + (x.shots === 1 ? '' : 's')) : pill('accent', 'ready'),
+        thin ? pill('due', 'Only ' + x.shots + ' photo' + (x.shots === 1 ? '' : 's')) : pill('accent', 'Ready'),
         age(days(x.marked_at), false),
         num(M.money(stageTotal(d.byProject, x))),
         /* A row that cannot be signed used to say the words "Too few photos"
@@ -485,7 +518,7 @@ done on site and a qualified engineer certifies it.</p>`}</div>`)}
 
   // -------------------------------------------------------- villa detail
 
-  async function villa(sess, code, mode, d, msg) {
+  async function villa(sess, code, mode, d, msg, photoStage) {
     const u = await asUser(sess, async c => {
       const unit = (await c.query(
         `SELECT u.*, e.display_name engineer FROM units u
@@ -502,8 +535,11 @@ done on site and a qualified engineer certifies it.</p>`}</div>`)}
         `SELECT e.caption, e.taken_at, e.gps, e.sha256, s.stage_code
            FROM evidence e JOIN unit_stages s ON s.id = e.unit_stage_id
           WHERE s.unit_id = $1 ORDER BY e.taken_at DESC LIMIT 12`, [unit.id])).rows;
+      /* The same outer join as the queue above, and for the same reason. */
       const snagRows = (await c.query(
-        `SELECT sn.*, w.display_name raiser FROM snags sn JOIN users w ON w.id = sn.raised_by
+        `SELECT sn.*, coalesce(w.display_name, u.buyer_name, 'the buyer') raiser
+           FROM snags sn JOIN units u ON u.id = sn.unit_id
+           LEFT JOIN users w ON w.id = sn.raised_by
           WHERE sn.unit_id = $1 ORDER BY sn.status, sn.raised_at`, [unit.id])).rows;
       return { unit, stages, shots, snags: snagRows };
     });
@@ -549,18 +585,36 @@ ${FLAGS.map(([t, why], i) => `<label class="dlr" style="cursor:pointer;grid-temp
     } else {
       const target = live || next;
       const workable = u.stages.filter(s => s.status === 'pending' || s.status === 'marked');
+      /* Which stage the camera is pointed at. The stage in hand by default,
+         or the one whose own "Photograph it first" sent the reader here. */
+      const shootAt = workable.find(s => s.id === photoStage) || target;
       body = `
 ${titled('Photographs on this villa',
   photos(u.shots.map(s => ({
     sha256: s.sha256, caption: s.caption,
     when: M.longDate(s.taken_at), gps: s.gps,
   })), 'No photographs on this villa yet. The camera is below.'))}
-${target ? `<span id="addphoto"></span>` + titled('Add a photograph', card('', form('/evidence/upload',
+${/* WHICH STAGE THE PHOTOGRAPH IS FILED AGAINST, SAID ON THE FORM.
+
+     It was a hidden field holding the stage in hand, and on every villa on
+     this site that is the one already marked and waiting for a certificate.
+     So "Photograph it first", sitting under a stage that cannot be marked
+     until it has a photograph, led to a camera that filed against a
+     DIFFERENT stage - and the stage below stayed unphotographable for as
+     long as the one above was uncertified. Every stage still open is in the
+     list now, the one in hand is chosen, and each button passes its own. */
+  target ? `<span id="addphoto"></span>` + titled('Add a photograph', card('', form('/evidence/upload',
   `<span class="ffile">${file('photo', { id: 'shot-' + code, label: 'Take or attach' })}</span>`
+  + field('Against which stage', select('stage', workable.map(st => [st.id,
+      /* Short enough that the select does not clip it: the longer form read
+         "Blockwork - waiting for you" on a 1440 screen. */
+      st.name + (st.status === 'marked' ? ' - to certify' : '')]),
+    { value: shootAt.id, required: true }))
   + field('Caption', input('caption', { required: true, max: 120, placeholder: 'Internal partitions, first floor' }))
   + field('Where', input('gps', { required: true, max: 40, placeholder: '12.8391, 77.7724' })),
-  { fields: { stage: target.id, back: '/engineer/villa/' + code }, upload: true,
-    submit: 'Add photograph', icon: 'cam' })
+  { fields: { back: '/engineer/villa/' + code }, upload: true,
+    submit: 'Add photograph', icon: 'cam',
+    q: 'photo', ql: code + ' · ' + (shootAt.name || '') })
   + `<p class="hsub" style="margin-top:10px">Stamped and locked at capture. This is the bank's evidence.</p>`))
   : ''}
 ${/* A STAGE TO MARK IS A CARD, NOT A ROW.
@@ -573,14 +627,16 @@ ${/* A STAGE TO MARK IS A CARD, NOT A ROW.
     card('', `<p class="hsub">${esc(st.description || '')} &middot; ${esc(M.money(priced[st.seq].totalPaise))}</p>
 <div class="frm" style="margin-top:12px">${st.status === 'pending'
       ? (st.shots > 0
-        ? `<form method="post" action="/engineer/mark">
+        ? `<form method="post" action="/engineer/mark" data-q="mark"
+      data-ql="${esc(code + ' · ' + st.name)}">
 <input type="hidden" name="id" value="${esc(st.id)}">
 <button class="btn dark" type="submit">Mark done</button></form>`
-        : `<a class="btn" href="#addphoto">Photograph it first</a>`)
+        : `<a class="btn" href="/engineer/villa/${encodeURIComponent(code)}?photo=${
+            encodeURIComponent(st.id)}#addphoto">Photograph it first</a>`)
       : `<a class="btn dark" href="/engineer/cert/${encodeURIComponent(st.id)}">Certify</a>`}
 ${st.shots ? pill('paid', st.shots + ' photograph' + (st.shots === 1 ? '' : 's'))
-      : pill('due', 'no photograph')}</div>`),
-    st.status === 'marked' ? pill('due', 'marked on site') : ''))
+      : pill('due', 'No photograph')}</div>`),
+    st.status === 'marked' ? pill('due', 'Marked on site') : ''))
     .join('')
   : titled('Mark complete', empty('Every stage on this villa is done.'))}
 ${live ? note('Marking this sends ' + esc(M.money(priced[live.seq].totalPaise)) + ' to '
@@ -589,8 +645,13 @@ ${live ? note('Marking this sends ' + esc(M.money(priced[live.seq].totalPaise)) 
     }
 
     return desk(sess, '/engineer/villas', 'Villa ' + code, '', `
-${head(next ? next.name : 'All stages done',
-  `${esc(u.unit.buyer_name)} &middot; ${esc(u.unit.bank || 'self funded')} &middot; villa ${esc(code)}`,
+${/* THE VILLA'S NAME LEADS. It used to be the stage's - so a screen offering
+     "Certify" on Blockwork was headed "Plastering", and an engineer standing
+     on site could not tell at a glance which of sixteen villas he was on. The
+     stage is still here, in the line that carries the rest of the facts. */
+  head('Villa ' + code,
+  `${next ? esc(next.name) : 'All stages done'} &middot; ${esc(u.unit.buyer_name)} `
+  + `&middot; ${esc(u.unit.bank || 'self funded')}`,
   btn('Every villa', { href: '/engineer/villas', icon: 'back' }))}
 <div class="filters">${tab('update', 'Update')}${tab('flag', 'Problem')}${tab('snag', 'Snags')}</div>
 ${body}

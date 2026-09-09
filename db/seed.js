@@ -225,6 +225,35 @@ async function main() {
         raised, due, base, gst, base + gst, paidAt,
       ]);
 
+      /* THE RECEIPT FOR A DEMAND THIS HISTORY SHOWS AS SETTLED.
+
+         A buyer five stages in has paid five times and is asked for those
+         receipts by their own bank, their accountant and the sub-registrar.
+         Seeding the settlement without them would show a product where money
+         arrives and nothing acknowledges it.
+
+         No amount is written here, because the table has no column for one:
+         every figure on a receipt is read from the demand above. The mode and
+         the reference are derived from the villa and the stage index so the
+         seed stays byte for byte deterministic, and nothing here draws on the
+         generators that would shift every bank and partner after it. */
+      if (paidAt) {
+        const MODES = ['neft', 'rtgs', 'imps', 'cheque', 'upi'];
+        const mode = MODES[i % MODES.length];
+        const flat = v.code.replace('-', '');
+        const day = paidAt.toISOString().slice(0, 10).replace(/-/g, '');
+        const ref = mode === 'cheque' ? 'Cheque 4' + String(10000 + i * 37 + v.code.charCodeAt(2)).slice(0, 5)
+          : mode === 'upi' ? flat.toLowerCase() + '@okhdfcbank ' + day
+          : 'UTR' + day + flat + String(i + 1).padStart(2, '0');
+        await c.query(
+          `INSERT INTO receipts (id, demand_id, receipt_no, mode, reference,
+                                 received_on, issued_by, issued_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+          ['rc-' + demandId, demandId,
+           'RC/' + flat + '/' + String(i + 1).padStart(2, '0'),
+           mode, ref, paidAt, 'u-office', paidAt]);
+      }
+
       /* No audit rows are written here. Triggers on unit_stages and demands
          write them, from the rows' own columns, at COMMIT. The seed used to
          write them by hand, which made it a second writer of the same record

@@ -73,6 +73,10 @@ test('the loan panel is v21\'s, with APF codes only where there is a panel', asy
   }
   for (const r of rows.filter(r => !r.on_panel)) {
     assert.strictEqual(r.apf_code, null, r.name + ' is off panel but carries an APF code');
+    /* And no rate. A lender that has not approved this project has quoted
+       nothing on it, and a number in this column is printed to the buyer as
+       though a bank had said it. */
+    assert.strictEqual(r.rate_bp, null, r.name + ' is off panel but carries a rate nobody quoted');
   }
 });
 

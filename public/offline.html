@@ -34,17 +34,27 @@
            described to an engineer standing on a site road. -->
       <div class="h1" style="font-size:19px">This screen needs the network.</div>
       <p class="hsub" style="margin-top:10px">Plint keeps no villa, no demand and
-      no photograph on this device. Every figure is read from the server when you
-      ask for it, so there is nothing to show until the connection is back.</p>
+      no figure it has shown you on this device. Every one of them is read from the
+      server when you ask for it, so there is nothing to show until the connection
+      is back.</p>
       <p class="hsub" style="margin-top:12px">That is deliberate. A cached copy of
       what one person was looking at would still be on this phone after the next
       person signs in, and these phones get handed around.</p>
+      <!-- WHAT IS ON THE DEVICE, AND THE ONLY THING THAT IS: writes the site
+           engineer made with no signal. They are listed below rather than
+           described, because "nothing is kept here" stopped being true the day
+           the outbox was built and a page that says it anyway is a lie. -->
+      <p class="hsub" style="margin-top:12px">The one exception is work you have
+      done here and not yet sent. It is listed below if there is any, and it goes
+      the moment there is a connection.</p>
       <div style="margin-top:18px">
         <button class="btn dark" onclick="location.reload()">Try again</button>
       </div>
     </div>
   </div>
+  <div class="outbox" id="outbox" hidden style="margin-top:18px"></div>
 </main>
 </div>
+<script src="/queue.__BUILD__.js" defer></script>
 </body>
 </html>
