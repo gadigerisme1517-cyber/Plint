@@ -39,9 +39,19 @@ const OFFICE = { id: 'u-office', role: 'office' };
 const BUYER = { id: 'u-buyer-b14', role: 'buyer', unit: 'B-14' };
 const ENGINEER = { id: 'u-eng-ram', role: 'engineer' };
 
+const { Client } = require('pg');
+const config = require('../src/config');
+
+let owner;
 const cookies = {};
 before(async () => {
   await new Promise(r => server.listen(PORT, r));
+  /* The hold has to be proved against the OWNER of the schema, not the
+     application role: the application role has no DELETE grant to begin with,
+     so refusing it would prove nothing. */
+  owner = new Client(config.adminDb());
+  await owner.connect();
+  await owner.query('SET search_path = plint, public');
   for (const [role, email] of [['office', 'priya@nvt.in'],
                                ['engineer', 'ramachandran@nvt.in'],
                                ['buyer', 'arjun@example.in']]) {
@@ -56,6 +66,7 @@ before(async () => {
   }
 });
 after(async () => {
+  await owner.end().catch(() => {});
   await new Promise(r => { server.closeAllConnections?.(); server.close(r); });
   await pool.end();
 });
@@ -348,4 +359,167 @@ test('neither the screen nor the file is reachable by another role', async () =>
     assert.notStrictEqual(a.status, 200, role + ' can open a buyer data inventory');
     assert.notStrictEqual(b.status, 200, role + ' can download a buyer data file');
   }
+});
+
+// ------------------------------------------------- retention and the hold
+
+test('every table that holds a record has a declared retention period', async () => {
+  /* The inventory on /data and the policy in the database are two lists of
+     the same thing, and two lists drift. Every table a buyer's own screen
+     names must have a row here, or the screen is telling them a period that
+     is not recorded anywhere. */
+  const declared = new Set((await rows(OFFICE,
+    'SELECT table_name FROM retention_policy')).map(r => r.table_name));
+  const NAMED_ON_SCREEN = ['users', 'units', 'demands', 'receipts', 'agreements',
+    'loan_applicants', 'loan_documents', 'evidence', 'visits', 'queries',
+    'query_messages', 'choices', 'snags', 'possessions'];
+  const missing = NAMED_ON_SCREEN.filter(t => !declared.has(t));
+  assert.deepStrictEqual(missing, [],
+    'the buyer is shown these tables and no period is recorded for them: ' + missing);
+});
+
+test('the financial and evidentiary records are kept eight years', async () => {
+  /* The number is the longest applicable period, not the shortest: Companies
+     Act s.128(5). A record destroyed on the shortest is not there for the
+     longest. */
+  const short = await rows(OFFICE,
+    `SELECT table_name, keep_years FROM retention_policy
+      WHERE category IN ('financial','evidentiary','contractual')
+        AND (keep_years IS NULL OR keep_years < 8)`);
+  assert.deepStrictEqual(short, [],
+    'a record is kept less than eight years: ' + JSON.stringify(short));
+});
+
+test('the buyer is told the period against each kind, not told to ask', async () => {
+  const h = (await get('/data', 'buyer')).html;
+  assert.match(h, /How long it is kept/i, 'the inventory has no retention column');
+  assert.match(h, /8 years after the record is made/,
+    'no period is stated against any kind');
+  assert.match(h, /Companies Act/,
+    'the screen states a period and does not say where it comes from');
+  assert.ok(!/nothing here is deleted on a timer<\/div>\s*<\/div>\s*<\/div>\s*<\/div>\s*$/.test(h));
+});
+
+test('a legal hold makes a record impossible to delete, for anybody', async () => {
+  /* Not a convention a future sweep is asked to observe: a refusal on the
+     delete itself, which the owner of the schema cannot talk its way past. */
+  const id = await asUser(OFFICE, c => c.query(
+    `SELECT hold_place('unit','unit-B-14','assessment','TEST/1','a test hold') id`)
+    .then(r => r.rows[0].id));
+  try {
+    for (const [what, sql] of [
+      ['a visit',      `DELETE FROM plint.visits WHERE unit_id = 'unit-B-14'`],
+      ['a snag',       `DELETE FROM plint.snags WHERE unit_id = 'unit-B-14'`],
+      ['a photograph', `DELETE FROM plint.evidence WHERE unit_stage_id = 'us-B-14-brick'`],
+      ['the villa',    `DELETE FROM plint.units WHERE id = 'unit-B-14'`],
+    ]) {
+      await owner.query('BEGIN');
+      await assert.rejects(() => owner.query(sql), /under a legal hold/,
+        'the owner of the schema deleted ' + what + ' while it was held');
+      await owner.query('ROLLBACK');
+    }
+    /* And a villa the hold does not cover is unaffected: a hold is a hold on
+       something, not a switch that stops the product working. */
+    await owner.query('BEGIN');
+    await owner.query(`DELETE FROM plint.visits WHERE unit_id = 'unit-A-07'`);
+    await owner.query('ROLLBACK');
+
+    /* The buyer whose file it is, is told. The buyer next door is not. */
+    assert.match((await get('/data', 'buyer')).html, /under a legal hold/i,
+      'the buyer is not told their own file is frozen');
+  } finally {
+    await asUser(OFFICE, c => c.query('SELECT hold_release($1,$2)', [id, 'test over']));
+  }
+});
+
+test('only the head office places or releases a hold', async () => {
+  for (const who of [BUYER, ENGINEER]) {
+    await assert.rejects(
+      () => asUser(who, c => c.query(
+        `SELECT hold_place('unit','unit-B-14','audit','x','no')`)),
+      /only the head office/i, who.role + ' can freeze a file');
+  }
+});
+
+// --------------------------------------------- the fiduciary and the processor
+
+test('the buyer is told which company is the fiduciary, and it is the builder', async () => {
+  const h = (await get('/data', 'buyer')).html;
+  const builder = (await rows(BUYER,
+    `SELECT p.builder_name FROM projects p JOIN units u ON u.project_id = p.id
+      WHERE u.code = 'B-14'`))[0].builder_name;
+  assert.ok(h.includes(builder),
+    'the screen does not name ' + builder + ', who is the Data Fiduciary');
+  assert.match(h, /is the Data Fiduciary/, 'the screen does not say who the fiduciary is');
+  assert.match(h, /Plint is a Data Processor/, 'the screen does not say what Plint is');
+  /* And it must not offer Plint as the place to complain: Plint did not
+     decide why the data was collected and cannot answer for it. */
+  assert.ok(!/grievance@plint|Plint.s Grievance Officer/i.test(h),
+    'the screen offers Plint as the grievance contact');
+});
+
+test('the grievance officer shown is that project\'s, not another builder\'s', async () => {
+  await asUser(OFFICE, c => c.query(
+    `SELECT project_grievance_set('eterna-p1','K. Sridhar','grievance@nvtlifestyle.in',
+       '+91 80 4123 7788', NULL)`));
+  const h = (await get('/data', 'buyer')).html;
+  assert.ok(h.includes('K. Sridhar') && h.includes('grievance@nvtlifestyle.in'),
+    'the buyer is not given their own builder\'s grievance officer');
+  /* Every other project's officer must be absent from this buyer's screen. */
+  const others = await rows(OFFICE,
+    `SELECT grievance_email FROM projects
+      WHERE id <> 'eterna-p1' AND grievance_email IS NOT NULL`);
+  for (const o of others) {
+    assert.ok(!h.includes(o.grievance_email),
+      'a buyer on one project is shown another builder\'s grievance contact');
+  }
+});
+
+test('the sub-processors are named to the buyer, with what each holds', async () => {
+  const h = (await get('/data', 'buyer')).html;
+  const subs = await rows(BUYER, 'SELECT name, region FROM sub_processors WHERE until IS NULL');
+  assert.ok(subs.length >= 2, 'no sub-processor is recorded');
+  for (const s of subs) {
+    assert.ok(h.includes(s.name), 'the buyer is not told that ' + s.name + ' holds their data');
+    assert.ok(h.includes(s.region), s.name + ' is named without saying where it is');
+  }
+  assert.match(h, /Supabase/, 'the database this runs on is not named');
+  assert.match(h, /Render/, 'the host this runs on is not named');
+  assert.match(h, /authorisation/i,
+    'the screen does not say the list cannot change without the builder\'s authorisation');
+});
+
+test('only the office records a breach, and the record says who was told and when', async () => {
+  await assert.rejects(
+    () => asUser(ENGINEER, c => c.query(
+      `SELECT breach_record('eterna-p1', now(), 'x', 'y')`)),
+    /only the head office/i, 'an engineer can record a breach notification');
+
+  const id = await asUser(OFFICE, c => c.query(
+    `SELECT breach_record('eterna-p1', now() - interval '2 hours',
+       'A test notice, recorded by the suite', 'nothing') id`).then(r => r.rows[0].id));
+  const b = (await rows(OFFICE,
+    'SELECT * FROM breach_notices WHERE id = $1', [id]))[0];
+  assert.ok(b.detected_at < b.told_at,
+    'the record does not keep the detection and the telling apart, which is the '
+    + 'one thing anybody will ask about');
+  assert.match(b.told_whom, /Sridhar|NVT/,
+    'the record does not say who at the builder was told: ' + b.told_whom);
+  /* A buyer and an engineer cannot read it. It is Plint's correspondence with
+     the fiduciary, not the buyer's file. */
+  assert.strictEqual((await rows(BUYER, 'SELECT * FROM breach_notices')).length, 0);
+  assert.strictEqual((await rows(ENGINEER, 'SELECT * FROM breach_notices')).length, 0);
+});
+
+test('the export carries the same answers as the screen', async () => {
+  const r = await fetch(BASE + '/data.json', { headers: { cookie: cookies.buyer } });
+  const o = JSON.parse(await r.text());
+  assert.ok(o.data_fiduciary && o.data_fiduciary.who,
+    'the file does not say who the fiduciary is');
+  assert.strictEqual(o.data_processor.who, 'Plint');
+  assert.ok(o.data_processor.sub_processors.length >= 2,
+    'the file does not name the sub-processors');
+  assert.ok(o.how_long_it_is_kept.length >= 10,
+    'the file does not carry the retention policy');
+  assert.ok(Array.isArray(o.legal_holds_in_force));
 });

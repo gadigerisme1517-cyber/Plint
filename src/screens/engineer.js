@@ -116,9 +116,14 @@ module.exports = function engineerScreens(ctx) {
            LEFT JOIN users w ON w.id = sn.raised_by
           ORDER BY sn.status, sn.raised_at`)).rows;
 
+      /* An inner join here is safe only because everything that writes to the
+         site log today is staff, and a staff session may read staff rows. The
+         day an office assistant, a contractor or a buyer's own action lands in
+         this table, an inner join drops the entry silently and the log that
+         settles a dispute is short by one. It is not worth the saving. */
       const log = (await c.query(
-        `SELECT l.*, w.display_name logger FROM site_log l JOIN users w ON w.id = l.logged_by
-          ORDER BY l.logged_at DESC LIMIT 40`)).rows;
+        `SELECT l.*, coalesce(staff_name(l.logged_by), 'somebody at the office') logger
+           FROM site_log l ORDER BY l.logged_at DESC LIMIT 40`)).rows;
 
       return { mine, certs, visits, snags, log, byProject: await schedules(c) };
     });

@@ -63,9 +63,11 @@ const SCREENS = {
    Bank, Loan, Papers, Agreement, Choices and Questions were folded behind one
    called More - which is where a buyer could not find their bank. */
 /* The office gained one when a project could be created rather than seeded. */
-/* Pass 6 adds one to each of two roles: the office can record money coming in
-   ("Payments in"), and the buyer can see what Plint holds about them. */
-const DESTINATIONS = { buyer: 12, engineer: 6, office: 24 };
+/* Pass 6 added one to each of two roles: the office can record money coming in
+   ("Payments in"), and the buyer can see what Plint holds about them. Pass 7
+   adds the office's Data protection desk - the fiduciary for each project,
+   the sub-processors, the legal holds and the breach notices. */
+const DESTINATIONS = { buyer: 12, engineer: 6, office: 25 };
 
 const cookies = {};
 before(async () => {

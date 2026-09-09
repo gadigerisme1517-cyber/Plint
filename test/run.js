@@ -41,6 +41,9 @@ const SUITES = [
   /* Receipts, the outbox's server half and the buyer's data inventory. After
      onboard, because it settles a seeded demand and issues receipts. */
   'receipts.test.js',
+  /* Who can read what, declared as a matrix and asserted against the
+     database; and the screens that must not come back short. */
+  'crossing.test.js',
   'figures.test.js',     // one quantity, one number, on every screen it appears on
   'shell.test.js',       // the frame is gone, and each role can navigate
   /* The only suite that executes page script. Everything above reads markup,

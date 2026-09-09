@@ -76,9 +76,16 @@ async function main() {
      carries what a project created through the screens carries. The migration
      backfills a database that was already seeded; this is for a fresh one. */
   await c.query(
-    `INSERT INTO projects (id, name, phase, location, builder_name, builder_ref)
+    /* The builder is the Data Fiduciary for the buyers on this project, so
+       the person a buyer writes to about their data is the builder's officer
+       and it is recorded per project. Migration 020 backfills it on a
+       database that already had this project; a fresh one is seeded with it
+       here, because the migration runs before the seed. */
+    `INSERT INTO projects (id, name, phase, location, builder_name, builder_ref,
+                           grievance_name, grievance_email, grievance_phone)
      VALUES ($1,'NVT Eterna','Phase 1','Devanahalli, Bengaluru','NVT Quality Lifestyle',
-             'PRM/KA/RERA/1251/446/PR/171021/001234')`, [PROJECT]);
+             'PRM/KA/RERA/1251/446/PR/171021/001234',
+             'K. Sridhar','grievance@nvtlifestyle.in','+91 80 4123 7788')`, [PROJECT]);
   for (let i = 0; i < MILES.length; i++) {
     const [code, name, bp, d] = MILES[i];
     await c.query(`INSERT INTO stage_templates VALUES ($1,$2,$3,$4,$5,$6)`,

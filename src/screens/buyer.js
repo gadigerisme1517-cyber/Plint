@@ -59,10 +59,20 @@ module.exports = function buyerScreens(ctx) {
            JOIN unit_stages s ON s.id = e.unit_stage_id
           WHERE s.unit_id = $1 ORDER BY e.taken_at DESC`, [u.id])).rows;
 
+      /* THE OUTER JOIN KEPT THE ROW AND LOST THE NAME.
+
+         `u_self` gives a buyer exactly one row of `users` - their own - so
+         `w.display_name` was NULL on every visit ever rendered to a buyer,
+         and the markup prints nothing when it is. This screen's own sentence
+         is "You are shown round by the engineer who signs your certificates"
+         and it had never once said which one.
+
+         `staff_name()` returns a display name for staff ids and NULL for
+         anybody else, so nothing about another buyer can be reached through
+         it. See db/migrations/018. */
       const visits = (await c.query(
-        `SELECT v.*, w.display_name engineer_name
-           FROM visits v LEFT JOIN users w ON w.id = v.engineer_id
-          WHERE v.unit_id = $1 ORDER BY v.slot_at DESC`, [u.id])).rows;
+        `SELECT v.*, staff_name(v.engineer_id) engineer_name
+           FROM visits v WHERE v.unit_id = $1 ORDER BY v.slot_at DESC`, [u.id])).rows;
 
       const queries = (await c.query(
         `SELECT q.*,
@@ -108,8 +118,31 @@ module.exports = function buyerScreens(ctx) {
       const me = (await c.query(
         'SELECT id, email, role, display_name FROM users WHERE id = $1', [sess.id])).rows[0] || null;
 
+      /* WHOSE DATA THIS IS, IN LAW. The builder of this project decides why it
+         is collected, so the builder is the Data Fiduciary and Plint is the
+         processor. The notice and the Grievance Officer are theirs, named per
+         project - a buyer on one project must not be sent to another's. */
+      const project = (await c.query(
+        `SELECT id, name, phase, location, builder_name, builder_ref,
+                grievance_name, grievance_email, grievance_phone, notice_url
+           FROM projects WHERE id = $1`, [u.project_id])).rows[0] || null;
+
+      /* How long each kind is kept, and everyone Plint hands it to. Both are
+         readable by anybody: a buyer is entitled to know. */
+      const retention = (await c.query(
+        `SELECT table_name, keep_years, category, basis FROM retention_policy`)).rows;
+      const subProcessors = (await c.query(
+        `SELECT name, purpose, holds, region, since FROM sub_processors
+          WHERE until IS NULL ORDER BY since, name`)).rows;
+      /* And whether anything on this villa is frozen. The policy on the table
+         shows a buyer a hold that covers their own file and nobody else's. */
+      const holds = (await c.query(
+        `SELECT kind, reason, reference, placed_at FROM legal_holds
+          WHERE released_at IS NULL ORDER BY placed_at DESC`)).rows;
+
       return { u, stages, demands, evidence, visits, queries, choices, me,
-               agreement, possession, lenders, applicants, papers, snags, receipts };
+               agreement, possession, lenders, applicants, papers, snags, receipts,
+               project, retention, subProcessors, holds };
     });
   }
 
@@ -907,7 +940,9 @@ ${titled('What you have asked', d.queries.length ? table(
        would have seen their own messages on the thread and never one of the
        office's replies. */
     return asUser(sess, async c => (await c.query(
-      `SELECT m.*, coalesce(w.display_name, initcap(m.author_role)) author_name
+      `SELECT m.*,
+              coalesce(w.display_name, staff_name(m.author_id),
+                       initcap(m.author_role)) author_name
          FROM query_messages m LEFT JOIN users w ON w.id = m.author_id
         WHERE m.query_id = $1 ORDER BY m.sent_at`, [id])).rows);
   }
@@ -1023,6 +1058,24 @@ ${note('Every figure here is read from demand ' + esc(dm.doc_no) + ', which cann
     const rows = HOLDS(d);
     const total = rows.reduce((t, r) => t + r[3], 0);
 
+    /* HOW LONG, PER KIND, READ FROM THE POLICY RATHER THAN WRITTEN HERE. A
+       row of the inventory names one or two tables; the period is the longest
+       of theirs, because the shortest would be the one that governs if this
+       screen said it and it did not. */
+    const years = t => {
+      const named = String(t).split(',').map(x => x.trim());
+      const found = d.retention.filter(r => named.includes(r.table_name));
+      if (!found.length) return null;
+      if (found.some(r => r.keep_years == null)) return null;
+      return Math.max(...found.map(r => r.keep_years));
+    };
+    const kept = t => {
+      const y = years(t);
+      return y == null ? 'While your file is live'
+        : y + (y === 1 ? ' year' : ' years') + ' after the record is made';
+    };
+    const held = d.holds.length ? d.holds[0] : null;
+
     return desk(sess, '/data', 'What Plint holds', '', `
 ${head('What Plint holds about you',
   'Every field, named. This page is built out of your own records, read in your '
@@ -1031,20 +1084,39 @@ ${head('What Plint holds about you',
 ${kpis([
   { l: 'Records about you', icon: 'doc', v: String(total), n: 'across ' + rows.length + ' kinds' },
   { l: 'Photographs', icon: 'cam', v: String(d.evidence.length), n: 'of your villa, not of you' },
-  { l: 'Kept', icon: 'cal', v: 'For good', n: 'nothing here is deleted on a timer' },
+  { l: 'Kept', icon: 'cal', v: held ? 'Frozen' : '8 years',
+    n: held ? 'this villa is under a legal hold' : 'and longer where the law requires it',
+    tone: held ? 'hot' : null },
 ])}
+${held ? note('<b>Your file is under a legal hold.</b> A ' + esc(held.kind)
+  + ' is open' + (held.reference ? ' (' + esc(held.reference) + ')' : '')
+  + ' and nothing on this villa can be deleted while it runs, whatever the '
+  + 'periods below say. The reason recorded is: ' + esc(held.reason) + '.') : ''}
 ${titled('Every kind, by table and column', table(
-  ['What it is', 'Where it is kept', 'Rows', 'Who can read it'],
+  ['What it is', 'Where it is kept', 'Rows', 'How long it is kept', 'Who can read it'],
   rows.map(r => [
     `<b>${esc(r[0])}</b><br><span class="hsub">${esc(r[5])}</span>`,
     `<span class="num" style="font-size:12px">${esc(r[1])}</span>`
       + `<br><span class="hsub">${esc(r[2])}</span>`,
     num(String(r[3])),
+    esc(kept(r[1])),
     esc(r[4]),
   ]),
   /* The column list is the longest text on the screen and it was running
      into the row count beside it. */
-  '1.2fr 2.2fr .35fr 1.1fr', { min: 860 }))}
+  '1.1fr 1.9fr .3fr .9fr 1fr', { min: 980 }))}
+${titled('Why eight years', card('', `
+<p class="hsub">Because it is the longest period that applies, and a record
+destroyed on the shortest is not there for the longest. A demand and a receipt
+are vouchers under section 128(5) of the Companies Act, which is eight
+financial years. Income tax runs six years for an ordinary reassessment and ten
+where escaped income is over fifty lakh - which on a villa at three crore is the
+ordinary case, not the exception, so an assessment that is actually open is held
+rather than counted. GST is seventy-two months from the annual return, which
+falls inside the eight.</p>
+<p class="hsub" style="margin-top:10px">Nothing is deleted by a timer today. The
+period is recorded and a hold overrides it; what acts on either is a separate
+decision that has not been taken.</p>`))}
 ${titled('What Plint does not hold', card('', `
 <p class="hsub">No PAN, no Aadhaar number, no bank statement, no salary slip and no
 copy of any paper the bank asks you for. The office ticks off that it has SEEN each
@@ -1054,6 +1126,38 @@ payment instrument of any kind. A receipt records the reference your bank produc
 a UTR, a cheque number - because that is what proves the transfer.</p>
 <p class="hsub" style="margin-top:10px">No location of you. The GPS on a photograph is
 where the camera stood on your plot, which is your villa and not your movements.</p>`))}
+${titled('Who is responsible for it', card('', `
+<p class="hsub"><b>${esc((d.project && d.project.builder_name) || 'The builder')}
+is the Data Fiduciary.</b> They decide why your data is collected and what is
+done with it, and the notice, the consent and the answer to any grievance are
+theirs.</p>
+<p class="hsub" style="margin-top:10px"><b>Plint is a Data Processor.</b> It
+holds and processes your data on
+${esc((d.project && d.project.builder_name) || 'the builder')}'s instruction and
+for no purpose of its own. It does not sell it, does not use it to sell you
+anything, and does not use it for any other project or customer.</p>
+${d.project && d.project.grievance_name ? `<p class="hsub" style="margin-top:10px">
+<b>The Grievance Officer for ${esc(d.project.name)}</b> is
+${esc(d.project.grievance_name)},
+<a href="mailto:${esc(d.project.grievance_email)}">${esc(d.project.grievance_email)}</a>${
+  d.project.grievance_phone ? ', ' + esc(d.project.grievance_phone) : ''}. That is
+who to write to about your data. Plint cannot answer for
+${esc(d.project.builder_name || 'the builder')} and will not pretend to.</p>`
+  : `<p class="hsub" style="margin-top:10px">This project has not yet recorded a
+Grievance Officer with Plint. Ask the sales office for the builder's, and ask
+them to give it to Plint so it appears here.</p>`}`))}
+${titled('Who else holds it', table(
+  ['Who', 'Why', 'What they hold', 'Where'],
+  d.subProcessors.map(sp => [
+    `<b>${esc(sp.name)}</b><br><span class="hsub">since ${esc(M.longDate(sp.since))}</span>`,
+    esc(sp.purpose), esc(sp.holds), esc(sp.region),
+  ]),
+  '.8fr 1.2fr 1.8fr .9fr',
+  { min: 860, empty: 'Nobody. Plint holds it and nothing else does.' })
+  + note('These are Plint’s sub-processors: the services it runs on. Plint '
+    + 'may not add to this list without '
+    + esc((d.project && d.project.builder_name) || 'the builder')
+    + '’s authorisation first, so what is in force is written down and dated.'))}
 ${titled('Two things this page cannot do', card('', `
 <p class="hsub"><b>It cannot show you the audit log.</b> Every certification, every
 settlement and every correction writes a row naming who did it. The policy on that
@@ -1079,6 +1183,20 @@ ${note('If you want a copy of all of this, the button at the top gives you the w
       what: 'Everything Plint holds about ' + (d.u.buyer_name || 'this buyer'),
       made_at: new Date().toISOString(),
       read_as: { user: sess.id, role: sess.role, villa: d.u.code },
+      /* Who is who, in the file as on the screen. */
+      data_fiduciary: d.project ? {
+        who: d.project.builder_name, project: d.project.name,
+        rera: d.project.builder_ref,
+        grievance_officer: d.project.grievance_name,
+        grievance_email: d.project.grievance_email,
+        grievance_phone: d.project.grievance_phone,
+      } : null,
+      data_processor: {
+        who: 'Plint', on_whose_instruction: d.project && d.project.builder_name,
+        sub_processors: d.subProcessors,
+      },
+      how_long_it_is_kept: d.retention,
+      legal_holds_in_force: d.holds,
       not_held: [
         'no PAN, Aadhaar, salary slip, bank statement or copy of any loan paper',
         'no card, account number or payment instrument',

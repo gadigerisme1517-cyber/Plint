@@ -1330,6 +1330,78 @@ const server = http.createServer(async (req, res) => {
     /* Reassigning a villa. The write goes through assign_engineer(), which is
        SECURITY DEFINER because units has no UPDATE policy - the same route
        record_sanction takes, and for the same reason. */
+    /* ----------------------------------------------------- data protection
+
+       Four writes, all office-only, all through SECURITY DEFINER functions
+       that check the transaction's own role rather than trusting this
+       handler. The builder is the Data Fiduciary; Plint is a processor; these
+       are the three things that follow which are software rather than
+       paperwork - naming the fiduciary's officer, freezing a file, and
+       recording that the fiduciary was told about a breach. */
+    if (p === '/office/grievance' && req.method === 'POST' && sess.role === 'office') {
+      const f = form(await body(req));
+      const back = m => {
+        res.writeHead(302, { location: '/office/dpdp?m=' + encodeURIComponent(m) });
+        res.end();
+      };
+      const r = await asUser(sess, c => c.query(
+        'SELECT project_grievance_set($1,$2,$3,$4,$5) ok',
+        [f.project, f.name, f.email, f.phone || '', f.notice || ''])
+        .then(x => x.rows[0].ok)).catch(e => ({ err: e.message }));
+      if (r && r.err) return back(r.err.replace(/^.*?:\s*/, ''));
+      return back(r
+        ? 'Recorded. Every buyer on that project is now shown ' + (f.name || '')
+          + ' as the person to write to about their data.'
+        : 'No such project.');
+    }
+
+    if (p === '/office/hold' && req.method === 'POST' && sess.role === 'office') {
+      const f = form(await body(req));
+      const back = m => {
+        res.writeHead(302, { location: '/office/dpdp?m=' + encodeURIComponent(m) });
+        res.end();
+      };
+      const scope = ['unit', 'project', 'everything'].includes(f.scope) ? f.scope : null;
+      if (!scope) return back('A hold covers a villa, a project or everything.');
+      const id = scope === 'unit' ? f.unit : scope === 'project' ? f.project : null;
+      if (scope !== 'everything' && !id) return back('Say which one.');
+      const r = await asUser(sess, c => c.query(
+        'SELECT hold_place($1,$2,$3,$4,$5) id',
+        [scope, id, f.kind, f.reference || '', f.reason || ''])
+        .then(x => x.rows[0].id)).catch(e => ({ err: e.message }));
+      if (r && r.err) return back(r.err.replace(/^.*?:\s*/, ''));
+      return back('Held. Nothing on that file can be deleted by anything - including '
+        + 'the owner of the database - until the hold is released.');
+    }
+
+    if (p === '/office/hold/release' && req.method === 'POST' && sess.role === 'office') {
+      const f = form(await body(req));
+      const ok = await asUser(sess, c =>
+        c.query('SELECT hold_release($1,$2) ok', [f.id, 'released from the console'])
+          .then(x => x.rows[0].ok)).catch(() => false);
+      res.writeHead(302, { location: '/office/dpdp?m=' + encodeURIComponent(
+        ok ? 'Released. Those records are back on their ordinary period.'
+           : 'That hold was not in force.') });
+      return res.end();
+    }
+
+    if (p === '/office/breach' && req.method === 'POST' && sess.role === 'office') {
+      const f = form(await body(req));
+      const back = m => {
+        res.writeHead(302, { location: '/office/dpdp?m=' + encodeURIComponent(m) });
+        res.end();
+      };
+      const when = new Date(f.detected || '');
+      if (isNaN(when.getTime())) return back('When was it detected?');
+      if (when > new Date()) return back('It cannot have been detected in the future.');
+      const r = await asUser(sess, c => c.query(
+        'SELECT breach_record($1,$2,$3,$4) id',
+        [f.project, when.toISOString(), f.what || '', f.data || ''])
+        .then(x => x.rows[0].id)).catch(e => ({ err: e.message }));
+      if (r && r.err) return back(r.err.replace(/^.*?:\s*/, ''));
+      return back('Recorded. What the builder does with it from here is theirs.');
+    }
+
     /* MONEY IN.
 
        The one route that settles a demand, and it cannot settle one without
@@ -1369,9 +1441,14 @@ const server = http.createServer(async (req, res) => {
       const r = f.unit && f.engineer && await asUser(sess, async c => {
         const ok = (await c.query('SELECT assign_engineer($1,$2) ok', [f.unit, f.engineer])).rows[0].ok;
         if (!ok) return null;
+        /* The last inner join onto `users` in the product. It is safe today -
+           an assigned engineer is staff and the office may read staff rows -
+           and it would return no row at all, so this route would report a
+           reassignment that had actually happened as a failure, the moment
+           that stopped being true. */
         return (await c.query(
-          `SELECT u.code, e.display_name FROM units u
-             JOIN users e ON e.id = u.assigned_engineer_id WHERE u.id = $1`, [f.unit])).rows[0];
+          `SELECT u.code, staff_name(u.assigned_engineer_id) display_name
+             FROM units u WHERE u.id = $1`, [f.unit])).rows[0];
       }).catch(() => null);
       /* Back to the screen the control was on. Both places that offer it -
          stages waiting on a certificate, and villas that have gone quiet -
@@ -1509,11 +1586,28 @@ const server = http.createServer(async (req, res) => {
           'SELECT project_create($1,$2,$3,$4,$5,$6) ok',
           [id, f.name, f.phase, f.location, f.builder, f.builder_ref || null]));
         if (!made.rows[0].ok) return back('A project with that id already exists.');
+        /* THE FIDUCIARY'S OWN OFFICER, CAPTURED WHERE THE BUILDER IS.
+
+           Under the DPDP Act this builder is the Data Fiduciary for the buyers
+           on this project and Plint is a processor. The person a buyer writes
+           to about their data is therefore the builder's, per project, and the
+           only moment anybody has that to hand is this one. It is optional at
+           creation because a project can be set up before the name is settled,
+           and /office/dpdp says loudly which projects are still without one. */
+        if ((f.grievance_name || '').trim() && (f.grievance_email || '').trim()) {
+          await asUser(sess, c => c.query(
+            'SELECT project_grievance_set($1,$2,$3,$4,$5) ok',
+            [id, f.grievance_name, f.grievance_email, f.grievance_phone || '',
+             f.notice_url || ''])).catch(() => null);
+        }
       } catch (e) {
         return back(e.message.replace(/^.*?:\s*/, '') || 'That project could not be created.');
       }
       res.writeHead(302, { location: OFF.projHref(id) + '?m='
-        + encodeURIComponent('Project created. Give it a payment schedule next.') });
+        + encodeURIComponent('Project created. Give it a payment schedule next.'
+          + ((f.grievance_name || '').trim() ? '' :
+            ' No grievance officer was given: their buyers will be shown nobody to '
+            + 'write to about their data until one is recorded.')) });
       return res.end();
     }
 

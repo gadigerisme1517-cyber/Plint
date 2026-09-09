@@ -91,6 +91,7 @@ module.exports = function office(ctx) {
     { item: { id: 'rera', label: 'RERA filing', icon: 'cert' } },
     { item: { id: 'escrow', label: 'Escrow drawdown', icon: 'money' } },
     { item: { id: 'possession', label: 'After possession', icon: 'home' } },
+    { item: { id: 'dpdp', label: 'Data protection', icon: 'users', count: 'holds' } },
     { grp: 'Setup' },
     { item: { id: 'setup', label: 'Projects', icon: 'hostel' } },
     { item: { id: 'schedule', label: 'Payment schedule', icon: 'cal' } },
@@ -190,7 +191,8 @@ module.exports = function office(ctx) {
         (SELECT count(*) FROM choices
           WHERE selected IS NULL AND needed_by < CURRENT_DATE)                          choices,
         (SELECT count(*) FROM snags WHERE status = 'open')                              warranty,
-        (SELECT count(*) FROM demands WHERE paid_at IS NULL)                             unpaid
+        (SELECT count(*) FROM demands WHERE paid_at IS NULL)                             unpaid,
+        (SELECT count(*) FROM legal_holds WHERE released_at IS NULL)                     holds
       `, [String(PACK_LATE_DAYS), String(QUIET_DAYS)])).rows[0];
     for (const k of Object.keys(r)) r[k] = Number(r[k]);
     return r;
@@ -209,6 +211,39 @@ module.exports = function office(ctx) {
   /* One read per destination, written beside the screen that consumes it. */
   async function forScreen(c, k) {
     switch (k) {
+
+      /* DATA PROTECTION. Who is fiduciary and who is processor, per project;
+         everyone Plint hands data to; what is frozen and why; and whether a
+         breach has ever been notified to a builder. */
+      case 'dpdp': return {
+        projects: (await c.query(
+          `SELECT p.*,
+                  (SELECT count(*)::int FROM units u WHERE u.project_id = p.id) villas,
+                  (SELECT count(*)::int FROM units u
+                    WHERE u.project_id = p.id AND u.buyer_user_id IS NOT NULL) buyers
+             FROM projects p ORDER BY p.name`)).rows,
+        subs: (await c.query(
+          `SELECT * FROM sub_processors ORDER BY until NULLS FIRST, since, name`)).rows,
+        holds: (await c.query(
+          `SELECT h.*, coalesce(staff_name(h.placed_by), 'the office') placed_name,
+                  staff_name(h.released_by) released_name,
+                  CASE h.scope WHEN 'unit' THEN
+                    (SELECT u.code FROM units u WHERE u.id = h.scope_id)
+                  WHEN 'project' THEN
+                    (SELECT p.name FROM projects p WHERE p.id = h.scope_id)
+                  ELSE 'every project' END what
+             FROM legal_holds h
+            ORDER BY h.released_at NULLS FIRST, h.placed_at DESC`)).rows,
+        breaches: (await c.query(
+          `SELECT b.*, coalesce(staff_name(b.recorded_by), 'the office') by_name,
+                  (SELECT p.name FROM projects p WHERE p.id = b.project_id) project_name
+             FROM breach_notices b ORDER BY b.detected_at DESC`)).rows,
+        retention: (await c.query(
+          `SELECT * FROM retention_policy ORDER BY category, table_name`)).rows,
+        units: (await c.query(
+          `SELECT u.id, u.code, p.name project FROM units u
+             JOIN projects p ON p.id = u.project_id ORDER BY u.code`)).rows,
+      };
 
       /* MONEY IN. Two lists: what has been billed and not settled, and every
          receipt issued. The receipt rows carry no amount - every figure on
@@ -881,11 +916,25 @@ ${pill('over', b.age + 'd')}</a>`).join('')
         + field('Phase', input('phase', { required: true, max: 40, placeholder: 'Phase 2' }))
         + field('Location', input('location', { required: true, max: 80, placeholder: 'Devanahalli, Bengaluru' }))
         + field('Builder', input('builder', { required: true, max: 80, placeholder: 'NVT Quality Lifestyle' }))
-        + field('Builder RERA or CIN', input('builder_ref', { max: 80, placeholder: 'PRM/KA/RERA/...' })),
+        + field('Builder RERA or CIN', input('builder_ref', { max: 80, placeholder: 'PRM/KA/RERA/...' }))
+        /* THE FIDUCIARY'S OFFICER, ASKED FOR WHERE THE BUILDER IS.
+           This builder is the Data Fiduciary for the buyers on this project.
+           The person those buyers write to about their data is the builder's,
+           and this is the one moment somebody has it to hand. */
+        + field('Their grievance officer', input('grievance_name', { max: 80,
+          placeholder: 'K. Sridhar' }))
+        + field('That officer’s email', input('grievance_email', { max: 120,
+          placeholder: 'grievance@builder.in' }))
+        + field('And telephone', input('grievance_phone', { max: 40,
+          placeholder: '+91 80 4123 7788' })),
         { submit: 'Create the project', icon: 'plus' })
         + `<p class="hsub" style="margin-top:10px">The id goes in every URL and in
         every villa's identifier, so it is lower case letters, digits and hyphens,
-        and it cannot be changed afterwards.</p>`))
+        and it cannot be changed afterwards. The grievance officer is the
+        <b>builder's</b>, not Plint's: they decide why their buyers' data is
+        collected, so they answer for it. It can be recorded later on
+        <a href="/office/dpdp">Data protection</a>, and until it is, their buyers
+        are shown nobody to write to.</p>`))
       + note('Nothing on this screen deletes. A project, a villa or a buyer with '
         + 'stages, evidence and demands behind it is not something a form should be '
         + 'able to remove, and this product does not delete money.');
@@ -1098,6 +1147,162 @@ ${pill('over', b.age + 'd')}</a>`).join('')
           out: { label: 'See what is with a lender', href: '/office/wait' },
           noneMatch: 'No pack is waiting on that lender at that age.',
         });
+  };
+
+  /* ---------------------------------------------------------------- DPDP
+
+     WHO IS WHO, AND THE THREE THINGS A PROCESSOR HAS TO BE ABLE TO DO.
+
+     The builder decides why a buyer's data is collected: the builder is the
+     Data Fiduciary and Plint is a processor acting on their instruction. Three
+     obligations follow that are not paperwork, they are software:
+
+       * the Grievance Officer is the BUILDER'S, per project. A buyer on one
+         project must never be given another builder's contact, so it is a
+         column on the project and it is captured at onboarding.
+       * a processor may not add a sub-processor without the fiduciary's prior
+         authorisation. An authorisation is worthless unless what was
+         authorised is written down and dated, so the list is a table.
+       * on a breach the processor tells the fiduciary at once, so the
+         fiduciary can meet the Board's timeline. The gap between detecting it
+         and saying so is the thing anybody will ask about afterwards, so both
+         times are recorded and neither is derived from the other.
+
+     WHAT IS NOT HERE, deliberately: what may be erased and when, what a buyer
+     may withdraw mid-contract, and the breach process itself. Those are the
+     builder's to decide. */
+  SCREENS.dpdp = (sess, d) => {
+    const open = d.rows.holds.filter(h => !h.released_at);
+    const missing = d.rows.projects.filter(p => !p.grievance_name);
+    const KINDS = [['assessment', 'Assessment'], ['appeal', 'Appeal'],
+      ['audit', 'Audit'], ['investigation', 'Investigation'], ['dispute', 'Dispute']];
+
+    return head('Data protection',
+      'Under the DPDP Act the builder is the Data Fiduciary for their buyers and '
+      + 'Plint is a processor acting on their instruction. What that makes Plint '
+      + 'responsible for is on this screen.')
+      + kpis([
+        { l: 'Projects', icon: 'hostel', v: String(d.rows.projects.length),
+          n: 'each with its own fiduciary' },
+        { l: 'Without a grievance officer', icon: 'risk', v: String(missing.length),
+          n: missing.length ? 'buyers are shown nobody to write to' : 'every project has one',
+          tone: missing.length ? 'hot' : null },
+        { l: 'Legal holds in force', icon: 'cert', v: String(open.length),
+          n: open.length ? 'nothing under them can be deleted' : 'nothing is frozen',
+          tone: open.length ? 'hot' : null },
+        { l: 'Sub-processors', icon: 'users',
+          v: String(d.rows.subs.filter(x => !x.until).length), n: 'named to every buyer' },
+      ])
+      + note('Plint holds no buyer data for a purpose of its own. It does not sell it, '
+        + 'does not use it to market anything, and does not use one builder’s data '
+        + 'for another’s project. Every screen a buyer sees says which company is '
+        + 'the fiduciary and gives that company’s officer, not Plint’s.')
+      + titled('The fiduciary for each project', table(
+        ['Project', 'Builder', 'Grievance officer', 'Buyers'],
+        d.rows.projects.map(p => [
+          `<b>${esc(p.name)}</b><br><span class="hsub">${esc(p.phase || '')}</span>`,
+          esc(p.builder_name || 'not recorded')
+            + `<br><span class="hsub">${esc(p.builder_ref || 'no RERA reference')}</span>`,
+          p.grievance_name
+            ? `<b>${esc(p.grievance_name)}</b><br><span class="hsub">`
+              + `${esc(p.grievance_email)}${p.grievance_phone ? ' &middot; ' + esc(p.grievance_phone) : ''}</span>`
+            : pill('over', 'not recorded'),
+          num(p.buyers + ' of ' + p.villas),
+        ]),
+        '1.2fr 1.4fr 1.6fr .6fr',
+        { min: 820, empty: 'No project on this console yet.' }))
+      + titled('Record a project’s grievance officer', card('', form('/office/grievance',
+        field('Project', select('project',
+          d.rows.projects.map(p => [p.id, p.name + (p.grievance_name ? ' (recorded)' : ' - none yet')]),
+          { required: true }))
+        + field('Their name', input('name', { required: true, max: 80, placeholder: 'K. Sridhar' }))
+        + field('Their email', input('email', { required: true, max: 120,
+          placeholder: 'grievance@builder.in' }))
+        + field('Their telephone, optional', input('phone', { max: 40, placeholder: '+91 80 4123 7788' }))
+        + field('Their notice, optional', input('notice', { max: 200,
+          placeholder: 'https://builder.in/privacy' })),
+        { submit: 'Record it', icon: 'users' }))
+        + note('This is the builder’s own officer. Plint answers no grievance about a '
+          + 'buyer’s data on a builder’s behalf, because it did not decide why that '
+          + 'data was collected.'))
+      + titled('Everyone Plint hands data to', table(
+        ['Who', 'Why', 'What they hold', 'Where', 'Since'],
+        d.rows.subs.map(x => [
+          `<b>${esc(x.name)}</b>` + (x.until ? '<br>' + pill('grey', 'retired') : ''),
+          esc(x.purpose), esc(x.holds), esc(x.region), num(M.longDate(x.since)),
+        ]),
+        '.7fr 1.1fr 1.6fr .8fr .6fr',
+        { min: 900, empty: 'Nobody.' }))
+      + note('The contract requires the builder’s prior authorisation before this list '
+        + 'changes. It is written down here and dated so that what was authorised can be '
+        + 'shown. Adding a row is a migration, not a form: it is not a thing that should '
+        + 'be done from a screen between two other tasks.')
+      + titled('Legal holds', table(
+        ['What is held', 'Why', 'Placed', 'State', ''],
+        d.rows.holds.map(h => [
+          `<b>${esc(h.what || h.scope_id || 'everything')}</b><br>`
+            + `<span class="hsub">${esc(h.scope)}</span>`,
+          `<b>${esc(h.kind)}</b><br><span class="hsub">${esc(h.reason)}`
+            + (h.reference ? ' &middot; ' + esc(h.reference) : '') + '</span>',
+          num(M.longDate(h.placed_at)) + `<br><span class="hsub">${esc(h.placed_name)}</span>`,
+          h.released_at ? pill('grey', 'released ' + M.longDate(h.released_at))
+            : pill('over', 'in force'),
+          h.released_at ? '' : act('/office/hold/release', { id: h.id }, 'Release', { plain: true }),
+        ]),
+        '1fr 1.8fr .9fr .8fr auto',
+        { min: 880, empty: 'Nothing is frozen. Every record is on its ordinary period.' }))
+      + titled('Freeze a file', card('', form('/office/hold',
+        field('What', select('scope', [['unit', 'One villa'], ['project', 'A whole project'],
+          ['everything', 'Everything on this console']], { required: true }))
+        + field('Which villa', select('unit',
+          [['', '—']].concat(d.rows.units.map(u => [u.id, u.code + ' · ' + u.project]))))
+        + field('Or which project', select('project',
+          [['', '—']].concat(d.rows.projects.map(p => [p.id, p.name]))))
+        + field('Why', select('kind', KINDS, { required: true }))
+        + field('Reference, optional', input('reference', { max: 80,
+          placeholder: 'ITBA/AST/2026/4417' }))
+        + field('In words', input('reason', { required: true, max: 200,
+          placeholder: 'Reassessment notice under s.148' })),
+        { submit: 'Place the hold', icon: 'cert' }))
+        + note('A hold has no expiry. Nothing it covers can be deleted by anything, '
+          + 'including the owner of the database, until somebody records that the thing '
+          + 'it was placed for has ended.'))
+      + titled('Breaches notified to a builder', table(
+        ['Detected', 'Told', 'Whom', 'What happened'],
+        d.rows.breaches.map(b => [
+          num(M.longDate(b.detected_at)),
+          num(M.longDate(b.told_at)),
+          esc(b.told_whom),
+          `<b>${esc(b.what_happened)}</b><br><span class="hsub">${esc(b.what_data)}</span>`,
+        ]),
+        '.7fr .7fr 1.2fr 2fr',
+        { min: 820, empty: 'None. Nothing has ever been notified from this console.' }))
+      + titled('Record that a builder was told', card('', form('/office/breach',
+        field('Project', select('project',
+          d.rows.projects.map(p => [p.id, p.name]), { required: true }))
+        + field('Detected at', input('detected', { type: 'datetime-local', required: true }))
+        + field('What happened', input('what', { required: true, max: 200,
+          placeholder: 'Evidence store readable without a session for 40 minutes' }))
+        + field('What data it touched', input('data', { required: true, max: 200,
+          placeholder: 'Photographs on 12 villas, no names or figures' })),
+        { submit: 'Record the notification', icon: 'bell' }))
+        + note('Plint’s duty as processor is to tell the fiduciary at once so THEY can '
+          + 'meet the Board’s timeline. What the builder then does - who they notify, '
+          + 'in what form and by when - is theirs, and this console does not model it. '
+          + 'What is recorded here is the fact that they were told, and when.'))
+      + titled('How long each kind is kept', table(
+        ['Table', 'Kept', 'Kind', 'Why that number'],
+        d.rows.retention.map(r => [
+          `<span class="num" style="font-size:12px">${esc(r.table_name)}</span>`,
+          r.keep_years == null ? pill('grey', 'while live')
+            : pill('accent', r.keep_years + (r.keep_years === 1 ? ' year' : ' years')),
+          esc(r.category),
+          esc(r.basis),
+        ]),
+        '.9fr .6fr .8fr 2.4fr',
+        { min: 880 }))
+      + note('Nothing is deleted by a timer. The periods are recorded, a hold overrides '
+        + 'them, and what acts on either has not been decided.');
   };
 
   /* ------------------------------------------------------------- receipts
