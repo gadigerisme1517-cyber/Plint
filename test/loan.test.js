@@ -73,14 +73,14 @@ test('the buyer sees every paper his bank will ask for, from the database', asyn
   for (const name of new Set(papers.map(p => p.full_name))) {
     assert.ok(html.includes(esc(name)), 'the applicant is not named: ' + name);
   }
-  /* The headline figure and the word for it, from the shared summary card.
-     It was a `.kpin` each screen drew for itself until the dashboards were
-     built from one set of pieces. */
-  const cap = /<p class="cap">([^<]*)<\/p>\s*<p class="fig[^"]*">([^<]*)</.exec(html);
+  /* The headline figure and the word for it, from the shared KPI strip. It
+     was a `.kpin` each screen drew for itself, then a `.summary` card, and it
+     is the reference's own `.kpi` now that all three roles are one system. */
+  const cap = /<\/svg> ([^<]*)<\/div><b class="num[^"]*">([^<]*)</.exec(html);
   assert.ok(cap, 'the screen has no headline figure at all');
   assert.strictEqual(cap[2].trim(), String(papers.length),
     'the count does not match the ' + papers.length + ' papers on file');
-  assert.match(cap[1], /paper/, 'the count is not counting papers');
+  assert.match(cap[1], /paper/i, 'the count is not counting papers');
 
   /* And the state of each one, which is the part a constant could never show:
      the office marks a paper seen and this screen says so. */
@@ -93,11 +93,16 @@ test('the list is read-only: nothing to upload, nothing to tick', async () => {
   const cookie = await signIn('arjun@example.in');
   const html = await (await get('/documents', cookie)).text();
 
-  // This is the whole point of the v21 model. A file input or a checkbox here
-  // would mean the builder is collecting papers, which it does not do.
-  assert.doesNotMatch(html, /<input[^>]*type="file"/i, 'no upload');
-  assert.doesNotMatch(html, /<input[^>]*type="checkbox"/i, 'nothing to tick');
-  assert.doesNotMatch(html, /<form/i, 'nothing to submit at all');
+  /* This is the whole point of the loan model. A file input or a checkbox here
+     would mean the builder is collecting papers, which it does not do.
+
+     Scoped to the screen rather than the document: every page in this system
+     carries the shell, and the shell has one form in it - the sign-out button
+     in the sidebar, which is a POST because signing out changes something. */
+  const screen = (/<div id="screen">([\s\S]*)<\/main>/.exec(html) || [, html])[1];
+  assert.doesNotMatch(screen, /<input[^>]*type="file"/i, 'no upload');
+  assert.doesNotMatch(screen, /<input[^>]*type="checkbox"/i, 'nothing to tick');
+  assert.doesNotMatch(screen, /<form/i, 'nothing to submit at all');
   assert.match(html, /sends nothing to any bank/, 'and it says so');
 });
 

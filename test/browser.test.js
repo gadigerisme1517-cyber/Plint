@@ -62,9 +62,12 @@ const SCREENS = {
            '/office/escrow', '/office/possession', '/office/schedule', '/office/lenders',
            '/office/logins', '/office/settings', '/office/help'],
   engineer: ['/engineer', '/engineer/villas', '/engineer/visits', '/engineer/log',
-             '/engineer/certs', '/engineer/snags', '/engineer/log/material'],
+             '/engineer/certs', '/engineer/snags', '/engineer/log/material',
+             '/engineer/villa/A-01', '/engineer/villa/A-01?mode=flag',
+             '/engineer/villa/A-01?mode=snag'],
   buyer: ['/journey', '/villa/B-14', '/visit', '/money', '/more', '/bank', '/loan',
-          '/agreement', '/choices', '/questions', '/documents'],
+          '/agreement', '/choices', '/questions', '/documents',
+          '/stage/book', '/questions/q-b14-1'],
 };
 
 let browser, contexts = {};
@@ -273,16 +276,104 @@ test('a toast appears when a write says what it did', async () => {
   await page.close();
 });
 
+test('the drawer opens for the buyer and the engineer too', async () => {
+  /* All three roles are one shell from Pass 4, so the drawer is not the office's
+     any more. It was a bottom tab bar for these two, and the bar is gone. */
+  for (const role of ['buyer', 'engineer']) {
+    const page = await open(role, role === 'buyer' ? '/journey' : '/engineer',
+      { width: 375, height: 812 });
+    await page.check(role + ' at 375');
+    await page.click('#ham');
+    stats.interactions++;
+    await page.waitForFunction(
+      () => Math.round(document.querySelector('.side').getBoundingClientRect().left) === 0,
+      null, { timeout: 4000 });
+    await page.click('#scrim2', { position: { x: 330, y: 500 } });
+    stats.interactions++;
+    await page.waitForFunction(
+      () => Math.round(document.querySelector('.side').getBoundingClientRect().left) < 0,
+      null, { timeout: 4000 });
+    await page.check(role + ' drawer at 375');
+    await page.close();
+  }
+});
+
+test('the photographs are images the browser actually loaded', async () => {
+  /* Markup can carry an <img> whose src 404s and the page still passes a text
+     check. This asks the browser what it decoded. */
+  for (const [role, path] of [['buyer', '/stage/book'], ['engineer', '/engineer/villa/A-01']]) {
+    const page = await open(role, path);
+    await page.check(role + ' ' + path);
+    const shots = await page.$$eval('.phg .ph img', els => els.map(e => ({
+      w: e.naturalWidth, h: e.naturalHeight, src: e.getAttribute('src'),
+    })));
+    assert.ok(shots.length, path + ' shows no photographs at all');
+    for (const s of shots) {
+      assert.ok(s.w > 0 && s.h > 0,
+        path + ' has a photograph the browser could not decode: ' + s.src);
+    }
+    /* And tapping one opens it larger. */
+    await page.click('.phg .ph');
+    stats.interactions++;
+    await page.waitForFunction(() => /\/evidence\/[0-9a-f]{64}$/.test(location.pathname),
+      null, { timeout: 4000 });
+    stats.pages++;
+    await page.close();
+  }
+});
+
+test('the journey timeline is drawn, and a finished stage is filled green', async () => {
+  const page = await open('buyer', '/journey');
+  await page.check('buyer /journey');
+  const dots = await page.$$eval('.tls', els => els.map(e => ({
+    state: e.className,
+    fill: getComputedStyle(e.querySelector('.tld')).backgroundColor,
+    op: getComputedStyle(e).opacity,
+  })));
+  assert.ok(dots.length >= 10, 'the timeline drew ' + dots.length + ' steps');
+  const done = dots.find(d => d.state.split(' ').includes('done'));
+  const wait = dots.find(d => d.state.split(' ').includes('wait'));
+  assert.ok(done, 'no step reads as finished');
+  assert.strictEqual(done.fill, 'rgb(18, 133, 91)',
+    'a finished step is not filled with the green token: ' + done.fill);
+  assert.ok(Number(wait.op) < 1, 'a step not yet reached is not quieter');
+
+  /* The line itself fills as the work is done. */
+  const fill = await page.$eval('.tlfill', e => e.getBoundingClientRect().height);
+  assert.ok(fill > 0, 'the line does not fill at all');
+  await page.close();
+});
+
+test('a styled file input still says which file was chosen', async () => {
+  /* The control is hidden behind its own label so it can be a button in this
+     system. The name of the file is the one thing hiding it loses, and script
+     writes it back. */
+  const page = await open('engineer', '/engineer/villa/A-01');
+  await page.check('engineer villa before choosing a file');
+  const id = await page.$eval('.ffi', e => e.id);
+  await page.setInputFiles('#' + id, {
+    name: 'blockwork-north.jpg', mimeType: 'image/jpeg', buffer: Buffer.from([0xff, 0xd8, 0xff]),
+  });
+  stats.interactions++;
+  await page.waitForFunction(
+    id => document.querySelector('[data-for="' + id + '"]').textContent.includes('blockwork'),
+    id, { timeout: 4000 });
+  await page.check('engineer villa after choosing a file');
+  await page.close();
+});
+
 test('the browser layer covered what it claims to have covered', async () => {
   /* A coverage figure nobody checks is a figure that quietly falls. */
   const planned = Object.values(SCREENS).reduce((n, l) => n + l.length, 0) + 2;
   assert.ok(stats.pages >= planned,
     'loaded ' + stats.pages + ' pages, planned at least ' + planned);
-  /* Nine, and they are named: three on the office list (chip, search, Clear),
-     three on the engineer's (chip, search, Clear), two on the drawer (open,
-     dismiss) and one toast. Raised only when more are actually driven. */
-  assert.ok(stats.interactions >= 9,
-    'drove ' + stats.interactions + ' interactions, expected at least 9');
+  /* Eighteen, and they are named: three on the office list (chip, search,
+     Clear), three on the engineer's, two on the office drawer (open, dismiss),
+     four on the buyer's and the engineer's drawers, two photographs opened
+     full size, one file chosen and one toast. Raised only when more are
+     actually driven. */
+  assert.ok(stats.interactions >= 16,
+    'drove ' + stats.interactions + ' interactions, expected at least 16');
   console.log('        browser layer: ' + stats.pages + ' page loads, '
     + stats.interactions + ' scripted interactions');
 });

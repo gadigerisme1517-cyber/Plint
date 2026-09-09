@@ -33,8 +33,9 @@ const IMMUTABLE = 'public, max-age=604800';
    stylesheet is a broken screen. */
 const REVALIDATE = 'no-cache';
 const STATIC = {
-  '/plint.css':            ['plint.css', 'text/css; charset=utf-8', REVALIDATE],
-  '/app.css':              ['app.css', 'text/css; charset=utf-8', REVALIDATE],
+  /* THE ONE STYLESHEET. plint.css and app.css were v21's - a phone mock
+     widened into an application - and they are retired: no page links them and
+     public/ no longer carries them. One system, and it is the office's. */
   /* `no-cache` for the same reason sw.js has it: this file configures the
      install, including the colour the operating system paints the window
      chrome with, and an hour of held-back revalidation is an hour an installed
@@ -48,8 +49,8 @@ const STATIC = {
   '/icons/icon-maskable-512.png': ['icons/icon-maskable-512.png', 'image/png', IMMUTABLE],
   '/icons/apple-touch-icon.png':  ['icons/apple-touch-icon.png', 'image/png', IMMUTABLE],
   '/icons/favicon.svg':           ['icons/favicon.svg', 'image/svg+xml; charset=utf-8', IMMUTABLE],
-  /* The head office console's own system. It is not a layer on plint.css and
-     it never loads beside it - see the top of the file. */
+  /* The product's system, from inbell_office_dashboard.html. Every screen of
+     every role is drawn in it. */
   '/office.css':                  ['office.css', 'text/css; charset=utf-8', 'no-cache'],
 };
 
@@ -105,8 +106,7 @@ const BUILD = crypto.createHash('sha256')
    rendered the new markup with the old stylesheet.
    A content-addressed URL is the only fix that reaches everyone, because the
    page asks for a different file rather than asking about the same one. */
-const CSS = { plint: '/plint.' + BUILD + '.css', app: '/app.' + BUILD + '.css',
-              office: '/office.' + BUILD + '.css' };
+const CSS = { office: '/office.' + BUILD + '.css' };
 for (const [name, url] of Object.entries(CSS)) {
   ASSETS[url] = { ...ASSETS['/' + name + '.css'], cache: IMMUTABLE };
 }
@@ -177,150 +177,27 @@ const LOGO = `<svg width="22" height="22" viewBox="0 0 32 32" fill="none" aria-l
    `black-translucent` for the same reason from the other end: translucent
    draws the page under the status bar and paints its text white, which on a
    white app bar is white on white. */
-const HEAD = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Plint</title>
-<meta name="theme-color" content="#FFFFFF">
-<link rel="manifest" href="/manifest.webmanifest">
-<link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Plint">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="${CSS.plint}">
-<link rel="stylesheet" href="${CSS.app}"></head><body>`;
+/* ============================================================================
+   THE SHELL, ONCE, FOR ALL THREE ROLES.
 
-/* Where each role can actually go. One list, rendered three ways: the sidebar
-   on a desktop office screen, links in the app bar for the buyer, and the
-   bottom tab bar on a phone. Built from the role, because an engineer offered
-   the office's destinations gets two links that 404 for him. */
-function destinations(sess) {
-  if (!sess) return [];
-  /* v21's five for the buyer: Journey, Villa, Visit, Money, More. Bank pick,
-     Documents, Agreement, Loan, Choices and Questions all sit behind More,
-     because five is what the bar holds and eleven is not a bar. */
-  if (sess.role === 'buyer') {
-    return [['/journey', 'Journey', 'path'],
-            ['/villa/' + sess.unit, 'Villa', 'home'],
-            ['/visit', 'Visit', 'cal'],
-            ['/money', 'Money', 'money'],
-            ['/more', 'More', 'more']];
-  }
-  /* The head office's twenty-two, flat. The groups live in the office module
-     beside the screens they head; this list is only what the search route and
-     the route table need. The office console draws its own sidebar from the
-     same structure and does not use the bar or the tab bar at all. */
-  if (sess.role === 'office') {
-    return OFF.NAV.filter(e => e.item).map(e =>
-      [e.item.id === 'dashboard' ? '/office' : '/office/' + e.item.id, e.item.label, 'doc']);
-  }
-  /* v21's five-slot bottom bar, and five fits: Me, Villas, Visits, Log, Certs.
-     A menu button is for the head office, whose fifteen destinations cannot be
-     a bar at any width. */
-  return [['/engineer', 'Me', 'home'], ['/engineer/villas', 'Villas', 'home'],
-          ['/engineer/visits', 'Visits', 'doc'], ['/engineer/log', 'Log', 'doc'],
-          ['/engineer/certs', 'Certs', 'tick']];
-}
+   There were two: the head office ran inbell_office_dashboard.html's system -
+   Manrope over Inter, twenty-one tokens, a sidebar and a drawer - and the buyer
+   and the engineer ran v21's, a phone mock widened into an application with
+   1,987 lines of stylesheet holding it together. The audit measured what that
+   cost: no card below 721px, one font-weight declaration at 700 in the whole of
+   both sheets, body text at `--ink-2` and every label at 3.15:1 on white.
 
-/* v21's bottom bar is `.nav five`: a shape that holds five and no more. The
-   buyer and the engineer have exactly five. Above it a role gets a menu button
-   instead, which is the head office and its fifteen. */
-const BAR_FITS = 5;
+   One system now, and it is the office's. plint.css and app.css are retired:
+   nothing links them and public/ no longer carries them. plint-v15.html and
+   plint-v21.html stay in the repository as the record of what a screen was
+   meant to CONTAIN, which is what the audit read them for.
 
-const TABICON = {
-  home:  'M4 11 12 4l8 7v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1Z',
-  doc:   'M6 3h8l4 4v14H6Zm8 0v4h4',
-  money: 'M7 5h10M7 9h10M15 5c0 4-3 5-6 5l7 9',
-  tick:  'M4.5 12.5 9 17l10.5-11',
-  // The buyer's three: a route through the stages, a date, and everything else.
-  path:  'M4 19h5a3 3 0 0 0 3-3V8a3 3 0 0 1 3-3h5m0 0-3-3m3 3-3 3',
-  cal:   'M4 7h16v13H4zM4 11h16M8 4v4M16 4v4',
-  more:  'M6 12h.01M12 12h.01M18 12h.01',
-};
-const tabIcon = n => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
- stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${TABICON[n]}"/></svg>`;
-
-/* The application's own top bar. It replaces v21's `.bar`, which was the
-   prototype's chrome around a phone mock - a logo, a caption and a role
-   switcher sitting outside the product. This one is inside it: who you are
-   signed in as, and the way out. */
-function appbar(sess, current, inlineNav, screen) {
-  const dests = destinations(sess);
-  return `<header class="appbar">
-<a class="ab-brand" href="/"><span class="ab-mark">${LOGO}</span><span class="ab-name">Plint</span></a>
-<span class="ab-ctx">NVT Eterna &middot; Phase 1</span>
-${screen ? `<span class="ab-screen">${esc(screen)}</span>` : ''}
-${inlineNav && dests.length > 1 ? `<nav class="ab-nav">${dests.map(([href, label]) =>
-  `<a href="${href}"${current === href ? ' aria-current="page"' : ''}>${esc(label)}</a>`).join('')}</nav>` : ''}
-${sess && sess.role !== 'buyer' ? `<form class="ab-find" method="get" action="/find" role="search">
-<input class="fi" type="search" name="q" placeholder="Find a villa, a buyer, a stage"
- aria-label="Find a villa, a buyer or a stage" autocomplete="off"></form>` : ''}
-<div class="ab-g"></div>
-${dests.length > BAR_FITS ? `<a class="ab-menu" href="#menu"
- aria-label="Open the menu" style="text-decoration:none">Menu</a>` : ''}
-${sess ? `<span class="ab-who">${esc(sess.name)}</span>
-<a class="ab-out" href="/logout">Sign out</a>` : ''}
-</header>`;
-}
-
-/* The bottom tab bar, phones only, and only when there is more than one place
-   to go. See DECISIONS.md for why every dashboard here gets tabs rather than a
-   menu button: none of them has more than two sections. */
-function tabbar(sess, current) {
-  const dests = destinations(sess);
-  /* One destination is not navigation, and above five it is not a bar. v21's
-     `.nav five` is a shape that holds five; the head office's fifteen become a
-     menu button in the app bar instead, and squeezing fifteen tabs into 375px
-     would give each of them 25 pixels. */
-  if (dests.length < 2 || dests.length > BAR_FITS) return '';
-  return `<nav class="tabbar" style="--tabs:${dests.length}">
-${dests.map(([href, label, icon]) => `<a href="${href}"${current === href ? ' aria-current="page"' : ''}>
-${tabIcon(icon)}<span>${esc(label)}</span></a>`).join('')}
-</nav>`;
-}
-
-/* The first path segment of everything the buyer's shell serves. A set rather
-   than a chain of `p === ...` so that one lookup decides whether to spend a
-   round trip on `BUY.load`, and so that adding a screen without adding it here
-   is a 404 rather than a page that quietly renders with no navigation. */
-const BUYER_GET = new Set([
-  'journey', 'villa', 'visit', 'money', 'more',
-  'bank', 'loan', 'agreement', 'choices', 'questions', 'stage', 'documents',
-]);
-
-function page(title, sess, body, wide, current) {
-  return `${HEAD}${appbar(sess, current, true, title)}<div class="wrap">
-<div class="stagearea"><div class="phone${wide ? ' wide solo' : ''}">
-<div class="scroll anim">${body}</div></div></div></div>
-${tabbar(sess, current)}${FILTER_JS}${SW}</body></html>`;
-}
-
-/** Office and engineer: a sidebar on a desktop, the same destinations as tabs on a phone. */
-/**
- * The shell all three roles share.
- *
- * `sidebar` is an optional pre-rendered list of destinations. Two roles have a
- * flat five and get the default; the head office has fifteen under nine
- * headings, and a flat list of fifteen is not navigation - the headings are
- * what make it one. So that role hands in its own, drawn from the same
- * structure its phone menu is drawn from.
- */
-/* ------------------------------------------------- the head office console
-
-   Its own document, not a variant of the one above. The office runs a
-   different visual system - Manrope and Inter on #0C0D10 with a #2F6BFF
-   accent - and it loads office.css alone: plint.css is v21's, it draws the
-   buyer's and the engineer's screens, and a page holding both stylesheets
-   would have two of every value.
-
-   The font link carries the same Google Fonts URL the reference imports,
-   moved into the head so the fetch starts with the document rather than after
-   the stylesheet has parsed. */
-const OFFICE_HEAD = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+   `apple-mobile-web-app-status-bar-style` is `default` rather than
+   `black-translucent`: translucent draws the page under the status bar and
+   paints its text white, which on a white app bar is white on white. */
+const HEAD = title => `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Plint &mdash; Head office</title>
+<title>${esc(title ? 'Plint — ' + title : 'Plint')}</title>
 <meta name="theme-color" content="#FFFFFF">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">
@@ -339,14 +216,99 @@ const OLOGO = (px, ring, dot) =>
   `<div class="ring"${ring ? ` style="border-width:${ring}px"` : ''}></div>` +
   `<div class="dot"${dot ? ` style="width:${dot}px;height:${dot}px"` : ''}></div></div>`;
 
-/* Opening the sidebar on a phone, and showing the toast that says what the
-   last write did. Both are the reference's own classes and its own two class
-   names, `.side.open` and `.toast.on`.
+const KIT = require('./screens/kit')({ esc });
 
-   The toast arrives in the query string because a write here is a POST that
-   redirects - which is what keeps the back button honest and makes every
-   action work with no JavaScript at all. The prototype could call `toast()`
-   from an onclick because nothing it did was real. */
+/* ---------------------------------------------------------------------------
+   WHERE EACH ROLE CAN GO.
+
+   One structure per role, in the reference's own shape: a flat list of `{grp}`
+   headings and `{item}` destinations. The sidebar draws it, `/find` and the
+   route tables read the flat form of it, and a role is never offered a
+   destination that would 404 for it.
+
+   THE BUYER'S LIST IS LONGER THAN IT WAS, AND THAT IS THE POINT. It used to be
+   five, because v21's bottom bar was `.nav five` - a shape that holds five -
+   so Bank, Loan, Papers, Agreement, Choices and Questions were all folded
+   behind a destination called More. The audit's second complaint was that the
+   bank and the loan could not be found, and that fold is where they went. A
+   sidebar has room for twelve under three headings, so they are named.
+   "Everything else" is still there and still lists all six, because a reader
+   who learned that route keeps it.
+   ------------------------------------------------------------------------ */
+const NAV = {
+  buyer: [
+    { item: { href: '/journey', label: 'Your journey', icon: 'path' } },
+    { item: { href: '/villa', label: 'Your villa', icon: 'hostel' } },
+    { item: { href: '/visit', label: 'Visit the site', icon: 'cal' } },
+    { grp: 'Money' },
+    { item: { href: '/money', label: 'Payments', icon: 'money' } },
+    { item: { href: '/bank', label: 'Your bank', icon: 'growth' } },
+    { item: { href: '/loan', label: 'Your loan', icon: 'report' } },
+    { grp: 'Your file' },
+    { item: { href: '/agreement', label: 'Agreement', icon: 'doc' } },
+    { item: { href: '/documents', label: 'Papers for the bank', icon: 'exam' } },
+    { item: { href: '/choices', label: 'Interior choices', icon: 'settings' } },
+    { item: { href: '/questions', label: 'Questions', icon: 'comms' } },
+    { item: { href: '/more', label: 'Everything else', icon: 'bolt' } },
+  ],
+  engineer: [
+    { item: { href: '/engineer', label: 'On you today', icon: 'home' } },
+    { grp: 'The site' },
+    { item: { href: '/engineer/villas', label: 'Villas', icon: 'hostel' } },
+    { item: { href: '/engineer/visits', label: 'Visits', icon: 'cal' } },
+    { item: { href: '/engineer/log', label: 'Site log', icon: 'doc' } },
+    { item: { href: '/engineer/snags', label: 'Snags', icon: 'risk' } },
+    { grp: 'Sign-off' },
+    { item: { href: '/engineer/certs', label: 'Certificates', icon: 'cert' } },
+  ],
+};
+
+/* The buyer's villa lives at their own unit's code, so the one templated
+   destination is filled in per session. */
+const navFor = sess => (NAV[sess.role] || []).map(e =>
+  (e.item && e.item.href === '/villa'
+    ? { item: { ...e.item, href: '/villa/' + encodeURIComponent(sess.unit || '') } }
+    : e));
+
+/** The flat list, for the route tables and for the tests that walk them. */
+function destinations(sess) {
+  if (!sess) return [];
+  if (sess.role === 'office') {
+    return OFF.NAV.filter(e => e.item).map(e =>
+      [e.item.id === 'dashboard' ? '/office' : '/office/' + e.item.id, e.item.label, 'doc']);
+  }
+  return navFor(sess).filter(e => e.item).map(e => [e.item.href, e.item.label, e.item.icon]);
+}
+
+/**
+ * The sidebar, in the reference's own `.grp` / `.item` shape.
+ * `current` is matched on the destination's own href, longest first, so
+ * /engineer/villas does not also light up /engineer.
+ */
+function navList(sess, current) {
+  const entries = navFor(sess);
+  const hrefs = entries.filter(e => e.item).map(e => e.item.href);
+  const on = hrefs
+    .filter(h => current === h || (h !== '/engineer' && current.startsWith(h + '/')))
+    .sort((a, b) => b.length - a.length)[0];
+  return entries.map(e => {
+    if (e.grp) return `<div class="grp">${esc(e.grp)}</div>`;
+    const it = e.item;
+    return `<a class="item ${it.href === on ? 'on' : ''}" href="${it.href}"`
+      + `${it.href === on ? ' aria-current="page"' : ''}>${KIT.ic(it.icon)}`
+      + `<span class="lbl">${esc(it.label)}</span></a>`;
+  }).join('');
+}
+
+/* The first path segment of everything the buyer's shell serves. A set rather
+   than a chain of `p === ...` so that one lookup decides whether to spend a
+   round trip on `BUY.load`, and so that adding a screen without adding it here
+   is a 404 rather than a page that quietly renders with no navigation. */
+const BUYER_GET = new Set([
+  'journey', 'villa', 'visit', 'money', 'more',
+  'bank', 'loan', 'agreement', 'choices', 'questions', 'stage', 'documents',
+]);
+
 /* THE FILTER RUNTIME, SHARED BY EVERY SHELL.
 
    It began inside the head office's shell, which is why the engineer's lists -
@@ -444,99 +406,168 @@ window.__plintFilters = function () {
 if (!document.getElementById('side')) window.__plintFilters();
 </script>`;
 
-const OFFICE_JS = `<script>
+/* Opening the sidebar on a phone, the toast that says what the last write did,
+   and the one thing a styled file input cannot do for itself - say which file
+   was chosen. All three are the reference's own classes.
+
+   The toast arrives in the query string because a write here is a POST that
+   redirects, which is what keeps the back button honest and makes every action
+   work with no JavaScript at all. */
+const SHELL_JS = `<script>
 (function () {
-  var side = document.getElementById('side'), scrim = document.getElementById('scrim2');
-  function open(){ side.classList.add('open'); scrim.classList.add('on'); }
-  function shut(){ side.classList.remove('open'); scrim.classList.remove('on'); }
-  document.getElementById('ham').addEventListener('click', open);
-  scrim.addEventListener('click', shut);
+  var side = document.getElementById('side'), scrim = document.getElementById('scrim2'),
+      ham = document.getElementById('ham');
+  if (side && scrim && ham) {
+    ham.addEventListener('click', function () {
+      side.classList.add('open'); scrim.classList.add('on');
+    });
+    scrim.addEventListener('click', function () {
+      side.classList.remove('open'); scrim.classList.remove('on');
+    });
+  }
   var t = document.getElementById('toast');
   if (t && t.textContent.trim()) {
     requestAnimationFrame(function(){ t.classList.add('on'); });
     setTimeout(function(){ t.classList.remove('on'); }, 4200);
   }
+  /* A file input is hidden behind its own label so it can be a button in this
+     system rather than the browser's "Choose File | No fil...hosen". The name
+     of the chosen file is the one thing that hiding it loses, so it is written
+     back. With no script the input is still reachable and still submits. */
+  document.addEventListener('change', function (e) {
+    var i = e.target;
+    if (!i || i.tagName !== 'INPUT' || i.type !== 'file') return;
+    var n = document.querySelector('[data-for="' + i.id + '"]');
+    if (n) n.textContent = i.files && i.files.length ? i.files[0].name : 'No file chosen';
+  });
   window.__plintFilters();
 })();
 </script>`;
 
+/** What the sidebar's footer says about who is signed in. */
+const WHOIS = sess => (sess.role === 'office' ? 'Head office'
+  : sess.role === 'engineer' ? 'Certifying engineer'
+  : 'Buyer' + (sess.unit ? ' · villa ' + sess.unit : ''));
+
 /**
- * The office console's document.
+ * The document every signed-in screen is drawn into.
+ *
  * @param {object} sess
- * @param {string} side  the sidebar's nav, built in src/screens/office.js
- * @param {string} main  the screen
- * @param {string} [msg] what the last write did, shown as the toast
+ * @param {object} o  o.nav is the sidebar's destinations, o.title names the
+ *                    screen for the tab and the phone's top bar, o.main is the
+ *                    screen, o.msg is what the last write did.
  */
-function officePage(sess, side, main, msg) {
-  return `${OFFICE_HEAD}<div class="app">
+function shell(sess, o) {
+  const title = o.title || '';
+  const initials = String(sess.name || '?').split(' ')
+    .map(w => w[0]).slice(0, 2).join('').toUpperCase();
+  return `${HEAD(title)}<div class="app">
 <div class="scrim2" id="scrim2"></div>
 <aside class="side" id="side">
 <div class="brand">${OLOGO()}
 <div><div class="bname">Plint</div><div class="bsub">NVT Eterna &middot; Phase 1</div></div></div>
-<nav class="nav">${side}</nav>
+${sess.role === 'buyer' ? '' : `<form class="sidefind" method="get" action="/find" role="search">
+<input class="chip srch" type="search" name="q" placeholder="Find a villa, a buyer, a stage"
+ aria-label="Find a villa, a buyer or a stage" autocomplete="off"></form>`}
+<nav class="nav">${o.nav}</nav>
 <div class="urow">
-<div class="uav">${esc((sess.name || 'PM').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase())}</div>
-<div class="uinfo"><b>${esc(sess.name || 'Priya Menon')}</b><span>crm@nvt.demo</span></div>
+<div class="uav">${esc(initials)}</div>
+<div class="uinfo"><b>${esc(sess.name || '')}</b><span>${esc(WHOIS(sess))}</span></div>
 <form method="post" action="/logout" style="display:contents">
-<button class="sout" title="Sign out" type="submit">&#8677;</button></form>
+<button class="sout" title="Sign out" aria-label="Sign out" type="submit">&#8677;</button></form>
 </div>
 </aside>
 <div style="flex:1;min-width:0;display:flex;flex-direction:column">
 <div class="topbar">
 <button class="ham" id="ham" aria-label="Menu"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
 <div style="display:flex;align-items:center;gap:8px">${OLOGO(20, 4, 7)}<b style="font-family:var(--disp);font-size:15px">Plint</b></div>
+${title ? `<span class="tbt">${esc(title)}</span>` : ''}
 </div>
-<main class="main"><div id="screen">${main}</div></main>
+<main class="main"><div id="screen">${o.main}</div></main>
 </div>
 </div>
-<div class="toast" id="toast">${msg ? esc(msg) : ''}</div>
-${FILTER_JS}${OFFICE_JS}${SW}</body></html>`;
+<div class="toast" id="toast">${o.msg ? esc(o.msg) : ''}</div>
+${FILTER_JS}${SHELL_JS}${SW}</body></html>`;
 }
 
-function desk(sess, tab, title, sub, main, sidebar, drawer) {
-  const dests = destinations(sess);
-  return `${HEAD}${appbar(sess, tab, false, title)}<div class="wrap">
-<div class="desk">
-<div class="side">
-<div class="logo">${LOGO}<span>Plint</span></div>
-${sidebar || dests.map(([href, label]) => `<a class="sbtn st" href="${href}" aria-selected="${tab === href}"
- style="text-decoration:none;display:block">${esc(label)}</a>`).join('')}
-<div class="foot"><p class="s">Eterna Phase 1 &middot; 48 villas<br>Reads from your ERP. Writes nothing back.</p></div>
-</div>
-<div class="main">
-<div class="topbar"><div class="crumb"><span>NVT Eterna</span><b>${esc(title)}</b></div></div>
-${main}
-</div></div></div>
-${tabbar(sess, tab)}${drawer || ''}${FILTER_JS}${SW}</body></html>`;
+/** The head office console's document. Its nav is drawn in screens/office.js. */
+function officePage(sess, side, main, msg, title) {
+  return shell(sess, { nav: side, main, msg, title: title || 'Head office' });
+}
+
+/**
+ * The buyer's and the engineer's screens.
+ *
+ * The same shell, the same stylesheet, the same components. It used to be a
+ * different document with a different system in it, which is the whole of what
+ * this pass is about.
+ */
+function desk(sess, tab, title, sub, main, msg) {
+  return shell(sess, { nav: navList(sess, tab), title, main, msg });
+}
+
+/**
+ * A page with no destinations behind it: sign-in, a 404, a document that is
+ * not a screen. One column, centred, on the same ground as everything else.
+ */
+function page(title, sess, body) {
+  if (sess && sess.role) {
+    return shell(sess, { nav: navList(sess, ''), title, main: body });
+  }
+  return `${HEAD(title)}<div class="app plainapp"><main class="main plain">
+<div class="plainbrand">${OLOGO(26)}<div><div class="bname">Plint</div>
+<div class="bsub">NVT Eterna &middot; Phase 1</div></div></div>
+${body}</main></div>${SW}</body></html>`;
 }
 
 // -------------------------------------------------------------------- login
+/* What a 404 and a 500 say. One shape, in this system, rather than the
+   retired one's `.blk` and `.h1` left behind on the error paths. */
+const notFound = line => `<div class="card"><div class="cb">`
+  + `<div class="h1" style="font-size:19px">${esc(line)}</div>`
+  + `<p class="hsub" style="margin-top:6px">Nothing here, or nothing you can open.</p>`
+  + `<div style="margin-top:14px"><a class="btn" href="/">Back to your screens</a></div>`
+  + `</div></div>`;
+
 function loginPage(err) {
   return page('Sign in', null, `
-<div class="gap l"></div>
-<div class="blk"><div class="authcard" style="box-shadow:none;padding:0">
-<p class="k">Sign in</p>
-<h2 class="authh">NVT Quality Lifestyle</h2>
-${err ? `<p class="b hot" style="margin-top:10px">${esc(err)}</p>` : ''}
-<form method="post" action="/login">
-<label class="fl" for="email">Work email</label>
-<input class="fi" id="email" name="email" type="email" placeholder="priya@nvtlifestyle.in" autocomplete="username">
-<label class="fl" for="pw">Password</label>
-<input class="fi" id="pw" name="pw" type="password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" autocomplete="current-password">
-<button class="wbtn solid st authbtn" type="submit">Sign in</button>
+<div class="card" style="max-width:420px">
+<div class="ch"><div class="ct">Sign in</div></div>
+<div class="cb">
+<p class="hsub" style="margin:0 0 14px">NVT Quality Lifestyle &middot; Eterna Phase 1</p>
+${err ? `<div class="note" style="background:var(--redbg);border-color:#F5C9C4;color:var(--red)">${esc(err)}</div>` : ''}
+<form class="frm" method="post" action="/login">
+<label class="fld wide"><span class="fll">Work email</span>
+<input class="fi" id="email" name="email" type="email" placeholder="priya@nvt.in" autocomplete="username" required></label>
+<label class="fld wide"><span class="fll">Password</span>
+<input class="fi" id="pw" name="pw" type="password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" autocomplete="current-password" required></label>
+<button class="btn dark" type="submit" style="width:100%;justify-content:center">Sign in</button>
 </form>
-<p class="s authnote">Your role decides what opens. Site engineers get the worklist,
-buyers get their villa, the office gets the dashboard.</p>
+<p class="hsub" style="margin-top:14px">Your role decides what opens. Site engineers get the worklist,
+buyers get their journey, the office gets the dashboard.</p>
 </div></div>
-<div class="gap"></div><div class="rule"></div><div class="gap s"></div>
-<div class="blk"><p class="k">Seeded logins &middot; password plint</p></div>
-<div class="item"><span class="mid"><p class="h2">arjun@example.in</p><p class="s">Buyer, villa B-14</p></span></div>
-<div class="item"><span class="mid"><p class="h2">ramachandran@nvt.in</p><p class="s">Certifying engineer</p></span></div>
-<div class="item"><span class="mid"><p class="h2">priya@nvt.in</p><p class="s">Head office</p></span></div>
-<div class="gap l"></div>`);
+<div class="sect" style="max-width:420px;margin-top:16px">
+<div class="secth"><div class="ct">Seeded logins &middot; password plint</div></div>
+<div class="dl">
+<div class="dlr"><span class="dlk">arjun@example.in</span><span class="dlv">Buyer, villa B-14</span></div>
+<div class="dlr"><span class="dlk">ramachandran@nvt.in</span><span class="dlv">Certifying engineer</span></div>
+<div class="dlr"><span class="dlk">priya@nvt.in</span><span class="dlv">Head office</span></div>
+</div></div>`);
 }
 
-// --------------------------------------------------------------- buyer view
+/* ------------------------------------------------- THE ORPHAN, NOT ROUTED
+
+   The original buyer view, as it shipped in the first commit: one page, the
+   `.marks` progress dots, the `.duebar`, ten `.stage` rows and the photograph
+   strip. A buyer stopped seeing it when src/screens/buyer.js was built; staff
+   kept reaching it at /villa/CODE until this pass, where that URL became a
+   redirect to the villa screen of their own role.
+
+   Nothing calls this function. It is kept, unrouted, because the pass that
+   found it said not to delete it - and it is the only place in the repository
+   where that first design is still written down as code rather than as a diff.
+   It no longer renders correctly either: the stylesheet it was written for is
+   retired. My recommendation is in the report; the decision is yours. */
 async function buyerScreen(sess, code) {
   const data = await asUser(sess, async c => {
     const u = (await c.query('SELECT * FROM units WHERE code=$1', [code])).rows[0];
@@ -668,8 +699,7 @@ function stageTotal(byProject, row) {
    helpers it needs rather than requiring this file back, because this file
    requires it. certify() below stays here: it is the only path that prices a
    stage and raises a demand, which is not a screen concern. */
-const ROW = require('./screens/rows')({ esc });
-const ENG = require('./screens/engineer')({ esc, desk, M, asUser, schedules, stageTotal, LOGO });
+const ENG = require('./screens/engineer')({ esc, desk, M, asUser, schedules, stageTotal });
 const BUY = require('./screens/buyer')({ esc, desk, M, asUser });
 const OFF = require('./screens/office')({ esc, officePage, M, asUser, schedules, stageTotal });
 const FIND = require('./screens/find')({ esc, desk, M });
@@ -976,7 +1006,7 @@ const server = http.createServer(async (req, res) => {
       const msg = url.searchParams.get('m');
       const d = await BUY.load(sess);
       if (!d) return html(404, page('Not found', sess,
-        '<div class="blk"><h1 class="h1">No such villa.</h1></div>'));
+        notFound('No such villa.')));
 
       if (p === '/journey')   return html(200, BUY.journey(sess, d, msg));
       if (p === '/visit')     return html(200, BUY.visit(sess, d, msg));
@@ -994,12 +1024,12 @@ const server = http.createServer(async (req, res) => {
         d.thread = await BUY.threadOf(sess, id);
         const out = BUY.questions(sess, d, id, msg);
         return out ? html(200, out) : html(404, page('Not found', sess,
-          '<div class="blk"><h1 class="h1">No such question.</h1></div>'));
+          notFound('No such question.')));
       }
       if (p.startsWith('/stage/')) {
         const out = BUY.stage(sess, d, decodeURIComponent(p.slice(7)), msg);
         return out ? html(200, out) : html(404, page('Not found', sess,
-          '<div class="blk"><h1 class="h1">No such stage.</h1></div>'));
+          notFound('No such stage.')));
       }
       /* The code in the URL has to be this buyer's own. Rendering their villa
          for any `/villa/*` would answer 200 to a probe for a neighbour's -
@@ -1011,16 +1041,28 @@ const server = http.createServer(async (req, res) => {
         return decodeURIComponent(p.slice(7)) === sess.unit
           ? html(200, BUY.villa(sess, d, msg))
           : html(404, page('Not found', sess,
-              '<div class="blk"><h1 class="h1">No such villa.</h1></div>'));
+              notFound('No such villa.')));
       }
     }
 
+    /* A member of staff opening a buyer's URL.
+
+       This used to render `buyerScreen()` below - the original single-page
+       buyer view, in the retired phone shell, with the office's twenty-two
+       destinations wrapping across the top of it. It was the last thing in the
+       product still drawing that system, nothing linked to it, and it was
+       found by the audit rather than by anybody using it.
+
+       Staff have a villa screen of their own in their own role, so the URL now
+       lands on it. Nothing is lost: the office keeps /office/villa/CODE and
+       the engineer keeps /engineer/villa/CODE, both of which show more than
+       that page did. `buyerScreen()` itself is left in this file, unrouted and
+       marked, because deleting it is your call and not mine. */
     if (p.startsWith('/villa/')) {
-      const out = await buyerScreen(sess, decodeURIComponent(p.slice(7)));
-      // RLS returned nothing: the villa is not this buyer's. Same answer as
-      // a villa that does not exist. No existence leak.
-      return out ? html(200, out) : html(404, page('Not found', sess,
-        '<div class="gap l"></div><div class="blk"><h1 class="h1">No such villa.</h1></div>'));
+      const code = decodeURIComponent(p.slice(7));
+      const to = sess.role === 'office' ? '/office/villa/' : '/engineer/villa/';
+      res.writeHead(302, { location: to + encodeURIComponent(code) });
+      return res.end();
     }
 
     // ------------------------------------------------------ the engineer
@@ -1042,13 +1084,13 @@ const server = http.createServer(async (req, res) => {
       if (p.startsWith('/engineer/cert/')) {
         const out = await ENG.certDetail(sess, decodeURIComponent(p.slice(15)), d);
         return out ? html(200, out) : html(404, page('Not found', sess,
-          '<div class="blk"><h1 class="h1">That stage is not waiting for a certificate.</h1></div>'));
+          notFound('That stage is not waiting for a certificate.')));
       }
       if (p.startsWith('/engineer/villa/')) {
         const out = await ENG.villa(sess, decodeURIComponent(p.slice(16)),
           url.searchParams.get('mode') || 'update', d, msg);
         return out ? html(200, out) : html(404, page('Not found', sess,
-          '<div class="blk"><h1 class="h1">No such villa.</h1></div>'));
+          notFound('No such villa.')));
       }
     }
 
@@ -1606,19 +1648,22 @@ const server = http.createServer(async (req, res) => {
     // the row is fetched as the asking session, and the disk is touched only if
     // one came back. A buyer guessing a neighbour's hash gets the same 404 as a
     // hash that was never issued.
-    const img = /^\/evidence\/([0-9a-f]{64})$/.exec(p);
+    const img = /^\/evidence\/([0-9a-f]{64})(\/thumb)?$/.exec(p);
     if (img) {
       const row = await asUser(sess, c => c.query(
         'SELECT sha256, mime FROM evidence WHERE sha256 = $1 LIMIT 1', [img[1]]))
         .then(r => r.rows[0]);
       if (!row || !row.mime) return html(404, page('Not found', sess,
-        '<div class="gap l"></div><div class="blk"><h1 class="h1">No such photograph.</h1></div>'));
+        notFound('No such photograph.')));
+      /* The tile on a screen asks for the thumbnail; tapping it asks for the
+         original. Both go through the row above, so the isolation that is
+         true of the caption is exactly as true of the image. */
       let bytes;
-      try { bytes = await EV.read(row.sha256); }
+      try { bytes = img[2] ? await EV.thumbnail(row.sha256) : await EV.read(row.sha256); }
       catch { return html(404, page('Not found', sess,
-        '<div class="gap l"></div><div class="blk"><h1 class="h1">No such photograph.</h1></div>')); }
+        notFound('No such photograph.'))); }
       res.writeHead(200, {
-        'content-type': row.mime,
+        'content-type': img[2] ? 'image/jpeg' : row.mime,
         'content-length': bytes.length,
         'cache-control': 'private, max-age=3600',
         'x-content-type-options': 'nosniff',
@@ -1629,7 +1674,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/evidence/upload' && req.method === 'POST') {
       if (sess.role !== 'engineer' && sess.role !== 'office') {
         return html(404, page('Not found', sess,
-          '<div class="gap l"></div><div class="blk"><h1 class="h1">Not found.</h1></div>'));
+          notFound('Not found.')));
       }
       /* Where to land afterwards. The villa detail screen posts its own path
          so the engineer stays on the villa he is photographing instead of
@@ -1734,14 +1779,14 @@ const server = http.createServer(async (req, res) => {
     const doc = /^\/doc\/([a-z]+)\/(.+)\.pdf$/.exec(p);
     if (doc && DOCS[doc[1]]) {
       const ctx = await docContext(sess, decodeURIComponent(doc[2]));
-      if (!ctx) return html(404, page('Not found', sess, '<div class="blk"><h1 class="h1">No such document.</h1></div>'));
+      if (!ctx) return html(404, page('Not found', sess, notFound('No such document.')));
       if (doc[1] === 'demand' && !ctx.demand)
-        return html(404, page('Not found', sess, '<div class="blk"><h1 class="h1">No demand raised yet.</h1></div>'));
+        return html(404, page('Not found', sess, notFound('No demand raised yet.')));
       res.writeHead(200, { 'content-type': 'application/pdf' });
       return DOCS[doc[1]](ctx).pipe(res);
     }
 
-    html(404, page('Not found', sess, '<div class="gap l"></div><div class="blk"><h1 class="h1">Not found.</h1></div>'));
+    html(404, page('Not found', sess, notFound('Not found.')));
   } catch (e) {
     // The stack goes to the log, with the request id. The browser gets the id
     // and nothing else: no message, no class name, no query, no stack. A user
@@ -1752,9 +1797,9 @@ const server = http.createServer(async (req, res) => {
     });
     if (res.headersSent) return res.destroy();
     html(500, page('Error', null,
-      '<div class="gap l"></div><div class="blk"><h1 class="h1">Something failed.</h1>'
-      + '<p class="b cap">Nothing was changed. Quote reference '
-      + esc(reqId) + ' if you report this.</p></div>'));
+      '<div class="card"><div class="cb"><div class="h1" style="font-size:19px">Something failed.</div>'
+      + '<p class="hsub" style="margin-top:6px">Nothing was changed. Quote reference '
+      + esc(reqId) + ' if you report this.</p></div></div>'));
   }
 });
 

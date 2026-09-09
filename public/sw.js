@@ -29,14 +29,10 @@ const VERSION = 'plint-shell-__BUILD__';
 /* Only these are ever stored. The list is explicit rather than pattern-based
    so that adding a route can never silently make it cacheable.
 
-   Two stylesheets, because there are two visual systems: v21's, which draws
-   the buyer's and the engineer's screens, and the head office console's own.
-   No page ever loads both, and an install made in one role has to work in the
-   other, so both are in the shell. */
+   One stylesheet now: v21's two were retired when the buyer and the engineer
+   moved onto the office's system. */
 const SHELL = [
   '/offline',
-  '/plint.__BUILD__.css',
-  '/app.__BUILD__.css',
   '/office.__BUILD__.css',
   '/manifest.webmanifest',
   '/icons/icon-192.png',

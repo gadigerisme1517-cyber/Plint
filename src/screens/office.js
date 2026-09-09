@@ -54,29 +54,13 @@ module.exports = function office(ctx) {
 
   /* The reference's own icon set. Nothing new is drawn: each item below picks
      the shape from that set which says what it is. */
-  const I = {
-    home: '<path d="M3 10l9-7 9 7v10a1 1 0 01-1 1h-5v-7H9v7H4a1 1 0 01-1-1z"/>',
-    growth: '<path d="M4 19V5M4 19h16M8 15l3-4 3 3 4-6"/>',
-    users: '<circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0112 0M16 6a3 3 0 010 6M21 20a6 6 0 00-4-5.6"/>',
-    cal: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/>',
-    money: '<rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/>',
-    attend: '<path d="M20 6L9 17l-5-5"/>',
-    exam: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/>',
-    comms: '<path d="M4 5h16v11H8l-4 4z"/>',
-    report: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>',
-    event: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M8 15h3"/>',
-    bell: '<path d="M6 9a6 6 0 1112 0c0 5 2 6 2 6H4s2-1 2-6M10 20a2 2 0 004 0"/>',
-    hr: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0114 0"/>',
-    cert: '<circle cx="12" cy="9" r="5"/><path d="M9 13l-1.5 7L12 18l4.5 2L15 13"/>',
-    hostel: '<path d="M3 21V8l9-5 9 5v13M9 21v-6h6v6"/>',
-    settings: '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2 2M16.4 16.4l2 2M18.4 5.6l-2 2M7.6 16.4l-2 2"/>',
-    bolt: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
-    risk: '<path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17v.5"/>',
-    cockpit: '<circle cx="12" cy="12" r="9"/><path d="M12 12l5-3"/>',
-    plus: '<path d="M12 5v14M5 12h14"/>',
-    search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/>',
-  };
-  const ic = (n, cls = '') => `<svg class="${cls}" viewBox="0 0 24 24" fill="none">${I[n] || I.report}</svg>`;
+  /* The design system, once, for the whole product: the reference's icons,
+     its head, its KPI strip, its card, its table, its pills, its buttons and
+     its board. They were written here, and the buyer's and the engineer's
+     screens are drawn from the same kit now rather than from a second one. */
+  const K = require('./kit')({ esc });
+  const { I, ic, head, kpis, pill, btn, act, table, filters, search, showing,
+          card, row, note, empty, board, who, initials, num, tagOf, ageBand } = K;
 
   // -------------------------------------------------------------------- nav
 
@@ -125,146 +109,6 @@ module.exports = function office(ctx) {
     }).join('');
   }
 
-  // ---------------------------------------------------------------- helpers
-
-  /* One for one with the reference's own helpers, so a screen here is built
-     the way a screen there is. */
-  const head = (t, s, acts = '') =>
-    `<div class="head"><div><div class="h1">${esc(t)}</div>`
-    + `${s ? `<div class="hsub">${s}</div>` : ''}</div>`
-    + `${acts ? `<div class="hacts">${acts}</div>` : ''}</div>`;
-
-  const kpis = arr => `<div class="kpis">${arr.map(k =>
-    `<div class="kpi"><div class="kl">${ic(k.icon)} ${esc(k.l)}</div>`
-    + `<b class="num">${k.v}</b><div class="kn">${esc(k.n)}</div></div>`).join('')}</div>`;
-
-  const P = { paid: 'p-paid', due: 'p-due', over: 'p-over', accent: 'p-accent', grey: 'p-grey' };
-  /* What the five pills mean here, and nothing else may use them:
-       paid   - disbursed, or certified
-       due    - waiting
-       over   - a lender query, or a stage overdue
-       accent - informational
-       grey   - not started                                                   */
-  const pill = (kind, text) => `<span class="pill ${P[kind]}">${esc(text)}</span>`;
-
-  const btn = (label, o = {}) => {
-    const inner = (o.icon ? ic(o.icon) : '') + ' ' + esc(label);
-    const cls = 'btn' + (o.dark ? ' dark' : '');
-    if (o.href) return `<a class="${cls}" href="${o.href}">${inner}</a>`;
-    if (o.post) {
-      return `<form method="post" action="${o.post}">`
-        + Object.entries(o.fields || {}).map(([k, v]) =>
-          `<input type="hidden" name="${esc(k)}" value="${esc(String(v))}">`).join('')
-        + `<button class="${cls}" type="submit">${inner}</button></form>`;
-    }
-    return `<button class="${cls}" type="button">${inner}</button>`;
-  };
-
-  /**
-   * The reference's table. `rows` are arrays of cells already rendered; `tmpl`
-   * is the grid template every row carries inline, exactly as there.
-   * @param {object} [o] o.href(i) makes the row a link, o.tags(i) lets the
-   *                     filter chips above it narrow the list.
-   */
-  function table(cols, rows, tmpl, o = {}) {
-    const gt = `grid-template-columns:${tmpl}`;
-    if (!rows.length) {
-      return `<div class="tbl"><div class="tr hd" style="${gt}">`
-        + cols.map(c => `<div>${esc(c)}</div>`).join('')
-        + `</div>${empty(o.empty || 'Nothing here.', o.out)}</div>`;
-    }
-    return `<div class="tbl"${o.id ? ` id="${o.id}"` : ''}><div class="tr hd" style="${gt}">`
-      + cols.map(c => `<div>${esc(c)}</div>`).join('') + '</div>'
-      /* A list filtered down to nothing says what to try instead. Without it
-         the table header sits over a blank, which reads as a broken screen
-         rather than as an answer. */
-      + (o.tags ? `<div class="empty filtered-empty" hidden>${esc(o.noneMatch
-        || 'Nothing here matches those filters.')}<div style="margin-top:12px">`
-        + `<button class="btn" type="button" data-clear="${o.id}">Clear filters</button></div></div>` : '')
-      + rows.map((r, i) => {
-        const tags = o.tags ? ` data-tags="${esc(o.tags(i))}"` : '';
-        const cells = r.map(c => `<div>${c}</div>`).join('');
-        return o.href
-          ? `<a class="tr click" style="${gt}"${tags} href="${o.href(i)}">${cells}</a>`
-          : `<div class="tr" style="${gt}"${tags}>${cells}</div>`;
-      }).join('') + '</div>';
-  }
-
-  /**
-   * One bar of chips, asking one question. A screen may carry several and they
-   * combine: a row shows only when every bar either says All or matches it.
-   * @param {string} scope  the id of the list this narrows
-   * @param {[string,string][]} opts  label and tag; the first is always All
-   */
-  const filters = (scope, opts) =>
-    `<div class="filters" data-scope="${scope}">${opts.map((o, i) =>
-      `<button class="chip ${i === 0 ? 'on' : ''}" data-filter="${esc(o[1])}" type="button">`
-      + `${esc(o[0])}</button>`).join('')}</div>`;
-
-  /* What is showing, of how many, and the way back to all of them. `.hsub` and
-     `.chip` are the reference's own; there is no counter component in it. */
-  /* A search box. Only where a list is long enough that scanning it is the
-     problem: forty-eight villas, every stage of every villa, every document.
-     It reads the row's own text, so it searches what the reader can see. */
-  const search = (scope, hint) =>
-    `<input class="chip" type="search" data-search="${scope}" placeholder="${esc(hint)}"`
-    + ` style="flex:1 1 220px;min-width:0;cursor:text;font-family:var(--body);margin-bottom:14px">`;
-
-  /* The lenders on a set of rows, so a filter offers the ones that are there
-     rather than a fixed list that goes stale. */
-  const lendersIn = rows => [...new Set(rows.map(r => r.bank).filter(Boolean))].sort();
-  const tagOf = v => String(v || 'none').toLowerCase().replace(/[^a-z0-9]+/g, '-');
-  const ageBand = d => (d <= 7 ? 'age-week' : d <= 14 ? 'age-fortnight' : 'age-over');
-
-  /* The count is rendered by the server with the real number in it. It used
-     to be rendered as "0" for the browser to correct on load, so a reader with
-     JavaScript off saw forty-eight rows sitting under a line that said "0
-     villas". Everything else in this product works without JavaScript - the
-     forms post, the links navigate - and this was the one place a wrong number
-     was put on the screen and left there. The browser updates it while
-     filtering; it no longer creates it. */
-  const showing = (scope, what, total) =>
-    `<div class="hsub" data-count="${scope}" style="margin:-6px 0 12px;display:flex;`
-    + `align-items:center;gap:10px"><span><span class="fnum">${total == null ? '' : total}</span>`
-    + ` ${esc(what)}</span>`
-    + `<button class="chip" type="button" data-clear="${scope}" hidden>Clear filters</button></div>`;
-
-  const card = (title, body, acts = '') =>
-    `<div class="card"><div class="ch"><div class="ct">${esc(title)}</div>${acts}</div>`
-    + `<div class="cb">${body}</div></div>`;
-
-  const row = (icon, title, sub, right = '') =>
-    `<div class="row"><div class="rico">${ic(icon)}</div>`
-    + `<div class="rt"><b>${esc(title)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</div>`
-    + `${right}</div>`;
-
-  /* A write on a row: one form, one hidden field per value, one button. */
-  const act = (action, fields, label, o = {}) =>
-    `<form method="post" action="${action}">`
-    + Object.entries(fields).map(([k, v]) =>
-      `<input type="hidden" name="${esc(k)}" value="${esc(String(v))}">`).join('')
-    + `<button class="btn${o.plain ? '' : ' dark'}" type="submit">`
-    + (o.icon ? ic(o.icon) : '') + ' ' + esc(label) + '</button></form>';
-
-  const note = t => `<div class="note">${t}</div>`;
-  /* An empty list is a real state and says why it is empty. It also says what
-     to do instead: a screen with nothing on it and no way off it is a dead end
-     however true its sentence is. */
-  const empty = (t, out) => `<div class="empty">${esc(t)}`
-    + (out ? `<div style="margin-top:12px"><a class="btn" href="${out.href}">${esc(out.label)}</a></div>` : '')
-    + `</div>`;
-
-  const board = cols => `<div class="board">${cols.map(c =>
-    `<div class="col"><div class="colh"><span class="ctt">${esc(c.label)}</span>`
-    + `<span class="cnt">${c.cards.length}</span></div>`
-    + (c.note ? `<div class="ls" style="padding:0 5px 8px">${c.note}</div>` : '')
-    + (c.cards.length ? c.cards.map(k =>
-      `<a class="lcard" href="${k.href}"><b>${esc(k.title)}</b>`
-      + `<div class="ls">${esc(k.sub)}</div>`
-      + (k.tags ? `<div class="lt">${k.tags}</div>` : '') + '</a>').join('')
-      : `<div class="ls" style="padding:6px 5px">Nothing here.</div>`)
-    + '</div>').join('')}</div>`;
-
   /* A snag is raised as a sentence, not against a trade, so the trade is read
      out of what was written. It is a filter, not a record: what it cannot
      place goes under "other" rather than being guessed at. */
@@ -305,16 +149,13 @@ module.exports = function office(ctx) {
     ['buyer', 'The buyer'],
   ];
 
+  /* Where a villa lives in this console. The only helper this file still
+     owns, because it is a route rather than a component. */
   const villaHref = code => '/office/villa/' + encodeURIComponent(code);
-  /* A villa in a table cell. `href` makes the name itself the link, for the
-     tables whose rows carry an action: a form inside an anchor is not valid
-     HTML and the browser will not submit it, so those rows are not links. */
-  const who = (name, sub, href) =>
-    `<div class="cellav"><div class="miniav">${esc(initials(name))}</div>`
-    + `<div class="who"><b>${href ? `<a href="${href}">${esc(name)}</a>` : esc(name)}</b>`
-    + `${sub ? `<span>${esc(sub)}</span>` : ''}</div></div>`;
-  const initials = n => String(n || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
-  const num = t => `<span class="num">${esc(t)}</span>`;
+
+  /* The lenders on a set of rows, so a filter offers the ones that are there
+     rather than a fixed list that goes stale. */
+  const lendersIn = rows => [...new Set(rows.map(r => r.bank).filter(Boolean))].sort();
 
   // ----------------------------------------------------------------- counts
 

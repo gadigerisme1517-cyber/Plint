@@ -21,8 +21,8 @@
 module.exports = function findScreen(ctx) {
   const { esc, desk, M } = ctx;
 
-  const { wrow, empty } = require('./rows')({ esc });
-  const UI = require('./ui')({ esc });
+  const K = require('./kit')({ esc });
+  const { head, table, titled, empty, num } = K;
 
   /* Where a hit goes when it is tapped. The two roles keep their own villa
      screen, so the same row leads to different places - which is right: an
@@ -32,29 +32,28 @@ module.exports = function findScreen(ctx) {
     : '/office/buyer/' + encodeURIComponent(code);
 
   function screen(sess, q, hits) {
-    const rows = hits.map(v => wrow({
-      href: to(sess, v.code),
-      code: v.code,
-      title: v.stage || 'All stages done',
-      detail: esc(v.buyer_name) + ' &middot; ' + esc(v.bank || 'self funded')
-        + (v.engineer_name ? ' &middot; ' + esc(v.engineer_name) : ''),
-      amount: M.money(Number(v.agreement_value_paise)),
-    })).join('');
-
     const body = !q
       ? empty('Type a villa code, a buyer or a lender.')
-      : hits.length ? rows
-      : empty('Nothing matches &ldquo;' + esc(q) + '&rdquo;.');
+      : table(['Villa', 'Stage and buyer', 'Lender', 'Agreement value'],
+        hits.map(v => [
+          `<b>${esc(v.code)}</b>`,
+          `<b>${esc(v.stage || 'All stages done')}</b><br><span class="hsub">`
+            + esc(v.buyer_name) + (v.engineer_name ? ' &middot; ' + esc(v.engineer_name) : '')
+            + '</span>',
+          esc(v.bank || 'self funded'),
+          num(M.money(Number(v.agreement_value_paise))),
+        ]),
+        '.6fr 2fr 1fr 1fr',
+        { href: i => to(sess, hits[i].code), min: 620,
+          empty: 'Nothing matches what you typed.' });
 
-    return desk(sess, null, 'Find', '', `
-${UI.head(q ? 'Results for ' + q : 'Find',
+    return desk(sess, '', q ? 'Results for ' + q : 'Find', '', `
+${head(q ? 'Results for ' + q : 'Find',
   q ? hits.length + ' villa' + (hits.length === 1 ? '' : 's') + ' match'
       + (hits.length === 1 ? 'es' : '') + ' what you typed.'
     : 'A villa code, a buyer or a lender. You see the villas you are allowed to see.')}
-<div class="mbody anim">
-<div class="blk"><p class="k">${q ? 'Matches' : 'Search'}</p></div>
-<div class="wl">${body}</div>
-</div>`);
+${titled(q ? 'Matches' : 'Search', body)}
+`);
   }
 
   return { screen };

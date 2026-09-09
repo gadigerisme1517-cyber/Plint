@@ -302,8 +302,14 @@ async function main() {
   await require('./seed-state').seedState(c, villas,
     ['u-eng-ram', 'u-eng-suresh', 'u-eng-venkat']);
 
+  /* Every evidence row gets an actual file, because from Pass 4 the screens
+     render photographs rather than printing their captions. See
+     db/seed-photos.js for what a plate is and what it deliberately is not. */
+  const shots = await require('./seed-photos').fill(c, { quiet: true });
+
   const n = await c.query('SELECT count(*) FROM units');
   await c.query('COMMIT');
+  console.log('  evidence plates', shots.filled);
 
   // Read back after COMMIT, so the count includes what the deferred triggers
   // wrote. If these two ever disagree, the trigger is not firing for someone.

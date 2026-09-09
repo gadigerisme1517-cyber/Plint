@@ -1,33 +1,34 @@
 'use strict';
 /* ============================================================================
-   The site engineer's five tabs, and the villa detail behind them.
+   THE SITE ENGINEER'S SCREENS.
 
-   v21 gives this role Me, Villas, Visits, Log and Certs, and a villa screen
-   with three modes: Update (photographs and stage marking), Problem (report a
-   delay) and Snags. All of it here reads and writes the database, so what the
-   engineer does on site is what the office and the buyer see next.
+   Nine: what is on him today, his villas, the visits he must attend, the site
+   log, the certificates waiting for his signature, the snags to close, one
+   log kind, one villa, and one certificate.
 
-   WHAT THIS FILE MAY NOT DO. It does not price a stage, raise a demand or
-   write an audit row. Certification goes through the same `certify()` the
-   route handler has always called, which is the only path that touches money,
-   and the audit row is written by the trigger on unit_stages rather than by
-   anything here.
+   THE SYSTEM. These were v21's - plint.css plus app.css - and they are now the
+   product's one system, from inbell_office_dashboard.html, drawn out of
+   src/screens/kit.js exactly as the head office is. Nothing here draws a
+   component of its own.
+
+   WHAT THIS FILE MAY NOT DO. It does not price a stage, raise a demand or write
+   an audit row. Certification goes through the same `certify()` the route
+   handler has always called, which is the only path that touches money, and the
+   audit row is written by the trigger on unit_stages rather than by anything
+   here.
 
    Dependencies arrive as a context object rather than by requiring server.js,
    because server.js requires this. Nothing is imported across that line.
    ========================================================================= */
 
 module.exports = function engineerScreens(ctx) {
-  const { esc, desk, M, asUser, schedules, stageTotal, LOGO } = ctx;
+  const { esc, desk, M, asUser, schedules, stageTotal } = ctx;
 
-  /* One list row, built in one place. See src/screens/rows.js for why the
-     villa code has to be inside the heading rather than beside it. */
-  const { wrow, whead, empty, ageChip, AGE } = require('./rows')({ esc });
-  /* The furniture every dashboard is built from. One platform, three
-     dashboards: the header, the summary card and the tile grid are defined
-     once in ./ui and composed here. Nothing in this file draws its own - it
-     used to draw nine, each slightly different from the other eight. */
-  const UI = require('./ui')({ esc });
+  const K = require('./kit')({ esc });
+  const {
+    head, kpis, pill, btn, table, card, titled, dl, note, empty, photos,
+    filters, search, showing, field, input, file, form, age, agePill, num, tagOf, AGE,
+  } = K;
 
   /* v21's six kinds of log entry, with the quick entries it offers under each.
      Two taps, which is the point: a site person will not type a paragraph, and
@@ -36,15 +37,15 @@ module.exports = function engineerScreens(ctx) {
     material: ['Material received', 'Cement, steel, blocks, fittings',
       ['120 bags cement', '8 tonnes steel', '2000 blocks', 'Fittings, plumbing']],
     labour: ['Labour on site', 'Head count by trade',
-      ['Under 10 on site', '10 to 20 on site', '20 to 40 on site', 'Over 40 on site']],
+      ['18 on site', '12 on site', '24 on site', 'No labour today']],
     weather: ['Weather stoppage', 'Rain or heat, hours lost',
-      ['Rain, under 2 hours', 'Rain, half day', 'Rain, full day', 'Heat stoppage']],
+      ['Rain, 2 hours lost', 'Rain, half day lost', 'Heat, work stopped at noon']],
     safety: ['Safety incident', 'Anything, however minor',
-      ['Near miss, no injury', 'Minor injury, first aid', 'Injury, sent to hospital', 'Unsafe condition found']],
+      ['Near miss, no injury', 'Minor cut, first aid', 'Toolbox talk held']],
     drawing: ['Drawing revision', 'New sheet from the architect',
-      ['New revision received', 'Revision supersedes an issued sheet', 'Query raised with the architect', 'Drawing missing']],
+      ['New revision received', 'Revision superseded', 'Query raised with architect']],
     rework: ['Rework', 'Work redone and why',
-      ['Work redone, passed', 'Work redone, still failing', 'Material rejected', 'Level or line out of tolerance']],
+      ['Level reset', 'Line corrected', 'Finish redone']],
   };
 
   /* v21's four delay reasons on the Problem tab. */
@@ -55,46 +56,16 @@ module.exports = function engineerScreens(ctx) {
     ['Weather stoppage', 'No work possible'],
   ];
 
-  /* THE SAME FILTER PATTERN THE HEAD OFFICE HAS.
-
-     It was only there, so the engineer's sixteen villas, twenty-seven
-     certificates and forty log entries could not be narrowed at all. The
-     markup and the class names are office.css's, to the letter: when these
-     screens move onto that system this is already the right markup.
-
-     A bar asks one question. Several bars combine. The count says how many of
-     how many, Clear appears when something is filtering, and a list narrowed
-     to nothing says so. */
-  const tagOf = v => String(v || 'none').toLowerCase().replace(/[^a-z0-9]+/g, '-');
-
-  const filters = (scope, opts) =>
-    `<div class="filters" data-scope="${scope}">${opts.map((o, i) =>
-      `<button class="chip ${i === 0 ? 'on' : ''}" data-filter="${esc(o[1])}" type="button">`
-      + `${esc(o[0])}</button>`).join('')}</div>`;
-
-  const search = (scope, hint) =>
-    `<div class="filters"><input class="chip" type="search" data-search="${scope}"`
-    + ` placeholder="${esc(hint)}" style="flex:1 1 220px"></div>`;
-
-  const showing = (scope, what, total) =>
-    `<div class="fcount" data-count="${scope}"><span><span class="fnum">${total}</span>`
-    + ` ${esc(what)}</span>`
-    + `<button class="chip" type="button" data-clear="${scope}" hidden>Clear filters</button></div>`;
-
   /* The line a filtered-to-nothing list shows instead of going blank. */
   const noneMatch = (scope, said) =>
-    `<div class="emptyrow filtered-empty" hidden><p class="b ink">${esc(said)}</p>`
-    + `<p class="s"><button class="chip" type="button" data-clear="${scope}">Clear filters</button></p></div>`;
+    `<div class="empty filtered-empty" hidden>${esc(said)}<div style="margin-top:12px">`
+    + `<button class="btn" type="button" data-clear="${scope}">Clear filters</button></div></div>`;
 
   const days = d => Math.max(0, Math.round((Date.now() - new Date(d).getTime()) / 86400000));
-  const chip = n => ageChip(n);
-  /* From the shared layer. Three files had their own copy, all three drawing a
-     `.tools` panel - a white card around the words "Sent." */
-  const flash = UI.flash;
 
   // ---------------------------------------------------------------- reads
 
-  /** Everything the five tabs count, in one round trip per request. */
+  /** Everything the screens count, in one round trip per request. */
   async function load(sess) {
     return asUser(sess, async c => {
       const mine = (await c.query(
@@ -144,103 +115,102 @@ module.exports = function engineerScreens(ctx) {
     });
   }
 
-  const NAV = [['/engineer', 'Me'], ['/engineer/villas', 'Villas'],
-               ['/engineer/visits', 'Visits'], ['/engineer/log', 'Log'],
-               ['/engineer/certs', 'Certs']];
+  const NAV = [['/engineer', 'On you today'], ['/engineer/villas', 'Villas'],
+               ['/engineer/visits', 'Visits'], ['/engineer/log', 'Site log'],
+               ['/engineer/snags', 'Snags'], ['/engineer/certs', 'Certificates']];
 
-  // ------------------------------------------------------------- Me (today)
+  // ------------------------------------------------------- On you today
 
+  /* The three figures appear ONCE.
+
+     They used to appear twice, sixty pixels apart, in two different
+     treatments: a three-column strip inside the header card, and then four
+     tiles under it repeating the same numbers. The tiles won, because a tile
+     is a link to the screen that holds the work and the strip was not. */
   function me(sess, d, msg) {
     const chased = d.mine.filter(v => v.blocker_role === 'engineer');
     const pending = d.certs.filter(x => x.shots >= 2);
     const open = d.snags.filter(s => s.status === 'open');
     const total = chased.length + pending.length + open.length;
 
-    return desk(sess, '/engineer', 'Me', '', `
-${UI.head('On you today',
-  'Everything on this engineer, in the order it will be asked for.',
-  UI.summary({
-    cap: 'on you',
-    figure: String(total),
-    tone: total ? 'hot' : null,
-    note: 'Nothing here moves without you, and nothing reaches a lender until you sign.',
-    parts: [
-      { cap: 'Chased', value: String(chased.length), tone: UI.countTone(chased.length, true) },
-      { cap: 'To sign', value: String(pending.length), tone: UI.countTone(pending.length, false) },
-      { cap: 'Snags', value: String(open.length), tone: UI.countTone(open.length, true) },
-    ],
-  }) + UI.stats([
-    { n: chased.length, label: 'Office chasing', sub: 'villas they have flagged',
-      href: '/engineer/villas', tone: UI.countTone(chased.length, true) },
-    { n: pending.length, label: 'To certify', sub: 'ready for your signature',
-      href: '/engineer/certs', tone: UI.countTone(pending.length, false) },
-    { n: open.length, label: 'Snags', sub: 'to photograph and close',
-      href: '/engineer/snags', tone: UI.countTone(open.length, true) },
-    { n: d.visits.length, label: 'Visits', sub: 'buyers coming to site',
-      href: '/engineer/visits' },
-  ]))}
-<div class="mbody anim">
-${flash(msg)}
-${open.length ? `<div class="tools"><a class="wbtn st" href="/engineer/snags"
-  style="text-decoration:none">Close ${open.length} snag${open.length === 1 ? '' : 's'}</a><div class="g"></div></div>` : ''}
-${chased.length ? `<div class="blk"><p class="k">Office is chasing you</p></div>
-<div class="wl">${chased.map(v => wrow({
-  href: '/engineer/villa/' + encodeURIComponent(v.code),
-  code: v.code,
-  title: v.next_stage || 'All stages done',
-  detail: esc(v.buyer_name) + ' &middot; ' + esc(v.blocker_reason || ''),
-  days: v.last_shot ? days(v.last_shot) + 'd' : 'no photo',
-  daysAge: v.last_shot ? days(v.last_shot) : null,
-  chip: '<i class="chip late">Chased</i>',
-})).join('')}</div><div class="gap"></div>` : ''}
-
-<div class="blk"><p class="k">Waiting on your signature</p></div>
-<div class="wl">${pending.length ? pending.slice(0, 8).map(x => wrow({
-  href: '/engineer/cert/' + encodeURIComponent(x.id),
-  code: x.code,
-  title: x.stage_name,
-  detail: esc(x.buyer_name) + ' &middot; ' + x.shots + ' photograph' + (x.shots === 1 ? '' : 's'),
-  days: days(x.marked_at) + 'd',
-  daysAge: days(x.marked_at),
-  amount: M.money(stageTotal(d.byProject, x)),
-})).join('')
-  : empty('Nothing waiting on your signature.')}</div>
-</div>`);
+    return desk(sess, '/engineer', 'On you today', '', `
+${head('On you today',
+  'Nothing here moves without you, and nothing reaches a lender until you sign. '
+  + total + ' ' + (total === 1 ? 'thing is' : 'things are') + ' on you.',
+  open.length ? btn('Close ' + open.length + ' snag' + (open.length === 1 ? '' : 's'),
+    { href: '/engineer/snags', icon: 'cam', dark: true }) : '')}
+${kpis([
+  { l: 'Office chasing', icon: 'bell', v: String(chased.length), n: 'villas they have flagged',
+    href: '/engineer/villas', tone: chased.length ? 'hot' : null },
+  { l: 'To certify', icon: 'cert', v: String(pending.length), n: 'ready for your signature',
+    href: '/engineer/certs', tone: pending.length ? 'warn' : null },
+  { l: 'Snags', icon: 'risk', v: String(open.length), n: 'to photograph and close',
+    href: '/engineer/snags', tone: open.length ? 'hot' : null },
+  { l: 'Visits', icon: 'cal', v: String(d.visits.length), n: 'buyers coming to site',
+    href: '/engineer/visits' },
+])}
+${chased.length ? titled('Office is chasing you', table(
+  ['Villa', 'Stage and why', 'State', 'Last photograph'],
+  chased.map(v => [
+    `<b>${esc(v.code)}</b>`,
+    `<b>${esc(v.next_stage || 'All stages done')}</b><br><span class="hsub">`
+      + esc(v.buyer_name) + ' &middot; ' + esc(v.blocker_reason || '') + '</span>',
+    pill('over', 'Chased'),
+    v.last_shot ? age(days(v.last_shot), false) : pill('over', 'no photograph'),
+  ]),
+  '.6fr 2.4fr .7fr .9fr',
+  { href: i => '/engineer/villa/' + encodeURIComponent(chased[i].code), min: 620 })) : ''}
+${titled('Waiting on your signature',
+  /* EVERY ONE OF THEM. This list was `pending.slice(0, 8)` under a tile
+     reading 33, with nothing saying so. */
+  pending.length ? table(
+    ['Villa', 'Stage and buyer', 'Photographs', 'Marked', 'Amount', ''],
+    pending.map(x => [
+      `<b>${esc(x.code)}</b>`,
+      `<b>${esc(x.stage_name)}</b><br><span class="hsub">${esc(x.buyer_name)}</span>`,
+      pill('accent', x.shots + ' photograph' + (x.shots === 1 ? '' : 's')),
+      age(days(x.marked_at), false),
+      num(M.money(stageTotal(d.byProject, x))),
+      `<a class="btn dark" href="/engineer/cert/${encodeURIComponent(x.id)}">Review</a>`,
+    ]),
+    '.6fr 1.8fr 1fr .5fr .9fr auto', { min: 760 })
+    : empty('Nothing waiting on your signature.',
+      { href: '/engineer/villas', label: 'See your villas' }),
+  btn('Every certificate', { href: '/engineer/certs', icon: 'cert' }))}
+`, msg);
   }
 
   // -------------------------------------------------------------- Villas
 
   function villas(sess, d, msg) {
-    const rows = d.mine.map(v => {
-      const since = v.last_shot ? days(v.last_shot) : null;
-      return wrow({
-        href: '/engineer/villa/' + encodeURIComponent(v.code),
-        code: v.code,
-        title: v.next_stage || 'All stages done',
-        detail: esc(v.buyer_name) + ' &middot; ' + esc(v.bank || 'self funded'),
-        days: since === null ? '' : since + 'd',
-        daysAge: since,
-        chip: ageChip(since),
-        /* By the stage in hand, by the lender, and by whether it has gone
-           quiet - the three things an engineer scans this list for. */
-        tags: tagOf(v.next_stage) + ' ' + (v.bank ? tagOf(v.bank) : 'self')
-          + (since === null || since >= AGE.overdue ? ' quiet' : ' seen'),
-      });
-    }).join('');
-
     /* 'Three weeks' and the pill's 'overdue' have to be the same number, or
        the sentence counts villas the rows do not flag. */
     const behind = d.mine.filter(v => !v.last_shot || days(v.last_shot) >= AGE.overdue).length;
+
+    const rows = d.mine.map(v => {
+      const since = v.last_shot ? days(v.last_shot) : null;
+      return [
+        `<b>${esc(v.code)}</b>`,
+        `<b>${esc(v.next_stage || 'All stages done')}</b><br><span class="hsub">`
+          + esc(v.buyer_name) + ' &middot; ' + esc(v.bank || 'self funded') + '</span>',
+        agePill(since),
+        since === null ? num('none') : age(since, false),
+        /* The ACTION column used to be a heading over sixteen empty cells.
+           It carries the thing an engineer opens this list to do. */
+        `<a class="btn" href="/engineer/villa/${encodeURIComponent(v.code)}">Photograph</a>`,
+      ];
+    });
+
     return desk(sess, '/engineer/villas', 'Villas', '', `
-${UI.head('Villas to update',
-  `${behind} ${behind === 1 ? 'has' : 'have'} gone three weeks without a photograph.`,
-  UI.summary({ cap: 'assigned', figure: String(d.mine.length),
-    tone: behind ? 'warn' : null,
-    parts: [
-      { cap: 'Quiet', value: String(behind), tone: UI.countTone(behind, true) },
-      { cap: 'Photographed', value: String(d.mine.length - behind), tone: 'ok' },
-    ] }))}
-<div class="mbody anim">${flash(msg)}
+${head('Villas to update',
+  `${behind} ${behind === 1 ? 'has' : 'have'} gone three weeks without a photograph.`)}
+${kpis([
+  { l: 'Assigned to you', icon: 'hostel', v: String(d.mine.length), n: 'villas on this engineer' },
+  { l: 'Gone quiet', icon: 'bell', v: String(behind), n: 'three weeks with no photograph',
+    tone: behind ? 'hot' : null },
+  { l: 'Photographed', icon: 'cam', v: String(d.mine.length - behind), n: 'seen within three weeks',
+    tone: 'ok' },
+])}
 ${d.mine.length ? search('engvillas', 'Find a villa, a buyer or a lender')
   + filters('engvillas', [['Every stage', '*'],
     ...[...new Set(d.mine.map(v => v.next_stage).filter(Boolean))].map(n => [n, tagOf(n)])])
@@ -249,59 +219,63 @@ ${d.mine.length ? search('engvillas', 'Find a villa, a buyer or a lender')
     ['Self funded', 'self']])
   + filters('engvillas', [['All', '*'], ['Gone quiet', 'quiet'], ['Photographed', 'seen']])
   + showing('engvillas', 'villas', d.mine.length) : ''}
-<div class="wl" id="engvillas">${d.mine.length ? `<div class="whead"><span class="id">Villa</span>
-<span class="mid">Next stage and buyer</span><span class="stc">Evidence</span>
-<span class="amt"></span><span class="actc">Action</span></div>${rows}`
-  + noneMatch('engvillas', 'No villa of yours matches that.')
-  : '<div class="emptyrow"><p class="b ink">No villas are assigned to you.</p></div>'}</div>
-</div>`);
+${table(['Villa', 'Next stage and buyer', 'Evidence', 'Last seen', 'Action'],
+  rows, '.6fr 2.2fr .9fr .6fr auto',
+  {
+    id: 'engvillas', min: 720,
+    tags: i => {
+      const v = d.mine[i];
+      const since = v.last_shot ? days(v.last_shot) : null;
+      return tagOf(v.next_stage) + ' ' + (v.bank ? tagOf(v.bank) : 'self')
+        + (since === null || since >= AGE.overdue ? ' quiet' : ' seen');
+    },
+    empty: 'No villas are assigned to you.',
+    noneMatch: 'No villa of yours matches that.',
+  })}
+`, msg);
   }
 
   // -------------------------------------------------------------- Visits
 
   function visits(sess, d, msg) {
-    const cards = d.visits.map(v => {
+    const rows = d.visits.map(v => {
       const mine = v.engineer_id === sess.id;
       const when = M.longDate(v.slot_at) + ', ' +
         new Date(v.slot_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
-      /* Name on the title line, when and why underneath - v21's `.vhead` puts
-         the person first and the slot on its own line. Both on one line made
-         the title wrap four deep on a phone. */
-      return wrow({
-        code: v.code,
-        title: v.buyer_name,
-        detail: esc(when) + ' &middot; ' + esc(v.note || 'No note.')
-                + (mine ? '' : ' &middot; named to another engineer'),
-        days: days(v.requested_at) + 'd ago',
-        daysAge: days(v.requested_at),
-        chip: '<i class="chip ' + (v.status === 'confirmed' ? 'ok'
-              : v.status === 'reassign' ? 'warn' : 'wait') + '">'
-              + (v.status === 'confirmed' ? 'Accepted'
-              : v.status === 'reassign' ? 'Reassign' : 'New') + '</i>',
-        /* Two controls need a line of their own; one does not. A confirmed
-           visit offers only "Cannot make it", and marking it wide put that
-           single button on its own row with the rest of the line empty. */
-        actionWide: v.status !== 'confirmed',
-        action: `
-${v.status === 'confirmed'
-  ? `<form method="post" action="/engineer/visit"><input type="hidden" name="id" value="${esc(v.id)}">
+      return [
+        `<b>${esc(v.code)}</b>`,
+        `<b>${esc(v.buyer_name)}</b><br><span class="hsub">${esc(when)} &middot; `
+          + esc(v.note || 'No note.') + (mine ? '' : ' &middot; named to another engineer') + '</span>',
+        v.status === 'confirmed' ? pill('paid', 'Accepted')
+          : v.status === 'reassign' ? pill('due', 'Reassign') : pill('accent', 'New'),
+        age(days(v.requested_at), v.status === 'confirmed'),
+        v.status === 'confirmed'
+          ? `<form method="post" action="/engineer/visit"><input type="hidden" name="id" value="${esc(v.id)}">
 <input type="hidden" name="do" value="declined">
-<button class="wbtn st" type="submit">Cannot make it</button></form>`
-  : `<form method="post" action="/engineer/visit" style="display:flex;gap:6px;flex-wrap:wrap">
+<button class="btn" type="submit">Cannot make it</button></form>`
+          : `<form method="post" action="/engineer/visit" style="display:flex;gap:6px;flex-wrap:wrap">
 <input type="hidden" name="id" value="${esc(v.id)}">
-<button class="wbtn solid st" type="submit" name="do" value="confirmed">Accept</button>
-<button class="wbtn st" type="submit" name="do" value="reassign">Ask to reassign</button></form>`}`,
-      });
-    }).join('');
+<button class="btn dark" type="submit" name="do" value="confirmed">Accept</button>
+<button class="btn" type="submit" name="do" value="reassign">Reassign</button></form>`,
+      ];
+    });
 
     return desk(sess, '/engineer/visits', 'Visits', '', `
-${UI.head('Buyers coming to site',
-  'You are named to each. Flags raised while you are there, you answer on the spot.',
-  UI.summary({ cap: 'booked', figure: String(d.visits.length) }))}
-<div class="mbody anim">${flash(msg)}
-<div class="wl">${d.visits.length ? cards
-  : '<div class="emptyrow"><p class="b ink">No visits booked. Buyers request a slot from their app.</p></div>'}</div>
-</div>`);
+${head('Buyers coming to site',
+  'You are named to each. Flags raised while you are there, you answer on the spot.')}
+${kpis([
+  { l: 'Booked', icon: 'cal', v: String(d.visits.length), n: 'slots on your name' },
+  { l: 'Accepted', icon: 'attend', v: String(d.visits.filter(v => v.status === 'confirmed').length),
+    n: 'you have confirmed' },
+  { l: 'Waiting on you', icon: 'risk', v: String(d.visits.filter(v => v.status === 'requested').length),
+    n: 'not yet answered',
+    tone: d.visits.filter(v => v.status === 'requested').length ? 'hot' : null },
+])}
+${titled('Every visit asked for', table(
+  ['Villa', 'Buyer and slot', 'State', 'Asked', 'Answer'],
+  rows, '.6fr 2.4fr .8fr .5fr auto',
+  { min: 780, empty: 'No visits booked. Buyers request a slot from their own screens.' }))}
+`, msg);
   }
 
   // --------------------------------------------------------------- Snags
@@ -309,41 +283,32 @@ ${UI.head('Buyers coming to site',
   function snags(sess, d, msg) {
     const open = d.snags.filter(s => s.status === 'open');
     const done = d.snags.filter(s => s.status === 'fixed');
-    const row = s => wrow({
-      code: s.code,
-      title: s.title,
-      detail: 'Raised by ' + esc(s.raiser) + ' &middot; ' + M.longDate(s.raised_at),
-      days: s.status === 'fixed' ? '' : days(s.raised_at) + 'd',
-      daysAge: s.status === 'fixed' ? null : days(s.raised_at),
-      chip: s.status === 'fixed' ? '<i class="chip ok">Sent</i>' : chip(days(s.raised_at)),
-    }) + `
-${s.status === 'open' ? `<form method="post" action="/engineer/snag" enctype="multipart/form-data" class="uprow"
-  style="display:flex;gap:10px;align-items:center;padding:10px 26px 16px;border-bottom:1px solid var(--hair)">
-<input type="hidden" name="id" value="${esc(s.id)}">
-<span class="mid" style="display:flex;gap:10px;align-items:center">
-<input class="fi" type="file" name="photo" accept="image/jpeg,image/png" required
-  style="margin:0;flex:0 0 200px;padding:7px 8px">
-<input class="fi" name="caption" placeholder="What was done" required maxlength="120"
-  style="margin:0;flex:1;min-width:0;padding:7px 10px">
-<input class="fi n" name="gps" placeholder="12.8391, 77.7724" required maxlength="40"
-  style="margin:0;flex:0 0 150px;padding:7px 10px"></span>
-<button class="wbtn st" type="submit" style="flex:0 0 160px">Photograph the fix</button></form>` : ''}`;
 
-    /* Reached from Me and from a villa, not from the bar - v21 gives it a back
-       button to Me rather than a slot of its own, and five slots are taken. So
-       the shell is told Me is the current destination, or the bar would
-       highlight nothing while the engineer is standing on a real screen. */
-    return desk(sess, '/engineer', 'Snags', '', `
-${UI.head('Snags to close',
-  'Photograph the fix. The buyer signs it off, not you.',
-  UI.summary({ cap: 'open', figure: String(open.length), tone: open.length ? 'hot' : null }),
-  { href: '/engineer', label: 'Back' })}
-<div class="mbody anim">${flash(msg)}
-<div class="wl">${open.length ? open.map(row).join('')
-  : '<div class="emptyrow"><p class="b ink">No open snags. Everything raised has been fixed and sent for sign-off.</p></div>'}</div>
-${done.length ? `<div class="gap"></div><div class="blk"><p class="k">Fixed, waiting for the buyer</p></div>
-<div class="wl">${done.map(row).join('')}</div>` : ''}
-</div>`);
+    const fixForm = s => form('/engineer/snag',
+      `<span class="ffile">${file('photo', { id: 'snag-' + s.id, label: 'Photograph of the fix' })}</span>`
+      + field('What was done', input('caption', { required: true, max: 120, placeholder: 'Tile replaced and grouted' }))
+      + field('Where', input('gps', { required: true, max: 40, placeholder: '12.8391, 77.7724' })),
+      { fields: { id: s.id }, upload: true, submit: 'Send for sign-off', icon: 'cam' });
+
+    return desk(sess, '/engineer/snags', 'Snags', '', `
+${head('Snags to close', 'Photograph the fix. The buyer signs it off, not you.')}
+${kpis([
+  { l: 'Open', icon: 'risk', v: String(open.length), n: 'raised and not yet fixed',
+    tone: open.length ? 'hot' : null },
+  { l: 'Sent for sign-off', icon: 'attend', v: String(done.length), n: 'photographed, with the buyer' },
+])}
+${open.length ? open.map(s => titled(s.code + ' · ' + s.title,
+  card('', `<p class="hsub">Raised by ${esc(s.raiser)} &middot; ${esc(M.longDate(s.raised_at))}
+&middot; open ${days(s.raised_at)} days</p><div style="margin-top:12px">${fixForm(s)}</div>`),
+  agePill(days(s.raised_at)))).join('')
+  : titled('Open snags', empty('No open snags. Everything raised has been fixed and sent for sign-off.',
+    { href: '/engineer/villas', label: 'See your villas' }))}
+${done.length ? titled('Fixed, waiting for the buyer', table(
+  ['Villa', 'What was wrong', 'Raised by', 'State'],
+  done.map(s => [
+    `<b>${esc(s.code)}</b>`, `<b>${esc(s.title)}</b>`, esc(s.raiser), pill('paid', 'Sent'),
+  ]), '.6fr 2fr 1.2fr .7fr', { min: 560 })) : ''}
+`, msg);
   }
 
   // ----------------------------------------------------------------- Log
@@ -352,105 +317,110 @@ ${done.length ? `<div class="gap"></div><div class="blk"><p class="k">Fixed, wai
     if (kind && LOG_KINDS[kind]) {
       const [label, detail, quick] = LOG_KINDS[kind];
       return desk(sess, '/engineer/log', label, '', `
-${UI.head(label, esc(detail), '', { href: '/engineer/log', label: 'Back' })}
-<div class="mbody anim">
-<div class="blk"><p class="k">Quick entries</p></div>
-<div class="wl">${quick.map(q => `<form method="post" action="/engineer/log" class="wrow">
+${head(label, esc(detail), btn('Every kind', { href: '/engineer/log', icon: 'back' }))}
+${titled('Quick entries', table(
+  ['Entry', 'What it records', ''],
+  quick.map(q => [
+    `<b>${esc(q)}</b>`,
+    'One tap. Recorded against you, now.',
+    `<form method="post" action="/engineer/log">
 <input type="hidden" name="kind" value="${esc(kind)}">
 <input type="hidden" name="title" value="${esc(q)}">
-<span class="mid"><p class="rt">${esc(q)}</p><p class="s">One tap. Recorded against you, now.</p></span>
-<span class="actc"><button class="wbtn solid st" type="submit">Add</button></span></form>`).join('')}</div>
-<div class="gap"></div>
-<div class="blk"><p class="k">Or write it</p></div>
-<form method="post" action="/engineer/log" class="uprow"
-  style="display:flex;gap:10px;align-items:center;padding:10px 26px 16px">
-<input type="hidden" name="kind" value="${esc(kind)}">
-<span class="mid" style="display:flex;gap:10px;align-items:center">
-<input class="fi" name="title" placeholder="What happened" required maxlength="120"
-  style="margin:0;flex:1;min-width:0;padding:7px 10px">
-<input class="fi" name="detail" placeholder="Detail, optional" maxlength="200"
-  style="margin:0;flex:1;min-width:0;padding:7px 10px"></span>
-<button class="wbtn st" type="submit" style="flex:0 0 140px">Add entry</button></form>
-</div>`);
+<button class="btn dark" type="submit">Add</button></form>`,
+  ]), '1.2fr 2fr auto', { min: 560 }))}
+${titled('Or write it', card('', form('/engineer/log',
+  field('What happened', input('title', { required: true, max: 120, placeholder: 'Slab pour deferred' }))
+  + field('Detail, optional', input('detail', { max: 200, placeholder: '14:00 to 16:00' })),
+  { fields: { kind }, submit: 'Add entry', icon: 'plus' })))}
+`, msg);
     }
 
     return desk(sess, '/engineer/log', 'Site log', '', `
-${UI.head('Site log',
-  'Two taps. This is what settles a dispute six months later.',
-  UI.summary({ cap: 'entries', figure: String(d.log.length) }))}
-<div class="mbody anim">${flash(msg)}
-<div class="blk"><div class="lgrid">
-${Object.entries(LOG_KINDS).map(([k, [label, detail]]) => `<a class="lgb st"
-  href="/engineer/log/${k}" style="text-decoration:none">
-<span class="h2">${esc(label)}</span>
-<span class="s">${esc(detail)}</span></a>`).join('')}</div></div>
-<div class="gap"></div>
-<div class="blk"><p class="k">Recent</p></div>
+${head('Site log', 'Two taps. This is what settles a dispute six months later.')}
+${kpis([
+  { l: 'Entries', icon: 'doc', v: String(d.log.length), n: 'the last forty on this site' },
+  { l: 'Today', icon: 'cal', v: String(d.log.filter(e => days(e.logged_at) === 0).length),
+    n: 'logged since midnight' },
+])}
+${titled('What can be logged', `<div class="kpis k3">${
+  Object.entries(LOG_KINDS).map(([k, [label, detail]]) =>
+    `<a class="kpi" href="/engineer/log/${k}"><div class="kl">${K.ic('doc')} ${esc(label)}</div>`
+    + `<div class="kn" style="margin-top:4px;font-size:12px">${esc(detail)}</div></a>`).join('')
+}</div>`)}
 ${d.log.length ? search('englog', 'Find an entry')
   + filters('englog', [['Everything', '*'],
     ...[...new Set(d.log.map(e => e.kind))].map(k => [k, tagOf(k)])])
   + showing('englog', 'entries', d.log.length) : ''}
-<div class="wl" id="englog">${d.log.length ? d.log.map(e => wrow({
-  title: e.title,
-  detail: esc(e.detail || '') + (e.detail ? ' &middot; ' : '') + esc(e.logger),
-  days: days(e.logged_at) + 'd ago',
-  chip: '<i class="chip wait">' + esc(e.kind) + '</i>',
-  tags: tagOf(e.kind),
-})).join('') + noneMatch('englog', 'No entry of that kind.')
-  : empty('Nothing logged yet.')}</div>
-</div>`);
+${titled('Recent', table(
+  ['Entry', 'Detail and who', 'Kind', 'When'],
+  d.log.map(e => [
+    `<b>${esc(e.title)}</b>`,
+    esc(e.detail || '') + (e.detail ? ' &middot; ' : '') + esc(e.logger),
+    pill('accent', e.kind),
+    age(days(e.logged_at), true),
+  ]),
+  '1.4fr 2fr .8fr .5fr',
+  {
+    id: 'englog', min: 620, tags: i => tagOf(d.log[i].kind),
+    empty: 'Nothing logged yet.', noneMatch: 'No entry of that kind.',
+  }))}
+`, msg);
   }
 
   // --------------------------------------------------------------- Certs
 
   function certs(sess, d, msg) {
     const pend = d.certs;
-    return desk(sess, '/engineer/certs', 'Certs', '', `
-${UI.head('Waiting for your signature',
-  'Nothing reaches the lender until you sign.',
-  UI.summary({ cap: 'files', figure: String(pend.length),
-    tone: pend.length ? 'hot' : null,
-    parts: [
-      { cap: 'Ready', value: String(pend.filter(x => x.shots >= 2).length), tone: 'ok' },
-      { cap: 'Short of photographs', value: String(pend.filter(x => x.shots < 2).length),
-        tone: UI.countTone(pend.filter(x => x.shots < 2).length, false) },
-    ] }))}
-<div class="mbody anim">${flash(msg)}
+    const thinOf = x => x.shots < 2;
+
+    const rows = pend.map(x => {
+      const thin = thinOf(x);
+      return [
+        `<b>${esc(x.code)}</b>`,
+        `<b>${esc(x.stage_name)}</b><br><span class="hsub">${esc(x.buyer_name)} &middot; marked by `
+          + esc(x.marked_by) + ' on ' + esc(M.longDate(x.marked_at)) + '</span>',
+        thin ? pill('due', x.shots + ' photo' + (x.shots === 1 ? '' : 's')) : pill('accent', 'ready'),
+        age(days(x.marked_at), false),
+        num(M.money(stageTotal(d.byProject, x))),
+        /* A row that cannot be signed used to say the words "Too few photos"
+           and offer nothing - on the one screen where the engineer would go
+           and take them. It is a link to the villa's camera now. */
+        thin
+          ? `<a class="btn" href="/engineer/villa/${encodeURIComponent(x.code)}">Photograph it</a>`
+          : `<a class="btn dark" href="/engineer/cert/${encodeURIComponent(x.id)}">Review</a>`,
+      ];
+    });
+
+    return desk(sess, '/engineer/certs', 'Certificates', '', `
+${head('Waiting for your signature', 'Nothing reaches the lender until you sign.')}
+${kpis([
+  { l: 'Files', icon: 'cert', v: String(pend.length), n: 'stages marked on site',
+    tone: pend.length ? 'hot' : null },
+  { l: 'Ready to sign', icon: 'attend', v: String(pend.filter(x => !thinOf(x)).length),
+    n: 'two photographs or more', tone: 'ok' },
+  { l: 'Short of photographs', icon: 'cam', v: String(pend.filter(thinOf).length),
+    n: 'go and take them', tone: pend.filter(thinOf).length ? 'warn' : null },
+])}
 ${pend.length ? search('engcerts', 'Find a villa, a buyer or a stage')
   + filters('engcerts', [['All', '*'], ['Ready to sign', 'ready'],
     ['Short of photographs', 'thin']])
   + filters('engcerts', [['Every stage', '*'],
     ...[...new Set(pend.map(x => x.stage_name))].map(n => [n, tagOf(n)])])
   + showing('engcerts', 'waiting for your signature', pend.length) : ''}
-<div class="wl" id="engcerts">${pend.length ? `<div class="whead"><span class="id">Villa</span>
-<span class="mid">Stage and buyer</span><span class="stc">Evidence</span>
-<span class="amt">Amount</span><span class="actc">Action</span></div>` : ''}
-${pend.length ? pend.map(x => {
-  const thin = x.shots < 2;
-  return wrow({
-    code: x.code,
-    title: x.stage_name,
-    detail: esc(x.buyer_name) + ' &middot; marked by ' + esc(x.marked_by)
-            + ' on ' + M.longDate(x.marked_at),
-    days: days(x.marked_at) + 'd',
-    daysAge: days(x.marked_at),
-    chip: '<i class="chip ' + (thin ? 'warn' : 'wait') + '">'
-          + (thin ? x.shots + ' photo' + (x.shots === 1 ? '' : 's') : 'ready') + '</i>',
-    amount: M.money(stageTotal(d.byProject, x)),
-    action: thin ? 'Too few photos'
-          : '<a class="wbtn solid st" href="/engineer/cert/' + encodeURIComponent(x.id)
-            + '" style="text-decoration:none">Review</a>',
-    actionIsText: thin,
-    /* Ready to sign or short of photographs, and by the stage - the two things
-       that decide which certificate to open next. */
-    tags: (thin ? 'thin' : 'ready') + ' ' + tagOf(x.stage_name),
-  }); }).join('')
-  + noneMatch('engcerts', 'No certificate of yours matches that.')
-  : '<div class="emptyrow"><p class="b ink">Nothing waiting. Every stage you verified has been certified.</p></div>'}
-</div></div>`);
+${table(['Villa', 'Stage and buyer', 'Evidence', 'Marked', 'Amount', 'Action'],
+  rows, '.6fr 2.2fr .9fr .5fr .9fr auto',
+  {
+    id: 'engcerts', min: 820,
+    tags: i => (thinOf(pend[i]) ? 'thin' : 'ready') + ' ' + tagOf(pend[i].stage_name),
+    empty: 'Nothing waiting. Every stage you verified has been certified.',
+    noneMatch: 'No certificate of yours matches that.',
+  })}
+`, msg);
   }
 
-  /** v21's certificate document, with the figures read rather than invented. */
+  // ----------------------------------------------------------- the certificate
+
+  /** The certificate document, with the figures read rather than invented. */
   async function certDetail(sess, stageId, d) {
     const x = d.certs.find(r => r.id === stageId);
     if (!x) return null;
@@ -466,45 +436,44 @@ ${pend.length ? pend.map(x => {
         `SELECT display_name, engineer_qual, engineer_reg FROM users WHERE id = $1`,
         [sess.id])).rows[0] || {},
     }));
-    const line = (k, v) => `<p class="cline"><span>${esc(k)}</span><b>${esc(v)}</b></p>`;
 
-    return desk(sess, '/engineer/certs', 'Certificate &middot; Villa ' + x.code, '', `
-${UI.head("Engineer's certificate of stage completion",
+    /* The title is TEXT. It used to be built with a pre-encoded `&middot;` and
+       handed to a shell that escapes what it is given, so the app bar and the
+       crumb both printed the entity as source: "Certificate &middot; Villa
+       A-02". */
+    return desk(sess, '/engineer/certs', 'Certificate · Villa ' + x.code, '', `
+${head("Engineer's certificate of stage completion",
   `Villa ${esc(x.code)} &middot; ${esc(x.stage_name)}`,
-  '', { href: '/engineer/certs', label: 'Back' })}
-<div class="mbody anim">
-<div class="blk"><div class="certdoc">
-${line('Villa', x.code)}
-${line('Stage', x.stage_name)}
-${line('Marked on site by', x.marked_by)}
-${line('Verified on', M.longDate(x.marked_at))}
-${line('Location', shots.length ? shots[0].gps : 'no photograph')}
-${line('Photographs', shots.length + ' attached, hash locked')}
-${line('Certifying engineer', who.display_name + (who.engineer_qual ? ', ' + who.engineer_qual : ''))}
-${line('Registration', who.engineer_reg || 'not a registered engineer')}
-${line('Amount this releases', M.money(stageTotal(d.byProject, x)))}
-</div></div>
-<div class="gap"></div>
-<div class="blk"><p class="k">The photographs this certificate covers</p></div>
-<div class="wl">${shots.map(s => `<div class="wrow">
-<span class="id"></span>
-<span class="mid"><p class="rt">${esc(s.caption)}</p>
-<p class="s">${M.longDate(s.taken_at)} &middot; ${esc(s.gps)} &middot; ${esc(s.sha256.slice(0, 16))}…</p></span>
-<span class="stc"><i class="chip ok">hash locked</i></span>
-<span class="amt"></span><span class="actc"></span></div>`).join('')}</div>
-<div class="gap"></div>
-<div class="blk"><p class="b">You certify this stage is complete per the sanctioned plan and that the
-photographs are of this villa on the date shown. This goes to the lender.</p></div>
-<div class="blk" style="padding-top:14px">
-${who.engineer_reg
+  btn('Every certificate', { href: '/engineer/certs', icon: 'back' }))}
+${titled('What you are signing', dl([
+  ['Villa', esc(x.code)],
+  ['Stage', esc(x.stage_name)],
+  ['Marked on site by', esc(x.marked_by)],
+  ['Verified on', esc(M.longDate(x.marked_at))],
+  ['Location', esc(shots.length ? shots[0].gps : 'no photograph')],
+  ['Photographs', shots.length + ' attached, hash locked'],
+  ['Certifying engineer', esc(who.display_name + (who.engineer_qual ? ', ' + who.engineer_qual : ''))],
+  ['Registration', esc(who.engineer_reg || 'not a registered engineer')],
+  ['Amount this releases', esc(M.money(stageTotal(d.byProject, x)))],
+]))}
+${titled('The photographs this certificate covers',
+  photos(shots.map(s => ({
+    sha256: s.sha256, caption: s.caption,
+    when: M.longDate(s.taken_at), gps: s.gps,
+  })), 'No photographs are attached to this stage.')
+  + note('Each one is hash locked: the file cannot be changed without the hash '
+    + 'changing with it. Tap a photograph to see it full size.'))}
+${card('Your signature', `
+<p class="hsub">You certify this stage is complete per the sanctioned plan and that the
+photographs are of this villa on the date shown. This goes to the lender.</p>
+<div style="margin-top:14px">${who.engineer_reg
   ? `<form method="post" action="/engineer/certify">
 <input type="hidden" name="id" value="${esc(x.id)}">
-<button class="wbtn solid st" type="submit" style="height:46px">Sign with my registration</button></form>
-<p class="s" style="margin-top:10px">Applied from your profile. Recorded against your login.</p>`
-  : `<p class="b ink">You are not a registered engineer, so you cannot sign this. Mark the work
-done on site and a qualified engineer certifies it.</p>`}
-</div>
-</div>`);
+<button class="btn dark" type="submit">Sign with my registration</button></form>
+<p class="hsub" style="margin-top:10px">Applied from your profile. Recorded against your login.</p>`
+  : `<p class="hsub">You are not a registered engineer, so you cannot sign this. Mark the work
+done on site and a qualified engineer certifies it.</p>`}</div>`)}
+`);
   }
 
   // -------------------------------------------------------- villa detail
@@ -525,7 +494,7 @@ done on site and a qualified engineer certifies it.</p>`}
       const shots = (await c.query(
         `SELECT e.caption, e.taken_at, e.gps, e.sha256, s.stage_code
            FROM evidence e JOIN unit_stages s ON s.id = e.unit_stage_id
-          WHERE s.unit_id = $1 ORDER BY e.taken_at DESC LIMIT 8`, [unit.id])).rows;
+          WHERE s.unit_id = $1 ORDER BY e.taken_at DESC LIMIT 12`, [unit.id])).rows;
       const snagRows = (await c.query(
         `SELECT sn.*, w.display_name raiser FROM snags sn JOIN users w ON w.id = sn.raised_by
           WHERE sn.unit_id = $1 ORDER BY sn.status, sn.raised_at`, [unit.id])).rows;
@@ -535,100 +504,91 @@ done on site and a qualified engineer certifies it.</p>`}
 
     const next = u.stages.find(s => s.status === 'pending');
     const live = u.stages.find(s => s.status === 'marked');
-    const tab = (k, l) => `<a class="tab" aria-pressed="${mode === k}"
-      href="/engineer/villa/${esc(code)}?mode=${k}" style="text-decoration:none">${l}</a>`;
-    const priced = M.schedule(u.unit.agreement_value_paise,
-      d.byProject.get(u.unit.project_id));
+    const priced = M.schedule(u.unit.agreement_value_paise, d.byProject.get(u.unit.project_id));
+    const tab = (k, l) => `<a class="chip ${mode === k ? 'on' : ''}"
+      href="/engineer/villa/${encodeURIComponent(code)}?mode=${k}">${esc(l)}</a>`;
 
     let body;
     if (mode === 'flag') {
-      body = `
-<div class="blk"><p class="k">What is the problem</p></div>
+      body = titled('What is the problem', card('', `
 <form method="post" action="/engineer/flag">
 <input type="hidden" name="code" value="${esc(code)}">
-<div class="wl">${FLAGS.map(([t, why], i) => `<label class="wrow" style="cursor:pointer">
-<span class="id"><input type="radio" name="reason" value="${esc(t)}" ${i === 0 ? 'checked' : ''}></span>
-<span class="mid"><p class="rt">${esc(t)}</p><p class="s">${esc(why)}</p></span>
-<span class="stc"></span><span class="amt"></span><span class="actc"></span></label>`).join('')}</div>
-<div class="uprow" style="display:flex;gap:10px;align-items:center;padding:14px 26px">
-<span class="mid" style="display:flex;gap:10px;align-items:center">
-<input class="fi" name="detail" placeholder="Blocks ordered 28 August, vendor now says 12 September."
-  required maxlength="200" style="margin:0;flex:1;min-width:0;padding:7px 10px"></span>
-<button class="wbtn solid st" type="submit" style="flex:0 0 160px">Report the delay</button></div>
-</form>
-<div class="blk"><div class="said hot"><p class="b">${esc(u.unit.buyer_name)} is told the stage has
-moved and why, the same day. Silence is what generates the phone calls.</p></div></div>`;
+${FLAGS.map(([t, why], i) => `<label class="dlr" style="cursor:pointer;grid-template-columns:auto 1fr">
+<span><input type="radio" name="reason" value="${esc(t)}" ${i === 0 ? 'checked' : ''}></span>
+<span><span class="dlv">${esc(t)}</span><br><span class="dlk">${esc(why)}</span></span></label>`).join('')}
+<div class="frm" style="margin-top:14px">
+<label class="fld wide"><span class="fll">What happened</span>
+<input class="fi" name="detail" required maxlength="200"
+  placeholder="Blocks ordered 28 August, vendor now says 12 September."></label>
+<button class="btn dark" type="submit">Report the delay</button></div>
+</form>`))
+        + note(esc(u.unit.buyer_name) + ' is told the stage has moved and why, the same day. '
+          + 'Silence is what generates the phone calls.');
     } else if (mode === 'snag') {
-      body = `
-<div class="blk"><p class="k">Snags</p></div>
-<div class="wl">${u.snags.length ? u.snags.map(s => `<div class="wrow">
-<span class="id">${s.status === 'fixed' ? '<i class="chip ok">fixed</i>' : chip(days(s.raised_at))}</span>
-<span class="mid"><p class="rt">${esc(s.title)}</p>
-<p class="s">Raised by ${esc(s.raiser)} &middot; ${M.longDate(s.raised_at)}</p></span>
-<span class="stc"></span><span class="amt"></span>
-<span class="actc">${s.status === 'open'
-  ? `<a class="wbtn st" href="/engineer/snags" style="text-decoration:none">Close it</a>` : ''}</span></div>`).join('')
-  : '<div class="emptyrow"><p class="b ink">Nothing raised against this villa.</p></div>'}</div>
-<div class="blk" style="padding-top:14px"><p class="b">Snags open at handover. The buyer walks
-through, logs what is wrong with photographs, and each item is closed and signed off in the same
-record. Defect liability runs twelve months from possession.</p></div>`;
+      body = titled('Snags on this villa', u.snags.length ? table(
+        ['What', 'Raised by', 'State', 'Age', ''],
+        u.snags.map(s => [
+          `<b>${esc(s.title)}</b>`,
+          esc(s.raiser) + ' &middot; ' + esc(M.longDate(s.raised_at)),
+          s.status === 'fixed' ? pill('paid', 'Fixed') : pill('over', 'Open'),
+          age(days(s.raised_at), s.status === 'fixed'),
+          s.status === 'open'
+            ? `<a class="btn" href="/engineer/snags">Close it</a>` : '',
+        ]), '1.6fr 1.4fr .7fr .5fr auto', { min: 680 })
+        : empty('Nothing raised against this villa.'))
+        + note('Snags open at handover. The buyer walks through, logs what is wrong with '
+          + 'photographs, and each item is closed and signed off in the same record. '
+          + 'Defect liability runs twelve months from possession.');
     } else {
       const target = live || next;
+      const workable = u.stages.filter(s => s.status === 'pending' || s.status === 'marked');
       body = `
-<div class="blk"><p class="k">Photographs</p></div>
-<div class="wl">${u.shots.length ? u.shots.map(s => `<div class="wrow">
-<span class="id">${esc(s.stage_code)}</span>
-<span class="mid"><p class="rt">${esc(s.caption)}</p>
-<p class="s">${M.longDate(s.taken_at)} &middot; ${esc(s.gps)}</p></span>
-<span class="stc"><i class="chip ok">stamped</i></span>
-<span class="amt n">${esc(s.sha256.slice(0, 10))}…</span><span class="actc"></span></div>`).join('')
-  : '<div class="emptyrow"><p class="b ink">No photographs on this villa yet.</p></div>'}</div>
-${target ? `<form method="post" action="/evidence/upload" enctype="multipart/form-data" class="uprow"
-  style="display:flex;gap:10px;align-items:center;padding:12px 26px 16px">
-<input type="hidden" name="stage" value="${esc(target.id)}">
-<input type="hidden" name="back" value="/engineer/villa/${esc(code)}">
-<span class="mid" style="display:flex;gap:10px;align-items:center">
-<input class="fi" type="file" name="photo" accept="image/jpeg,image/png" required
-  style="margin:0;flex:0 0 200px;padding:7px 8px">
-<input class="fi" name="caption" placeholder="Caption" required maxlength="120"
-  style="margin:0;flex:1;min-width:0;padding:7px 10px">
-<input class="fi n" name="gps" placeholder="12.8391, 77.7724" required maxlength="40"
-  style="margin:0;flex:0 0 150px;padding:7px 10px"></span>
-<button class="wbtn st" type="submit" style="flex:0 0 160px">Add photograph</button></form>` : ''}
-<div class="blk"><p class="s">Stamped and locked at capture. This is the bank's evidence.</p></div>
-<div class="gap"></div>
-<div class="blk"><p class="k">Mark complete</p></div>
-<div class="wl">${u.stages.filter(s => s.status === 'pending' || s.status === 'marked')
-  .slice(0, 2).map(s => {
-    const amount = priced[s.seq].totalPaise;
-    return `<div class="wrow">
-<span class="id">${s.status === 'marked' ? '<i class="chip wait">marked</i>' : ''}</span>
-<span class="mid"><p class="rt">${esc(s.name)}</p><p class="s">${esc(s.description || '')}</p></span>
-<span class="stc">${s.shots ? `<i class="chip ok">${s.shots} photo${s.shots === 1 ? '' : 's'}</i>`
-      : '<i class="chip warn">no photograph</i>'}</span>
-<span class="amt n">${M.money(amount)}</span>
-<span class="actc">${s.status === 'pending'
-      ? (s.shots > 0
-        ? `<form method="post" action="/engineer/mark">
+${titled('Photographs on this villa',
+  photos(u.shots.map(s => ({
+    sha256: s.sha256, caption: s.caption,
+    when: M.longDate(s.taken_at), gps: s.gps,
+  })), 'No photographs on this villa yet. The camera is below.'))}
+${target ? `<span id="addphoto"></span>` + titled('Add a photograph', card('', form('/evidence/upload',
+  `<span class="ffile">${file('photo', { id: 'shot-' + code, label: 'Take or attach' })}</span>`
+  + field('Caption', input('caption', { required: true, max: 120, placeholder: 'Internal partitions, first floor' }))
+  + field('Where', input('gps', { required: true, max: 40, placeholder: '12.8391, 77.7724' })),
+  { fields: { stage: target.id, back: '/engineer/villa/' + code }, upload: true,
+    submit: 'Add photograph', icon: 'cam' })
+  + `<p class="hsub" style="margin-top:10px">Stamped and locked at capture. This is the bank's evidence.</p>`))
+  : ''}
+${titled('Mark complete',
+  /* EVERY remaining stage. This was `.slice(0, 2)` with nothing saying so. */
+  workable.length ? table(
+    ['Stage', 'What it is', 'Evidence', 'Amount', 'Action'],
+    workable.map(s => [
+      `<b>${esc(s.name)}</b>` + (s.status === 'marked' ? ' ' + pill('due', 'marked') : ''),
+      esc(s.description || ''),
+      s.shots ? pill('paid', s.shots + ' photo' + (s.shots === 1 ? '' : 's'))
+        : pill('due', 'no photograph'),
+      num(M.money(priced[s.seq].totalPaise)),
+      s.status === 'pending'
+        ? (s.shots > 0
+          ? `<form method="post" action="/engineer/mark">
 <input type="hidden" name="id" value="${esc(s.id)}">
-<button class="wbtn solid st" type="submit">Mark done</button></form>`
-        : '<span class="s">Photograph it first</span>')
-      : `<a class="wbtn st" href="/engineer/cert/${esc(s.id)}" style="text-decoration:none">Certify</a>`}</span>
-</div>`; }).join('')}</div>
-${live ? `<div class="blk"><div class="said"><p class="b ink">Marking this sends
-${M.money(priced[live.seq].totalPaise)} to ${esc(u.unit.buyer_name)}, due in fourteen days${
-  u.unit.bank ? `, and the evidence pack to ${esc(u.unit.bank)}` : ''}. You do none of it.</p></div></div>` : ''}`;
+<button class="btn dark" type="submit">Mark done</button></form>`
+          /* An anchor to the camera on this same screen, rather than a link
+             back to the screen you are already standing on. */
+          : `<a class="btn" href="#addphoto">Photograph it first</a>`)
+        : `<a class="btn dark" href="/engineer/cert/${encodeURIComponent(s.id)}">Certify</a>`,
+    ]), '1.1fr 1.8fr .9fr .9fr auto', { min: 820 })
+    : empty('Every stage on this villa is done.'))}
+${live ? note('Marking this sends ' + esc(M.money(priced[live.seq].totalPaise)) + ' to '
+  + esc(u.unit.buyer_name) + ', due in fourteen days'
+  + (u.unit.bank ? ', and the evidence pack to ' + esc(u.unit.bank) : '') + '. You do none of it.') : ''}`;
     }
 
-    return desk(sess, '/engineer/villas', 'Villa ' + esc(code), '', `
-${UI.head(next ? next.name : 'All stages done',
+    return desk(sess, '/engineer/villas', 'Villa ' + code, '', `
+${head(next ? next.name : 'All stages done',
   `${esc(u.unit.buyer_name)} &middot; ${esc(u.unit.bank || 'self funded')} &middot; villa ${esc(code)}`,
-  '', { href: '/engineer/villas', label: 'Back' })}
-<div class="mbody anim">${flash(msg)}
-<div class="tools"><div class="tabs" style="padding:0">
-${tab('update', 'Update')}${tab('flag', 'Problem')}${tab('snag', 'Snags')}</div><div class="g"></div></div>
+  btn('Every villa', { href: '/engineer/villas', icon: 'back' }))}
+<div class="filters">${tab('update', 'Update')}${tab('flag', 'Problem')}${tab('snag', 'Snags')}</div>
 ${body}
-</div>`);
+`, msg);
   }
 
   return { load, me, villas, visits, snags, log, certs, certDetail, villa, LOG_KINDS, FLAGS, NAV };

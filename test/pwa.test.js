@@ -99,13 +99,14 @@ test('the installed window has no strip across the top of it', async () => {
     return h.length === 3 ? h.split('').map(x => x + x).join('') : h;
   };
 
-  /* `.appbar` is painted with a token, so the token's value is what actually
-     reaches the screen. Both stylesheets are searched: `--paper` is v21's. */
-  const css = await (await get('/plint.css')).text() + await (await get('/app.css')).text();
-  const bg = /\.appbar\s*\{[^}]*background:\s*var\((--[a-z0-9-]+)\)/.exec(css);
+  /* The bar at the top of an installed window is `.topbar` in this system, and
+     it is painted with a token, so the token's value is what actually reaches
+     the screen. One stylesheet now: v21's two are retired. */
+  const css = await (await get('/office.css')).text();
+  const bg = /\.topbar\s*\{[^}]*background:\s*var\((--[a-z0-9-]+)\)/.exec(css);
   assert.ok(bg, 'the app bar does not paint itself with a token');
   const token = new RegExp('\\' + bg[1] + ':\\s*(#[0-9a-fA-F]{3,8})').exec(css);
-  assert.ok(token, bg[1] + ' has no value in either stylesheet');
+  assert.ok(token, bg[1] + ' has no value in the stylesheet');
 
   assert.strictEqual(norm(manifest.theme_color), norm(token[1]),
     'the installed title bar is ' + manifest.theme_color + ' and the app bar under it is '
@@ -160,11 +161,12 @@ test('the offline page belongs to all three roles', async () => {
       'the offline page addresses one role by name: "' + role + '"');
   }
 
-  /* And it must say something at the top on a phone. The bar carried its
-     label in `.ab-ctx`, which the phone layer hides in favour of
-     `.ab-screen`, so at 375px it was an empty strip with a logo in it. */
-  assert.match(html, /class="ab-screen">[^<]+</,
-    'the offline app bar has no label the phone layer will show');
+  /* And it must say what has happened, in the card's own heading. There is no
+     app bar in this system - the retired one carried the label in `.ab-ctx`,
+     which the phone layer hid, so at 375px it was an empty strip with a logo
+     in it. */
+  assert.match(html, /class="ct">No connection</,
+    'the offline page does not say what has happened');
 
   // Same install head as every other screen, or iOS opens it in Safari chrome.
   assert.match(html, /name="apple-mobile-web-app-capable" content="yes"/,
@@ -237,9 +239,8 @@ test('the stylesheets are addressed by content, and pages link that address', as
      stranded a real browser on the deployed URL, which then drew the new
      markup with the old stylesheet. A URL that changes with the bytes is the
      only fix that reaches a client that is not going to ask again. */
-  assert.match(server.CSS.plint, /^\/plint\.[0-9a-f]{12}\.css$/);
-  assert.match(server.CSS.app, /^\/app\.[0-9a-f]{12}\.css$/);
-  assert.ok(server.CSS.plint.includes(server.BUILD), 'the stylesheet URL is not the build hash');
+  assert.match(server.CSS.office, /^\/office\.[0-9a-f]{12}\.css$/);
+  assert.ok(server.CSS.office.includes(server.BUILD), 'the stylesheet URL is not the build hash');
 
   for (const url of Object.values(server.CSS)) {
     const r = await get(url);
@@ -253,10 +254,10 @@ test('the stylesheets are addressed by content, and pages link that address', as
   // Every page must link the versioned URL, not the bare one.
   for (const p of ['/', '/offline']) {
     const html = await (await get(p)).text();
-    assert.ok(html.includes(server.CSS.plint), p + ' does not link the versioned plint.css');
-    assert.ok(html.includes(server.CSS.app), p + ' does not link the versioned app.css');
-    assert.ok(!/href="\/plint\.css"/.test(html), p + ' still links the unversioned plint.css');
-    assert.ok(!/href="\/app\.css"/.test(html), p + ' still links the unversioned app.css');
+    assert.ok(html.includes(server.CSS.office), p + ' does not link the versioned office.css');
+    assert.ok(!/href="\/office\.css"/.test(html), p + ' still links the unversioned office.css');
+    /* And the retired system is not linked from anywhere. */
+    assert.ok(!/plint\.css|app\.css/.test(html), p + ' still links a retired stylesheet');
   }
 });
 
@@ -299,7 +300,7 @@ test('the build hash moves when any shell asset changes', () => {
      first shipped - an installed app would keep the stylesheet it cached on
      the day it was installed, through every later deploy, for ever: the cache
      is keyed by URL, the URL carries no version, and cache-first never asks. */
-  const css = path.join(__dirname, '..', 'public', 'app.css');
+  const css = path.join(__dirname, '..', 'public', 'office.css');
   const before = fs.readFileSync(css);
   const read = () => JSON.parse(execFileSync(process.execPath,
     ['-e', 'const s=require("./src/server");console.log(JSON.stringify(s.BUILD));process.exit(0)'],
@@ -333,7 +334,7 @@ test('the shell is filled past the browser HTTP cache', () => {
 });
 
 test('the stylesheets revalidate instead of claiming to be immutable', async () => {
-  for (const p of ['/plint.css', '/app.css']) {
+  for (const p of ['/office.css']) {
     const r = await get(p);
     assert.strictEqual(r.headers.get('cache-control'), 'no-cache',
       p + ' has no version in its URL, so it must not be held without asking');

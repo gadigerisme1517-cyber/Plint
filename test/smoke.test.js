@@ -43,7 +43,8 @@ const get = (p, cookie) => fetch(BASE + p, { headers: cookie ? { cookie } : {}, 
 
   console.log('\nengineer');
   const e1 = await (await get('/engineer/certs', eng)).text();
-  const waiting = (e1.match(/class="wrow[ "]/g) || []).length;
+  /* A row is a `.tr` in this system; it was a `.wrow` in the retired one. */
+  const waiting = (e1.match(/class="tr click"|class="tr" /g) || []).length;
   ok(waiting > 0, waiting + ' stages waiting on a certificate');
 
   /* The certificate is signed on its own screen now, so the walk is: the list

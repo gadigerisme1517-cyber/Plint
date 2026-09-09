@@ -179,3 +179,242 @@ a.btn.dark { color: #fff; }
    exactly where it belongs, on `.p-paid` and `.mini-v.g`, marking one row's
    state. Nothing is removed. */
 .bar span { background: var(--accent); }
+
+
+/* ═══════════════════════════════════════════════════════ ADDED, PASS 4
+
+   ONE SYSTEM FOR THREE ROLES.
+
+   Everything below exists because the buyer's and the engineer's screens moved
+   onto this stylesheet and plint.css and app.css were retired. Each block is a
+   component those screens need and the reference does not have, built out of
+   the reference's own tokens, weights and radii - never a new palette, never a
+   second scale. If a value appears here it is one of the twenty-one tokens, or
+   it is derived from one by the same arithmetic the reference already uses.
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ------------------------------------------------------------- tone on a figure
+   The reference colours a number only inside a pill. A KPI figure sometimes has
+   to carry the verdict itself - money overdue, a count nobody has answered - so
+   it takes the same three colours the pills take, and no others. */
+.t-hot  { color: var(--red); }
+.t-warn { color: var(--amber); }
+.t-ok   { color: var(--green); }
+
+/* ------------------------------------------------------------------ a day count
+   An age is only a verdict while somebody is still waiting for the thing it
+   counts. `a-done` is a finished row: the figure stays grey. Nothing else may
+   colour a day count. */
+.agev { font-family: var(--disp); font-weight: 700; font-size: 11.5px; }
+.agev.a-done { color: var(--grey); font-weight: 600; }
+.agev.a-ok   { color: var(--grey); font-weight: 600; }
+.agev.a-warn { color: var(--amber); }
+.agev.a-late { color: var(--red); }
+
+/* --------------------------------------------------------------- a KPI as a link */
+a.kpi { display: block; color: inherit; text-decoration: none; }
+a.kpi:hover { background: var(--hair2); }
+.kpis.k1 { grid-template-columns: minmax(0,1fr); }
+.kpis.k2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+.kpis.k3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
+.kpis.k4 { grid-template-columns: repeat(4, minmax(0,1fr)); }
+
+/* ------------------------------------------------------------ a titled section
+   `.card` puts its heading inside its own top edge. A table is its own surface,
+   so the heading sits directly above it in the same object rather than floating
+   on the page ground the way the retired system's 12px section labels did. */
+.sect { margin-bottom: 16px; }
+.secth { display: flex; align-items: center; justify-content: space-between;
+         gap: 12px; margin-bottom: 8px; }
+.secth .ct { font-family: var(--disp); font-weight: 700; font-size: 14px; }
+
+/* ------------------------------------------------------------ label and value
+   Two cells, declared here. The retired row reserved 58px for a villa code
+   whether or not the row had one, which is why the villa, the loan, the visit
+   and the certificate all carried an empty gutter down their left edge. */
+.dl { background: var(--surface); border: 1px solid var(--hair); border-radius: 16px;
+      box-shadow: var(--sh); overflow: hidden; }
+.dlr { display: grid; grid-template-columns: minmax(140px, 240px) 1fr; gap: 18px;
+       align-items: baseline; padding: 13px 18px; border-bottom: 1px solid var(--hair2); }
+.dlr:last-child { border-bottom: none; }
+.dlk { color: var(--grey); font-size: 12.5px; }
+.dlv { font-weight: 600; font-size: 13.5px; }
+
+/* --------------------------------------------------------------- what is showing */
+.fcount { display: flex; align-items: center; gap: 10px; margin: -4px 0 12px; }
+.srch { flex: 1 1 100%; width: 100%; cursor: text; font-family: var(--body);
+        margin-bottom: 10px; }
+
+/* -------------------------------------------------------------- the timeline
+   A run of points along a line, filled in as the work is done. Both prototypes
+   drew the buyer's journey this way and no server code ever emitted it.
+
+   done : the dot is filled with green and carries a white tick. Unmistakable,
+          not a tint.
+   now  : ringed in the accent with a halo, distinct from both neighbours.
+   wait : a hollow hairline circle at 55%, visibly quieter and still readable. */
+.tl { position: relative; padding-left: 34px; padding-right: 18px;
+      background: var(--surface); border: 1px solid var(--hair);
+      border-radius: 16px; box-shadow: var(--sh); overflow: hidden; }
+.tl::before { content: ''; position: absolute; left: 45px; top: 26px; bottom: 26px;
+              width: 2px; background: var(--hair); }
+.tlfill { position: absolute; left: 45px; top: 26px; width: 2px; background: var(--green);
+          border-radius: 2px; }
+.tls { position: relative; display: flex; align-items: flex-start; gap: 14px;
+       padding: 15px 0 15px 30px; border-bottom: 1px solid var(--hair2);
+       color: inherit; text-decoration: none; }
+.tls:last-child { border-bottom: none; }
+.tls.click:hover { background: var(--hair2); }
+.tld { position: absolute; left: 0; top: 15px; width: 22px; height: 22px;
+       border-radius: 50%; background: var(--surface); border: 2px solid var(--hair);
+       display: flex; align-items: center; justify-content: center; flex: none; }
+.tld svg { width: 13px; height: 13px; stroke: #fff; stroke-width: 3; fill: none; }
+.tls.done .tld { background: var(--green); border-color: var(--green); }
+.tls.now  .tld { border-color: var(--accent); border-width: 3px;
+                 box-shadow: 0 0 0 4px var(--accsoft); }
+.tls.wait { opacity: .55; }
+.tlb { flex: 1; min-width: 0; }
+.tlt { font-family: var(--disp); font-weight: 700; font-size: 13.5px; display: block; }
+.tls-d { display: block; font-size: 11.5px; color: var(--grey); margin-top: 2px; }
+.tlr { flex: none; font-family: var(--disp); font-weight: 700; font-size: 13px;
+       padding-top: 1px; }
+.tlgo { flex: none; display: flex; align-items: center; }
+.tlgo svg { width: 16px; height: 16px; stroke: var(--faint); stroke-width: 2; fill: none; }
+
+/* ------------------------------------------------------------ the photographs
+   The product's whole subject, on the screen at last. The tile links to the
+   full image, so tapping one opens it larger with the browser's own viewer and
+   its own back button. */
+.phg { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+       gap: 10px; }
+.ph { display: block; border: 1px solid var(--hair); border-radius: 12px;
+      overflow: hidden; background: var(--hair2); color: inherit; text-decoration: none; }
+.ph:hover { box-shadow: 0 4px 14px rgba(12,13,16,.08); }
+.ph img { display: block; width: 100%; height: 118px; object-fit: cover;
+          background: var(--hair); }
+.phc { display: block; padding: 8px 10px; }
+.phc b { font-weight: 600; font-size: 12px; display: block; }
+.phc span { display: block; font-size: 10.5px; color: var(--faint); margin-top: 1px; }
+
+/* -------------------------------------------------------------- a conversation
+   Oldest at the top, newest at the bottom, and no scroll box: the page scrolls,
+   the thread does not scroll inside it. */
+.thread { display: flex; flex-direction: column; gap: 10px; }
+.msg { max-width: 78%; border-radius: 14px; padding: 11px 14px; border: 1px solid var(--hair); }
+.msg p { font-size: 13.5px; line-height: 20px; }
+.msgw { display: block; font-size: 10.5px; color: var(--faint); margin-top: 6px; }
+.msg.them { align-self: flex-start; background: var(--surface); }
+.msg.me { align-self: flex-end; background: var(--accsoft); border-color: #D8E3FF; }
+
+/* -------------------------------------------------------------------- forms
+   A select, a file input and a date input arrive with the browser's own chrome.
+   These give them the reference's `.chip` shape so a form is made of the same
+   objects as the page around it. */
+.frm { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.fld { display: flex; flex-direction: column; gap: 5px; flex: 1 1 190px; min-width: 0; }
+.fld.wide { flex: 1 1 100%; }
+.fll { font-size: 11.5px; color: var(--grey); font-weight: 500; }
+.fi { border: 1px solid var(--hair); background: #fff; border-radius: 9px;
+      padding: 9px 12px; font-size: 13px; font-family: var(--body); color: var(--ink);
+      width: 100%; min-width: 0; }
+.fi:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accsoft); }
+.fsel { position: relative; display: block; }
+.fsel select { appearance: none; -webkit-appearance: none; padding-right: 34px; }
+.fselgo { position: absolute; right: 11px; top: 50%; width: 14px; height: 14px;
+          transform: translateY(-50%) rotate(90deg); stroke: var(--grey);
+          stroke-width: 2; fill: none; pointer-events: none; }
+.ffile { display: flex; align-items: center; gap: 10px; min-width: 0;
+         position: relative; flex: 1 1 220px; }
+.ffi { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.ffn { font-size: 11.5px; color: var(--faint); overflow: hidden;
+       text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+textarea.fi { resize: vertical; min-height: 62px; line-height: 20px; }
+
+/* ------------------------------------------------------------------- a flash
+   What the last write did, where a screen shows it in the body rather than as
+   the shell's toast. */
+.note.flash { background: var(--greenbg); border-color: #BFE6D2; color: #0B5B3F; }
+
+/* ------------------------------------------------------------ the table on a phone
+   A row is a grid of declared columns. Below the sidebar's breakpoint there is
+   not room for them, and the middle column is the only one that can give - so
+   it gave, down to nothing, and a title wrapped one character per line. At 375
+   /engineer/certs was 10,985 pixels tall for that reason.
+
+   The row keeps a floor and the table scrolls sideways inside its own edges.
+   `--tmin` is set per table by the server, because a four-column list and an
+   eight-column one do not need the same floor. */
+@media (max-width: 860px) {
+  .tbl { overflow-x: auto; overflow-y: hidden; }
+  .tr { min-width: var(--tmin, 620px); }
+  .tbl .empty { min-width: 0; }
+  /* A bar of chips wider than the screen scrolls, and says so with a real
+     scrollbar rather than by silently clipping its last chip. */
+  .filters { scrollbar-width: thin; padding-bottom: 6px; }
+  .filters::-webkit-scrollbar { height: 4px; }
+  .filters::-webkit-scrollbar-thumb { background: var(--hair); border-radius: 4px; }
+  .msg { max-width: 88%; }
+  .dlr { grid-template-columns: 1fr; gap: 3px; }
+  .tl { padding-left: 30px; }
+  .tl::before, .tlfill { left: 41px; }
+  /* A class beats a bare `.kpis` on specificity, so the reference's own
+     `@media` rule could not narrow a four-tile strip: at 375 all four stayed
+     across and the page scrolled sideways. Same specificity here, later in the
+     file, so it wins. */
+  .kpis, .kpis.k2, .kpis.k3, .kpis.k4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .kpis.k1 { grid-template-columns: minmax(0, 1fr); }
+  /* `1fr` is `minmax(auto, 1fr)`, so a track never goes below its content's
+     min-width: two tiles labelled "Short of photographs" held 198px each and
+     the strip pushed the page sideways. */
+  .kpi { min-width: 0; }
+  .kpi .kl { min-width: 0; flex-wrap: wrap; }
+}
+
+/* A rupee figure must never break across two lines, and at two tiles to a
+   375px screen "Rs 1,84,80,000" did exactly that. Below this width the strip
+   is one tile per row, which is the only shape that fits a whole number. */
+@media (max-width: 560px) {
+  .kpis, .kpis.k2, .kpis.k3, .kpis.k4 { grid-template-columns: minmax(0, 1fr); }
+  .kpi b { white-space: nowrap; }
+}
+
+/* --------------------------------------------------------------- the app bar
+   The reference's mobile top bar carries a hamburger and the mark. It has room
+   for the screen's name, and without it a phone reader who has scrolled has
+   nothing on screen saying where they are. */
+.topbar .tbt { font-family: var(--disp); font-weight: 700; font-size: 13.5px;
+               margin-left: auto; color: var(--grey); }
+
+/* ------------------------------------------------------------------- print
+   A demand letter, a certificate and a statement are printed and filed. The
+   sidebar, the drawer and every control come off the page. */
+@media print {
+  .side, .topbar, .toast, .hacts, .filters, .fcount, form, .scrim2 { display: none !important; }
+  .main { padding: 0; }
+  .card, .tbl, .dl, .kpi, .tl { box-shadow: none; break-inside: avoid; }
+  body { background: #fff; }
+}
+
+/* --------------------------------------------------------- the staff search
+   One field, on every screen a member of staff opens. It was in the retired
+   app bar; the sidebar is where this system puts it. A buyer has one villa and
+   no field, which is deliberate. */
+.sidefind { padding: 0 4px 8px; }
+.sidefind .srch { margin: 0; font-size: 12.5px; }
+
+/* A table that scrolls sideways says so with a scrollbar, on the same argument
+   as the filter bar: silent clipping reads as a broken screen. */
+@media (max-width: 860px) {
+  .tbl { scrollbar-width: thin; }
+  .tbl::-webkit-scrollbar { height: 5px; }
+  .tbl::-webkit-scrollbar-thumb { background: var(--hair); border-radius: 5px; }
+}
+
+/* ----------------------------------------------------------- a page with no
+   destinations behind it: sign-in, a 404, the offline page. One column on the
+   same ground, so the first screen anybody sees is this system too. */
+.plainapp { display: block; }
+.main.plain { max-width: 520px; margin: 0 auto; padding: 46px 16px 60px; }
+.plainbrand { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }

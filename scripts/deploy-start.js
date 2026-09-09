@@ -63,6 +63,10 @@ const run = (label, args) => {
     } else {
       run('seed (demo data)', ['db/seed.js']);
     }
+    /* And every evidence row needs a file behind it, because the screens
+       render photographs now. Idempotent: it fills only the rows that have
+       none, so it is a no-op on a database that has been through it. */
+    run('evidence files', ['db/seed-photos.js']);
   }
 
   // ------------------------------------------------------- TLS, verified

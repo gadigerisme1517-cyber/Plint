@@ -110,15 +110,17 @@ test('every villa schedules to its own agreement value, to the paise', async () 
    Scoped to the stage rows on purpose. The same `.amt` class carries the
    agreement value and the ledger lines, so an unscoped match picks those up
    too and silently compares the wrong numbers. Every stage row is a link to
-   its own screen, so the href is the anchor: take the first `.amt` after each
-   `/stage/` link. (It was `class="stage "` when the schedule lived on one
-   long villa page; the rows are shared `.wrow` cards now.) */
+   its own screen, so the href is the anchor: take the figure in the `.tlr`
+   after each `/stage/` link. (It was `class="stage "` on one long villa page,
+   then a shared `.wrow` card; it is a step on the journey's timeline now.) */
 const amountsOn = html =>
-  [...html.matchAll(/<a class="wrow[^"]*" href="\/stage\/[^"]*"[\s\S]*?class="amt[^"]*">([^<]+)</g)]
+  [...html.matchAll(/<a class="tls[^"]*" href="\/stage\/[^"]*"[\s\S]*?class="tlr"><span class="num">([^<]+)</g)]
     .map(m => m[1]);
 
+/* "Paid so far" is a KPI tile on the money screen now, not a worklist row in
+   the retired system's markup. Same figure, read where it is printed. */
 const paidSoFarOn = html =>
-  (/Paid so far<\/p><\/span><span class="amt[^"]*">([^<]+)</.exec(html) || [])[1];
+  (/<\/svg> Paid so far<\/div><b class="num[^"]*">([^<]+)</.exec(html) || [])[1];
 
 /* The schedule is the Journey tab and the ledger is the Money tab since the
    buyer got v21's five. They used to be two blocks of one page. */

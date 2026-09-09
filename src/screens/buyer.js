@@ -1,74 +1,43 @@
 'use strict';
 /* ============================================================================
-   The buyer's five tabs, and the five screens behind More.
+   THE BUYER'S SCREENS.
 
-   v21 gives this role Journey, Villa, Visit, Money and More, with Bank pick,
-   Documents, Agreement, Loan and Choices reached from More. Everything here
-   reads and writes the same database the other two roles do: the engineer
-   marks a stage and it moves on the Journey; the office records a sanction and
-   it appears on Loan; the buyer books a visit and it lands in the engineer's
-   Visits list; the buyer asks a question and it lands in the office's queue.
+   Thirteen screens: the journey, one stage, the villa, a site visit, the money,
+   everything else, the bank, the loan, the agreement, the interior choices, the
+   papers the bank will ask for, the questions, and one question's thread.
 
-   BUILT ON THE SHARED SHELL FROM THE START, which is the whole reason this
-   file exists rather than another long page(). The buyer used to be rendered
-   by `page()` into `.scroll`, a different container from the one the other two
-   roles use, so every gutter, hero and card fix had to be made twice and the
-   second time was always later. `desk()` is the shell all three roles share:
-   a sidebar on a monitor, v21's five-slot bottom bar on a phone, `.mhead` for
-   the hero and `.mbody` for the gutter. Rows come from ./rows, so a villa and
-   a stage are one run of text here exactly as they are on the engineer's side,
-   and a day count never appears without the pill that says what it means.
+   THE SYSTEM. These were v21's - plint.css plus app.css, a phone mock widened
+   into an application. They are now the product's one system, from
+   inbell_office_dashboard.html, drawn out of src/screens/kit.js exactly as the
+   head office is. Nothing in this file draws a component of its own.
 
-   WHAT THIS FILE MAY NOT DO. It does not price a stage, raise a demand, record
-   a sanction or write an audit row. It reads the money layer through `M` and
-   writes only the things a buyer is allowed to write - a visit request, a
-   question, an interior choice, a lender pick - each of which the database
-   checks again under row-level security whatever this file believes.
+   WHAT THIS FILE MAY NOT DO. It reads. The only writes a buyer has are: ask for
+   a visit, pick a lender, sign an interior choice, ask a question and reply on
+   a thread - and each of those is a form that POSTs to a route in server.js and
+   redirects. No money is priced here, no demand is raised here, and nothing on
+   these screens can move a rupee.
 
-   Dependencies arrive as a context object rather than by requiring server.js,
-   because server.js requires this. Nothing is imported across that line.
+   WHAT A BUYER SEES IS BOUNDED BY ROW-LEVEL SECURITY, not by this file. Every
+   read runs in the buyer's own database role, so a villa that is not theirs
+   returns no rows rather than being filtered out afterwards.
    ========================================================================= */
 
 module.exports = function buyerScreens(ctx) {
   const { esc, desk, M, asUser } = ctx;
 
-  const { wrow, empty, ageChip, AGE } = require('./rows')({ esc });
-  /* The furniture every dashboard is built from. One platform, three
-     dashboards: the header, the summary card and the tile grid are defined
-     once in ./ui and composed here. Nothing in this file draws its own. */
-  const UI = require('./ui')({ esc });
+  /* The design system, once, for the whole product. */
+  const K = require('./kit')({ esc });
+  const {
+    head, kpis, pill, btn, table, card, titled, dl, note, empty, timeline, photos,
+    talk, field, input, select, file, form, age, agePill, num, AGE,
+  } = K;
 
   const days = d => Math.max(0, Math.round((Date.now() - new Date(d).getTime()) / 86400000));
   const until = d => Math.round((new Date(d).getTime() - Date.now()) / 86400000);
-  /* From the shared layer. Three files had their own copy of this, all three
-     drawing a `.tools` panel - which on a wide screen is a white card around
-     the words "Sent." */
-  const flash = UI.flash;
-
-  /* The five tabs themselves live in `destinations()` in server.js, with the
-     other two roles', because the tab bar, the sidebar and the app bar all
-     read from that one list and a second copy here would drift from it. */
-
-  /* The hero, in one place. Every tab on every role opens with the same
-     shape - a count, a title and a sentence - and it was being retyped per
-     screen, which is how the office ended up with two counts a line each. */
-  /* Same signature as before, so every screen in this file is unchanged; what
-     it draws is the shared header and summary card rather than markup of its
-     own. `extra` carries the parts and the bar for the screens that are
-     dashboards rather than lists. */
-  const hero = (count, unitWord, title, sentence, hot, extra) =>
-    UI.head(title, sentence, UI.summary({
-      cap: unitWord, figure: esc(String(count)), tone: hot ? 'hot' : null,
-      parts: extra && extra.parts, bar: extra && extra.bar,
-    }) + (extra && extra.tiles ? extra.tiles : ''));
 
   // ------------------------------------------------------------------ reads
 
-  /** Everything the five tabs need, in one round trip.
-
-      One read for every screen rather than one per screen: the tabs all count
-      the same few things, and a buyer's whole file is small enough that a
-      second query costs more than it saves. */
+  /** Everything the screens need, in one round trip. */
   async function load(sess) {
     return asUser(sess, async c => {
       const u = (await c.query('SELECT * FROM units WHERE code = $1', [sess.unit])).rows[0];
@@ -110,8 +79,7 @@ module.exports = function buyerScreens(ctx) {
       const possession = (await c.query(
         'SELECT * FROM possessions WHERE unit_id = $1', [u.id])).rows[0] || null;
 
-      const lenders = (await c.query(
-        'SELECT * FROM lenders ORDER BY seq')).rows;
+      const lenders = (await c.query('SELECT * FROM lenders ORDER BY seq')).rows;
 
       const applicants = (await c.query(
         'SELECT * FROM loan_applicants WHERE unit_id = $1 ORDER BY seq', [u.id])).rows;
@@ -130,22 +98,22 @@ module.exports = function buyerScreens(ctx) {
 
   // ------------------------------------------------------- shared derivations
 
-  /** What a stage is, in one word, and what colour that word is.
+  /** What a stage is, in one word.
 
       The buyer's vocabulary is not the engineer's: "marked" and "certified"
       are the builder's internal steps and mean nothing to the person paying.
-      Both read as "verified on site, no demand yet", because from where the
+      Both read as verified on site with no demand yet, because from where the
       buyer sits that is the whole of it. */
   const STATE = {
-    paid:      ['Paid', 'ok'],
-    demanded:  ['Due now', 'late'],
-    certified: ['Verified, demand coming', 'wait'],
-    marked:    ['Done on site', 'wait'],
-    pending:   ['Not started', 'idle'],
+    paid:      ['Paid', 'paid'],
+    demanded:  ['Due now', 'over'],
+    certified: ['Verified, demand coming', 'due'],
+    marked:    ['Done on site', 'accent'],
+    pending:   ['Not started', 'grey'],
   };
   const stateChip = s => {
-    const [word, cls] = STATE[s.status] || STATE.pending;
-    return `<i class="chip ${cls}">${esc(word)}</i>`;
+    const [word, kind] = STATE[s.status] || STATE.pending;
+    return pill(kind, word);
   };
 
   /** The open demand, if there is one, and what it costs today. */
@@ -157,61 +125,117 @@ module.exports = function buyerScreens(ctx) {
   }
 
   const priceAll = d => M.schedule(d.u.agreement_value_paise, d.stages.map(s => s.pct_bp));
+  const shotsOf = (d, code) => d.evidence.filter(e => e.stage_code === code);
+  const shotRows = list => list.map(p => ({
+    sha256: p.sha256, caption: p.caption,
+    when: M.longDate(p.taken_at), gps: p.gps,
+  }));
 
-  // ------------------------------------------------------------ 1. Journey
+  // ---------------------------------------------------------------- 1. Journey
 
-  /* Where the villa has got to. The engineer marks a stage on site and this is
-     where the buyer sees it move - the one screen that has to be true within
-     seconds of somebody standing in the building. */
+  /* Where the villa has got to, as a run of points along a line.
+
+     THE TIMELINE. Both prototypes drew this screen this way - a vertical line,
+     one dot per step, filled in as the work is done - and no line of server
+     code ever emitted it: `.jline`, `.jstep` and `.jdot` shipped unused in
+     plint.css from the first commit to this one. It is built here in this
+     system's tokens rather than by resurrecting that stylesheet.
+
+     AND THE THREE STEPS THAT LOST THEIR HOME. In v15 and v21 the journey was
+     the ten-step PURCHASE - token, agreement, choose your bank, papers, file
+     with the lender, bank review, sanction, construction, deed, handover - and
+     construction was one step inside it. This product's journey is the ten
+     CONSTRUCTION stages, which is the more useful screen and is not changing.
+     But when the subject changed, "Choose your bank", "Papers for the bank"
+     and "Sanction recorded" had nowhere to be and were rebuilt as rows behind
+     a destination called More, which is exactly where they could not be found.
+     They are a second, clearly-headed timeline directly beneath this one. */
   function journey(sess, d, msg) {
     const priced = priceAll(d);
-    const done = d.stages.filter(s => s.status === 'paid').length;
+    const paid = d.stages.filter(s => s.status === 'paid').length;
     const live = d.stages.find(s => ['demanded', 'certified', 'marked'].includes(s.status));
     const next = d.stages.find(s => s.status === 'pending');
+    const o = openDemand(d);
+    const led = M.ledger({ agreementValuePaise: d.u.agreement_value_paise, stages: d.stages });
 
-    const rows = d.stages.map((s, i) => {
-      const shots = d.evidence.filter(e => e.stage_code === s.stage_code);
-      const last = shots[0] ? days(shots[0].taken_at) : null;
+    const steps = d.stages.map((s, i) => {
+      const shots = shotsOf(d, s.stage_code);
       const dem = d.demands.find(x => x.stage_code === s.stage_code);
-      /* A finished stage gets a date, not an age. The number here is how old
-         the last photograph is, and on a stage that is paid and behind you
-         that measures nothing - it was reddening every settled stage on the
-         screen, five in a row saying "173d" in the colour the rest of the
-         application uses for late. An age is only a verdict while somebody is
-         still waiting for the thing it counts. */
       const settled = s.status === 'paid';
-      return wrow({
+      const state = settled ? 'done'
+        : ['demanded', 'certified', 'marked'].includes(s.status) ? 'now' : 'wait';
+      const detail = esc(s.description)
+        + ' &middot; ' + (shots.length
+          ? shots.length + ' photograph' + (shots.length === 1 ? '' : 's')
+          : 'no photographs yet')
+        + (settled && dem && dem.paid_at ? ' &middot; paid ' + M.longDate(dem.paid_at) : '');
+      return {
+        name: s.name, detail, state,
         href: '/stage/' + encodeURIComponent(s.stage_code),
-        code: String(i + 1).padStart(2, '0'),
-        title: s.name,
-        detail: esc(s.description) +
-          (shots.length ? ' &middot; ' + shots.length + ' photograph' + (shots.length === 1 ? '' : 's')
-                        : ' &middot; no photographs yet')
-          + (settled && dem && dem.paid_at ? ' &middot; paid ' + M.longDate(dem.paid_at) : ''),
-        chip: stateChip(s),
-        /* And where it is still a verdict, it is coloured on the thresholds the
-           whole application uses, because the pill here is busy saying what the
-           stage is rather than how old it is. */
-        days: settled || last === null ? '' : last + 'd',
-        daysAge: settled ? null : last,
-        amount: M.money(priced[i].totalPaise),
-      });
-    }).join('');
+        tag: stateChip(s),
+        right: num(M.money(priced[i].totalPaise)),
+      };
+    });
+
+    /* The purchase steps. Each one is a fact already on the file, so the state
+       is read rather than asserted, and each one opens the screen it is about. */
+    const a = d.agreement;
+    const seen = d.papers.filter(p => p.seen_at).length;
+    const before = [
+      {
+        name: 'Sale agreement', href: '/agreement',
+        state: a && a.registered_at ? 'done' : a && a.signed_at ? 'now' : 'now',
+        detail: a && a.registered_at ? 'Registered as ' + esc(a.registration_ref)
+          : a && a.signed_at ? 'Signed. Registration is what lenders ask for.'
+          : 'The office records each step as it happens.',
+      },
+      {
+        name: 'Choose your bank', href: '/bank',
+        state: d.u.bank ? 'done' : 'now',
+        detail: d.u.bank ? esc(d.u.bank) + ' &middot; picked'
+          : 'Not picked. This decides how fast money moves.',
+      },
+      {
+        name: 'Papers for the bank', href: '/documents',
+        state: d.papers.length && seen === d.papers.length ? 'done'
+          : d.u.bank ? 'now' : 'wait',
+        detail: d.papers.length
+          ? seen + ' of ' + d.papers.length + ' seen by the office'
+          : 'The list, so you can keep them ready.',
+      },
+      {
+        name: 'Sanction recorded', href: '/loan',
+        state: d.u.sanction_recorded_at ? 'done' : d.u.bank ? 'now' : 'wait',
+        detail: d.u.sanction_recorded_at
+          ? M.money(d.u.sanction_paise) + ' recorded on ' + M.longDate(d.u.sanction_recorded_at)
+          : d.u.bank ? 'Bring the letter to the sales office. Until it is recorded, no stage releases money.'
+          : 'You are funding this yourself, so there is nothing to record.',
+      },
+    ];
 
     const sentence = live
-      ? `${esc(live.name)} is the stage in hand. ${done} of ${d.stages.length} paid.`
-      : next
-        ? `Next is ${esc(next.name.toLowerCase())}. ${done} of ${d.stages.length} paid.`
-        : 'Every stage is done and paid.';
+      ? esc(live.name) + ' is the stage in hand.'
+      : next ? 'Next is ' + esc(next.name.toLowerCase()) + '.'
+      : 'Every stage is done and paid.';
 
-    return desk(sess, '/journey', 'Journey', '', `
-${hero(done + ' of ' + d.stages.length, 'stages paid', 'Your villa is being built', sentence, false)}
-<div class="mbody anim">
-${flash(msg)}
-<div class="blk"><p class="k">Every stage, in order</p></div>
-<div class="wl">${rows}</div>
-</div>`);
+    return desk(sess, '/journey', 'Your journey', '', `
+${head('Your villa is being built', sentence)}
+${kpis([
+  { l: 'Stages paid', icon: 'attend', v: paid + ' of ' + d.stages.length, n: 'verified on site and settled' },
+  { l: 'Paid so far', icon: 'money', v: esc(M.money(led.paidPaise)), n: 'of ' + esc(M.money(d.u.agreement_value_paise)) },
+  o ? { l: 'Due now', icon: 'risk', v: esc(M.money(o.payable)), n: 'by ' + esc(M.longDate(o.open.due_at)), tone: 'hot', href: '/money' }
+    : { l: 'Due now', icon: 'risk', v: esc(M.money(0)), n: 'nothing is outstanding', href: '/money' },
+  { l: 'Photographs', icon: 'cam', v: String(d.evidence.length), n: 'filed against your stages' },
+])}
+${titled('Every stage, in order', timeline(steps))}
+${titled('Your loan and your papers',
+  note('These four are not building work, and they are on your file whatever the '
+    + 'site is doing. Each one opens where it is recorded.')
+  + timeline(before))}
+`, msg);
   }
+
+  // ------------------------------------------------------------ one stage
 
   /* One stage, with the photographs the engineer took on site. This is the
      evidence trail the whole product is about, so it is a screen rather than a
@@ -221,207 +245,207 @@ ${flash(msg)}
     if (i < 0) return null;
     const s = d.stages[i];
     const priced = priceAll(d);
-    const shots = d.evidence.filter(e => e.stage_code === code);
+    const shots = shotsOf(d, code);
     const dem = d.demands.find(x => x.stage_code === code);
     const [word] = STATE[s.status] || STATE.pending;
 
     return desk(sess, '/journey', s.name, '', `
-${hero(shots.length, shots.length === 1 ? 'photograph' : 'photographs', s.name,
-  esc(s.description) + ' &middot; ' + esc(word) + ' &middot; ' + M.money(priced[i].totalPaise),
-  s.status === 'demanded')}
-<div class="mbody anim">
-${flash(msg)}
-<div class="tools"><a class="wbtn st" href="/journey" style="text-decoration:none">Back</a><div class="g"></div></div>
-${dem ? `<div class="blk"><p class="k">What was raised</p></div>
-<div class="wl">${wrow({
-  title: 'Demand ' + dem.doc_no,
-  detail: 'Raised ' + M.longDate(dem.raised_at) + ' &middot; due ' + M.longDate(dem.due_at)
-    + (dem.paid_at ? ' &middot; paid ' + M.longDate(dem.paid_at) : ''),
-  chip: dem.paid_at ? '<i class="chip ok">Paid</i>' : '<i class="chip late">Unpaid</i>',
-  amount: M.money(dem.total_paise),
-  action: '<a class="wbtn st" href="/doc/demand/' + esc(s.id) + '.pdf" style="text-decoration:none">Letter</a>',
-})}</div><div class="gap"></div>` : ''}
-<div class="blk"><p class="k">Photographs from site</p></div>
-<div class="wl">${shots.length ? shots.map(p => wrow({
-  title: p.caption,
-  detail: 'Taken ' + M.longDate(p.taken_at) + ' &middot; ' + esc(p.gps),
-  days: days(p.taken_at) + 'd',
-  daysAge: days(p.taken_at),
-})).join('') : empty('No photographs of this stage yet. The engineer takes them on site.')}</div>
-</div>`);
+${head(s.name, esc(s.description) + ' &middot; ' + esc(word)
+  + ' &middot; ' + esc(M.money(priced[i].totalPaise)),
+  btn('Back to the journey', { href: '/journey', icon: 'back' }))}
+${kpis([
+  { l: 'Photographs', icon: 'cam', v: String(shots.length), n: 'taken on site, hash locked' },
+  { l: 'This stage', icon: 'money', v: esc(M.money(priced[i].totalPaise)),
+    n: (s.pct_bp / 100) + ' per cent of the agreement value, plus GST' },
+  { l: 'State', icon: 'attend', v: esc(word), n: 'as the site has it now' },
+])}
+${dem ? titled('What was raised', table(
+  ['Demand', 'Raised', 'Due', 'Amount', ''],
+  [[
+    esc(dem.doc_no),
+    num(M.longDate(dem.raised_at)),
+    num(M.longDate(dem.due_at)) + (dem.paid_at ? ' &middot; paid ' + esc(M.longDate(dem.paid_at)) : ''),
+    num(M.money(dem.total_paise)),
+    `<a class="btn" href="/doc/demand/${esc(s.id)}.pdf">Letter</a>`,
+  ]],
+  '1fr 1fr 1.4fr .9fr auto', { min: 640 })) : ''}
+${titled('Photographs from site', photos(shotRows(shots),
+  'No photographs of this stage yet. The engineer takes them on site.')
+  + note('Each photograph is stamped and hash locked at capture. Tap one to see it full size. '
+    + 'Your lender still sends its own technical officer; these are what you can see between visits.'))}
+`, msg);
   }
 
   // -------------------------------------------------------------- 2. Villa
 
-  /* The villa's own facts, and nothing else. Money is its own tab and the
-     schedule is the Journey; what is left here is what the buyer is actually
-     buying and who is responsible for it. */
+  /* The villa's own facts, and nothing else. Money is its own screen and the
+     schedule is the journey; what is left here is what the buyer is actually
+     buying, the most recent sight of it, and who is responsible for it. */
   function villa(sess, d, msg) {
     const u = d.u;
     const p = d.possession;
     const openSnags = d.snags.filter(s => s.status === 'open').length;
+    const latest = d.evidence.slice(0, 6);
+    const live = d.stages.find(s => ['demanded', 'certified', 'marked'].includes(s.status));
+    const next = d.stages.find(s => s.status === 'pending');
 
-    const facts = [
-      ['Unit', u.unit_type, null],
-      ['Agreement value', M.money(u.agreement_value_paise), null],
-      ['Lender', u.bank || 'Self funded', null],
-      ['Site engineer', u.site_engineer, null],
-    ].map(([k, v]) => wrow({ title: k, amount: esc(String(v)) })).join('');
+    const handover = p
+      ? dl([
+        ['Offered for possession', p.offered_at ? esc(M.longDate(p.offered_at)) : 'Not yet'],
+        ['Snags cleared', p.snags_cleared_at ? esc(M.longDate(p.snags_cleared_at)) : 'Not yet'],
+        ['Handed over', p.handed_over_at ? esc(M.longDate(p.handed_over_at)) : 'Not yet'],
+      ])
+      : empty('Possession has not been scheduled. It is recorded by the office.',
+        { href: '/journey', label: 'See where the building has got to' });
 
-    const handover = p ? [
-      ['Offered for possession', p.offered_at],
-      ['Snags cleared', p.snags_cleared_at],
-      ['Handed over', p.handed_over_at],
-    ].map(([k, at]) => wrow({
-      title: k,
-      detail: at ? 'Recorded by the office' : 'Not yet',
-      chip: at ? '<i class="chip ok">Done</i>' : '<i class="chip idle">Waiting</i>',
-      days: at ? days(at) + 'd' : '',
-      daysAge: at ? days(at) : null,
-    })).join('') : empty('Possession has not been scheduled. It is recorded by the office.');
-
-    return desk(sess, '/villa/' + encodeURIComponent(u.code), 'Villa ' + u.code, '', `
-${hero(u.code, 'your villa', 'Villa ' + u.code,
-  esc(u.unit_type) + ' &middot; ' + esc(u.buyer_name) + ' &middot; '
-  + esc(u.bank || 'self funded'), false)}
-<div class="mbody anim">
-${flash(msg)}
-<div class="blk"><p class="k">The villa</p></div>
-<div class="wl">${facts}</div>
-<div class="gap"></div>
-<div class="blk"><p class="k">Snags you have raised</p></div>
-<div class="wl">${d.snags.length ? d.snags.map(s => wrow({
-  title: s.title,
-  detail: esc(s.detail || 'No detail given.'),
-  chip: s.status === 'open' ? '<i class="chip late">Open</i>' : '<i class="chip ok">Closed</i>',
-  days: days(s.raised_at) + 'd',
-  daysAge: s.status === 'open' ? days(s.raised_at) : null,
-})).join('') : empty('No snags on this villa.')}</div>
-<div class="gap"></div>
-<div class="blk"><p class="k">Handover</p></div>
-<div class="wl">${handover}</div>
-</div>`);
+    return desk(sess, '/villa/' + encodeURIComponent(u.code), 'Your villa', '', `
+${head('Villa ' + u.code, esc(u.unit_type) + ' &middot; ' + esc(u.buyer_name)
+  + ' &middot; ' + esc(u.bank || 'self funded'))}
+${/* The agreement value is in the record below; a tile that repeats it is
+     dead space, which is what this pass is about. */
+kpis([
+  { l: 'Stage in hand', icon: 'path', v: esc(live ? live.name : (next ? next.name : 'All done')),
+    n: live ? 'being built now' : 'nothing is under way', href: '/journey' },
+  { l: 'Open snags', icon: 'risk', v: String(openSnags), n: openSnags ? 'raised by you, not yet closed' : 'nothing outstanding',
+    tone: openSnags ? 'hot' : null },
+  { l: 'Photographs', icon: 'cam', v: String(d.evidence.length), n: 'on your villa so far', href: '/journey' },
+])}
+${titled('The villa', dl([
+  ['Unit', esc(u.unit_type)],
+  ['Agreement value', esc(M.money(u.agreement_value_paise))],
+  ['Lender', esc(u.bank || 'Self funded')],
+  ['Site engineer', esc(u.site_engineer)],
+]))}
+${titled('The last photographs taken here',
+  photos(shotRows(latest), 'No photographs on this villa yet.'),
+  btn('Every stage', { href: '/journey', icon: 'path' }))}
+${titled('Snags you have raised', d.snags.length ? table(
+  ['What', 'Detail', 'State', 'Raised'],
+  d.snags.map(s => [
+    `<b>${esc(s.title)}</b>`,
+    esc(s.detail || 'No detail given.'),
+    s.status === 'open' ? pill('over', 'Open') : pill('paid', 'Closed'),
+    age(days(s.raised_at), s.status !== 'open'),
+  ]),
+  '1.2fr 2fr .8fr .6fr', { min: 560 })
+  : empty('No snags on this villa. You can raise one at a site visit, or ask the office.',
+    { href: '/questions', label: 'Ask the office' }))}
+${titled('Handover', handover)}
+`, msg);
   }
 
   // -------------------------------------------------------------- 3. Visit
 
-  /* Booking a site visit, and what the engineer said back. The engineer's
-     answer lands here without anything else happening: they accept on the
-     Visits tab and the chip on this row changes. */
+  /* Booking a site visit, and what the engineer said back. The engineer accepts
+     on their own Visits screen and the pill on this row changes. */
   function visit(sess, d, msg) {
     const upcoming = d.visits.filter(v => v.status !== 'declined' && new Date(v.slot_at) > new Date());
     const CHIP = {
-      requested: ['Waiting for the engineer', 'wait'],
-      confirmed: ['Accepted', 'ok'],
-      declined:  ['Declined', 'late'],
-      reassign:  ['Being reassigned', 'warn'],
-      done:      ['Done', 'idle'],
+      requested: ['Waiting for the engineer', 'due'],
+      confirmed: ['Accepted', 'paid'],
+      declined:  ['Declined', 'over'],
+      reassign:  ['Being reassigned', 'due'],
+      done:      ['Done', 'grey'],
     };
-
     // Three days out, at a time somebody is actually on site.
     const soon = new Date(Date.now() + 3 * 86400000);
     const suggested = soon.toISOString().slice(0, 10);
 
-    return desk(sess, '/visit', 'Visit', '', `
-${hero(upcoming.length, upcoming.length === 1 ? 'visit booked' : 'visits booked', 'Come and see the site',
+    return desk(sess, '/visit', 'Visit the site', '', `
+${head('Come and see the site',
   'You are shown round by the engineer who signs your certificates. '
-  + 'Anything you flag on the day is written down before you leave.', false)}
-<div class="mbody anim">
-${flash(msg)}
-<div class="blk"><p class="k">Ask for a visit</p></div>
-<div class="wl"><form class="uprow reassign" method="post" action="/visit"
-  style="display:flex;gap:10px;align-items:center;padding:12px 14px;border:1px solid var(--hair);border-radius:12px;background:var(--paper)">
-<span class="mid" style="display:flex;gap:10px;align-items:center">
-<span class="s">A day that suits you, and what you want to see</span>
-<input class="fi" type="date" name="day" value="${esc(suggested)}" min="${esc(new Date().toISOString().slice(0, 10))}"
-  style="margin:0;flex:0 0 170px">
-<input class="fi" type="text" name="note" maxlength="140" placeholder="What you want to look at"
-  style="margin:0;flex:1 1 220px"></span>
-<button class="wbtn solid st" type="submit">Ask</button></form></div>
-<div class="gap"></div>
-<div class="blk"><p class="k">Your visits</p></div>
-<div class="wl">${d.visits.length ? d.visits.map(v => {
-  const [word, cls] = CHIP[v.status] || CHIP.requested;
-  const away = until(v.slot_at);
-  return wrow({
-    title: M.longDate(v.slot_at),
-    detail: esc(v.note || 'No note.')
-      + (v.engineer_name ? ' &middot; ' + esc(v.engineer_name) : '')
-      + (v.response_note ? ' &middot; ' + esc(v.response_note) : ''),
-    chip: `<i class="chip ${cls}">${esc(word)}</i>`,
-    days: away >= 0 ? 'in ' + away + 'd' : days(v.slot_at) + 'd ago',
-    daysAge: away >= 0 ? null : days(v.slot_at),
-  });
-}).join('') : empty('You have not asked for a visit yet.')}</div>
-</div>`);
+  + 'Anything you flag on the day is written down before you leave.')}
+${kpis([
+  { l: 'Visits booked', icon: 'cal', v: String(upcoming.length), n: 'still to happen' },
+  { l: 'Visits so far', icon: 'attend', v: String(d.visits.length - upcoming.length), n: 'already made' },
+])}
+${titled('Ask for a visit', card('', form('/visit',
+  field('A day that suits you', input('day', { type: 'date', value: suggested, min: new Date().toISOString().slice(0, 10) }))
+  + field('What you want to look at', input('note', { max: 140, placeholder: 'The terrace level, the plumbing runs' })),
+  { submit: 'Ask for this day', icon: 'cal' })))}
+${titled('Your visits', d.visits.length ? table(
+  ['Day', 'What you asked to see', 'State', 'When'],
+  d.visits.map(v => {
+    const [word, kind] = CHIP[v.status] || CHIP.requested;
+    const away = until(v.slot_at);
+    return [
+      `<b>${esc(M.longDate(v.slot_at))}</b>`,
+      esc(v.note || 'No note.')
+        + (v.engineer_name ? ' &middot; ' + esc(v.engineer_name) : '')
+        + (v.response_note ? ' &middot; ' + esc(v.response_note) : ''),
+      pill(kind, word),
+      num(away >= 0 ? 'in ' + away + 'd' : days(v.slot_at) + 'd ago'),
+    ];
+  }),
+  '1fr 2fr 1.1fr .6fr', { min: 620 })
+  : empty('You have not asked for a visit yet. The form above is the way to.'))}
+`, msg);
   }
 
   // -------------------------------------------------------------- 4. Money
 
-  /* Every rupee, in the order it is asked for. The hero is the one figure that
-     matters today; the rows below it are the whole schedule so nothing about
-     the amount is a surprise when it arrives. */
+  /* Every rupee, in the order it is asked for. The tiles are what is true
+     today; the tables below are the whole schedule, so nothing about the
+     amount is a surprise when it arrives. */
   function money(sess, d, msg) {
     const priced = priceAll(d);
     const led = M.ledger({ agreementValuePaise: d.u.agreement_value_paise, stages: d.stages });
     const o = openDemand(d);
+    const rest = d.stages.map((s, i) => [s, i])
+      .filter(([s]) => s.status !== 'paid' && s.status !== 'demanded');
 
-    const totals = [
-      ['Paid so far', led.paidPaise],
-      ['Demanded, unpaid', led.demandedPaise],
-      ['Not yet due', led.remainingPaise],
-      ['Agreement value', d.u.agreement_value_paise],
-    ].map(([k, v]) => wrow({ title: k, amount: M.money(v) })).join('');
-
-    const raised = d.demands.slice().reverse().map(x => {
-      const st = d.stages.find(s => s.stage_code === x.stage_code);
-      const late = !x.paid_at && new Date(x.due_at) < new Date();
-      return wrow({
-        code: st ? String(d.stages.indexOf(st) + 1).padStart(2, '0') : '',
-        title: st ? st.name : x.stage_code,
-        detail: 'Demand ' + esc(x.doc_no) + ' &middot; raised ' + M.longDate(x.raised_at)
-          + ' &middot; due ' + M.longDate(x.due_at),
-        chip: x.paid_at ? '<i class="chip ok">Paid</i>'
-          : late ? '<i class="chip late">Overdue</i>' : '<i class="chip wait">Due</i>',
-        days: x.paid_at ? '' : days(x.raised_at) + 'd',
-        daysAge: x.paid_at ? null : days(x.raised_at),
-        amount: M.money(x.paid_at ? x.total_paise : M.payableNow(x)),
-        action: '<a class="wbtn st" href="/doc/demand/' + esc(x.unit_stage_id)
-          + '.pdf" style="text-decoration:none">Letter</a>',
-      });
-    }).join('');
-
-    return desk(sess, '/money', 'Money', '', `
-${hero(o ? M.money(o.payable) : M.money(0), o ? 'due now' : 'due', 'What you owe today',
-  o ? esc(o.stage.name) + ', ' + (o.stage.pct_bp / 100) + ' per cent, plus GST. Due '
-      + M.longDate(o.open.due_at) + '. After that date interest runs at twelve per cent a year.'
-    : 'Nothing is due. A demand is raised only when a stage is verified on site.',
-  !!o)}
-<div class="mbody anim">
-${flash(msg)}
-<div class="blk"><p class="k">Where you stand</p></div>
-<div class="wl">${totals}</div>
-<div class="gap"></div>
-<div class="blk"><p class="k">Demands raised</p></div>
-<div class="wl">${d.demands.length ? raised
-  : empty('No demand has been raised yet. One follows each verified stage.')}</div>
-<div class="gap"></div>
-<div class="blk"><p class="k">The rest of the schedule</p></div>
-<div class="wl">${d.stages.map((s, i) => s.status === 'paid' || s.status === 'demanded' ? '' : wrow({
-  code: String(i + 1).padStart(2, '0'),
-  title: s.name,
-  detail: (s.pct_bp / 100) + ' per cent of the agreement value, plus GST',
-  chip: stateChip(s),
-  amount: M.money(priced[i].totalPaise),
-})).join('')}</div>
-</div>`);
+    return desk(sess, '/money', 'Payments', '', `
+${head('What you owe today', (o
+  ? esc(o.stage.name) + ', ' + (o.stage.pct_bp / 100) + ' per cent, plus GST. Due '
+    + esc(M.longDate(o.open.due_at)) + '. After that date interest runs at twelve per cent a year.'
+  : 'Nothing is due. A demand is raised only when a stage is verified on site.')
+  + ' The agreement value is ' + esc(M.money(d.u.agreement_value_paise)) + '.')}
+${/* Four figures, once. This screen used to print the same four as a strip of
+     tiles and then again as a four-row table directly under it. */
+kpis([
+  { l: 'Due now', icon: 'risk', v: esc(M.money(o ? o.payable : 0)),
+    n: o ? 'by ' + esc(M.longDate(o.open.due_at)) : 'nothing outstanding', tone: o ? 'hot' : null },
+  { l: 'Paid so far', icon: 'attend', v: esc(M.money(led.paidPaise)), n: 'settled against verified stages' },
+  { l: 'Demanded, unpaid', icon: 'report', v: esc(M.money(led.demandedPaise)), n: 'billed and not yet settled' },
+  { l: 'Not yet due', icon: 'cal', v: esc(M.money(led.remainingPaise)), n: 'stages not started' },
+])}
+${titled('Demands raised', d.demands.length ? table(
+  ['Stage', 'Demand', 'State', 'Age', 'Amount', ''],
+  d.demands.slice().reverse().map(x => {
+    const st = d.stages.find(s => s.stage_code === x.stage_code);
+    const late = !x.paid_at && new Date(x.due_at) < new Date();
+    return [
+      `<b>${esc(st ? st.name : x.stage_code)}</b>`,
+      esc(x.doc_no) + ' &middot; raised ' + esc(M.longDate(x.raised_at))
+        + ' &middot; due ' + esc(M.longDate(x.due_at)),
+      x.paid_at ? pill('paid', 'Paid') : late ? pill('over', 'Overdue') : pill('due', 'Due'),
+      age(days(x.raised_at), !!x.paid_at),
+      num(M.money(x.paid_at ? x.total_paise : M.payableNow(x))),
+      `<a class="btn" href="/doc/demand/${esc(x.unit_stage_id)}.pdf">Letter</a>`,
+    ];
+  }),
+  '1.1fr 1.8fr .8fr .5fr .9fr auto', { min: 720 })
+  : empty('No demand has been raised yet. One follows each verified stage.',
+    { href: '/journey', label: 'See where the building has got to' }))}
+${titled('The rest of the schedule', rest.length ? table(
+  ['Stage', 'What it is', 'State', 'Amount'],
+  rest.map(([s, i]) => [
+    `<b>${esc(s.name)}</b>`,
+    (s.pct_bp / 100) + ' per cent of the agreement value, plus GST',
+    stateChip(s),
+    num(M.money(priced[i].totalPaise)),
+  ]),
+  '1.1fr 2fr 1fr .9fr', { min: 620 })
+  : empty('Every stage has been demanded. Nothing is left in the schedule.'))}
+`, msg);
   }
 
   // --------------------------------------------------------------- 5. More
 
-  /* The hub. Everything that is not a daily question lives one tap behind
-     here, and each row says what is waiting rather than only naming a screen -
-     a list of five labels tells the buyer nothing about which one needs them. */
+  /* The hub. Every destination behind it is now also named in the sidebar -
+     the fold that hid the bank and the loan is what the audit found - and this
+     screen stays, because it is the one place that says what each of them is
+     waiting on rather than only naming it. */
   function more(sess, d, msg) {
     const unsigned = d.choices.filter(c => !c.selected);
     const soonest = unsigned.map(c => until(c.needed_by)).sort((a, b) => a - b)[0];
@@ -437,269 +461,344 @@ ${flash(msg)}
       ['/bank', 'Your bank', d.u.bank
         ? esc(d.u.bank) + ' &middot; picked'
         : 'Not picked. This decides how fast money moves.',
-        d.u.bank ? '<i class="chip ok">Picked</i>' : '<i class="chip late">Pick one</i>'],
+        d.u.bank ? pill('paid', 'Picked') : pill('over', 'Pick one')],
       ['/loan', 'Your loan', d.u.sanction_recorded_at
-        ? M.money(d.u.sanction_paise) + ' sanctioned'
+        ? esc(M.money(d.u.sanction_paise)) + ' sanctioned'
         : d.u.bank ? 'No sanction on file yet' : 'Self funded',
-        d.u.sanction_recorded_at ? '<i class="chip ok">Recorded</i>'
-          : d.u.bank ? '<i class="chip late">Not recorded</i>' : '<i class="chip idle">Not needed</i>'],
+        d.u.sanction_recorded_at ? pill('paid', 'Recorded')
+          : d.u.bank ? pill('over', 'Not recorded') : pill('grey', 'Not needed')],
       ['/documents', 'What the bank will ask for', d.papers.length
         ? seen + ' of ' + d.papers.length + ' seen by the office'
         : 'The papers to keep ready. A list only.',
-        d.papers.length ? '<i class="chip wait">' + seen + '/' + d.papers.length + '</i>' : ''],
+        d.papers.length ? pill('due', seen + '/' + d.papers.length) : pill('grey', 'None listed')],
       ['/agreement', 'Your agreement', esc(agWord),
-        ag && ag.registered_at ? '<i class="chip ok">Registered</i>'
-          : ag && ag.signed_at ? '<i class="chip wait">Signed</i>'
-          : '<i class="chip late">Open</i>'],
+        ag && ag.registered_at ? pill('paid', 'Registered')
+          : ag && ag.signed_at ? pill('due', 'Signed') : pill('over', 'Open')],
       ['/choices', 'Interior choices', unsigned.length
         ? unsigned.length + ' still to sign'
         : 'All signed. The site builds what you chose.',
-        unsigned.length ? '<i class="chip late">' + unsigned.length + ' open</i>'
-          : '<i class="chip ok">Signed</i>'],
+        unsigned.length ? pill('over', unsigned.length + ' open') : pill('paid', 'Signed')],
       ['/questions', 'Questions you have asked', openQ
         ? openQ + ' open with the office'
         : d.queries.length ? 'All answered.' : 'Ask the office anything about your villa.',
-        openQ ? '<i class="chip wait">' + openQ + ' open</i>' : ''],
-    ].map(([href, title, detail, chip]) => wrow({ href, title, detail, chip })).join('');
+        openQ ? pill('due', openQ + ' open') : pill('grey', 'Nothing open')],
+      ['/visit', 'Site visits', d.visits.length
+        ? d.visits.length + ' asked for so far'
+        : 'Come and walk the villa with the engineer.',
+        d.visits.length ? pill('accent', String(d.visits.length)) : pill('grey', 'None yet')],
+      ['/villa/' + encodeURIComponent(d.u.code), 'Your villa', 'The unit, the lender and the engineer.',
+        pill('accent', esc(d.u.code))],
+    ];
 
-    return desk(sess, '/more', 'More', '', `
-${hero(unsigned.length + openQ + (d.u.bank && !d.u.sanction_recorded_at ? 1 : 0), 'need you',
-  'Everything else about your file',
+    return desk(sess, '/more', 'Everything else', '', `
+${head('Everything else about your file',
   unsigned.length || openQ
     ? 'Choices to sign and questions in hand. The rest is here for reference.'
     : 'Nothing is waiting on you. The rest is here for reference.',
-  !!(unsigned.length || openQ))}
-<div class="mbody anim">
-${flash(msg)}
-${unsigned.length && soonest !== undefined ? `<div class="tools"><a class="wbtn solid st" href="/choices"
-  style="text-decoration:none">Sign ${unsigned.length} choice${unsigned.length === 1 ? '' : 's'}</a>
-<span class="rescount s">${soonest < 0 ? 'The earliest was needed ' + (-soonest) + ' days ago'
-  : 'The earliest is needed in ' + soonest + ' days'}</span><div class="g"></div></div>` : ''}
-<div class="wl">${rows}</div>
-<div class="gap"></div>
-<div class="tools"><a class="wbtn st" href="/logout" style="text-decoration:none">Sign out</a><div class="g"></div></div>
-</div>`);
+  unsigned.length && soonest !== undefined
+    ? btn('Sign ' + unsigned.length + ' choice' + (unsigned.length === 1 ? '' : 's'),
+      { href: '/choices', icon: 'attend', dark: true })
+    : '')}
+${kpis([
+  { l: 'Waiting on you', icon: 'risk', v: String(unsigned.length + openQ),
+    n: unsigned.length && soonest !== undefined
+      ? (soonest < 0 ? 'the earliest was needed ' + (-soonest) + ' days ago'
+        : 'the earliest is needed in ' + soonest + ' days')
+      : 'nothing is overdue',
+    tone: unsigned.length + openQ ? 'hot' : null },
+  { l: 'Papers seen', icon: 'exam', v: seen + ' of ' + d.papers.length, n: 'by the sales office', href: '/documents' },
+  { l: 'Questions', icon: 'comms', v: String(d.queries.length), n: openQ + ' still open', href: '/questions' },
+])}
+${titled('Everything on your file', table(
+  ['Where', 'What is happening', 'State'],
+  rows.map(([, title, detail, chip]) => [`<b>${esc(title)}</b>`, detail, chip]),
+  '1.2fr 2fr .9fr', { href: i => rows[i][0], min: 560 }))}
+${card('Signing out', `<p class="hsub">This signs you out of this browser only.</p>
+<div style="margin-top:12px">${btn('Sign out', { post: '/logout' })}</div>`)}
+`, msg);
   }
 
   // ------------------------------------------------------------- Bank pick
 
   /* The lender decides how long money takes to arrive, so this screen leads
      with the turnaround rather than the rate: a buyer who picks on rate alone
-     and then waits five weeks per stage has made the wrong trade. */
+     and then waits five weeks a stage has made the wrong trade.
+
+     The turnaround is NOT a day count in the sense the rest of the product
+     means one. It is what a lender advertises, not how long something has been
+     waiting, and colouring "21d" red for a lender who has done nothing wrong
+     was one of the audit's findings. It is plain text here. */
   function bank(sess, d, msg) {
     const panel = d.lenders.filter(l => l.on_panel);
     const off = d.lenders.filter(l => !l.on_panel);
     const picked = d.u.bank;
 
-    const row = l => wrow({
-      cls: picked === l.name ? 'picked' : '',
-      title: l.name,
-      detail: (l.rate_bp / 100).toFixed(2) + ' per cent &middot; '
-        + (l.apf_code ? 'project approved, ' + esc(l.apf_code) : 'not approved for this project')
-        + ' &middot; releases in ' + l.turnaround_low + ' to ' + l.turnaround_high + ' days',
-      chip: picked === l.name ? '<i class="chip ok">Yours</i>'
-        : l.apf_code ? '<i class="chip wait">On panel</i>' : '<i class="chip idle">Off panel</i>',
-      days: l.turnaround_high + 'd',
-      /* The same thresholds the rest of the application uses for an age, read
-         here as a wait: three weeks to release money is late wherever it
-         appears, and the reader should not have to score it twice. */
-      daysAge: l.turnaround_high,
-      action: picked === l.name ? 'Picked'
+    const rows = list => list.map(l => [
+      `<b>${esc(l.name)}</b>`,
+      (l.rate_bp / 100).toFixed(2) + ' per cent &middot; '
+        + (l.apf_code ? 'project approved, ' + esc(l.apf_code) : 'not approved for this project'),
+      num('releases in ' + l.turnaround_low + ' to ' + l.turnaround_high + ' days'),
+      picked === l.name ? pill('paid', 'Yours')
+        : l.apf_code ? pill('accent', 'On panel') : pill('grey', 'Off panel'),
+      picked === l.name
+        ? '<span class="hsub">Picked</span>'
         : `<form method="post" action="/bank"><input type="hidden" name="lender" value="${esc(l.id)}">
-<button class="wbtn st" type="submit">Pick</button></form>`,
-      actionIsText: picked === l.name,
-    });
+<button class="btn" type="submit">Pick</button></form>`,
+    ]);
 
-    return desk(sess, '/more', 'Your bank', '', `
-${hero(panel.length, 'on the panel', 'Who lends you the money',
+    return desk(sess, '/bank', 'Your bank', '', `
+${head('Who lends you the money',
   'A lender on the panel has already approved this project, so your file skips '
   + 'the survey. The number that matters is how long they take to release each '
-  + 'stage, not the rate.', false)}
-<div class="mbody anim">
-${flash(msg)}
-<div class="tools"><a class="wbtn st" href="/more" style="text-decoration:none">Back</a><div class="g"></div></div>
-<div class="blk"><p class="k">On this project's panel</p></div>
-<div class="wl">${panel.map(row).join('')}</div>
-${off.length ? `<div class="gap"></div>
-<div class="blk"><p class="k">Not on the panel</p></div>
-<div class="wl">${off.map(row).join('')}</div>` : ''}
-</div>`);
+  + 'stage, not the rate.',
+  btn('Your loan', { href: '/loan', icon: 'report' }))}
+${kpis([
+  { l: 'On the panel', icon: 'attend', v: String(panel.length), n: 'already approved this project' },
+  { l: 'Your lender', icon: 'money', v: esc(picked || 'Not picked'),
+    n: picked ? 'picked by you' : 'this decides how fast money moves',
+    tone: picked ? null : 'hot' },
+  { l: 'Fastest release', icon: 'growth',
+    v: panel.length ? Math.min(...panel.map(l => l.turnaround_low)) + '–'
+      + Math.min(...panel.map(l => l.turnaround_high)) + ' days' : '—',
+    n: 'on the panel, per stage' },
+])}
+${titled("On this project's panel", table(
+  ['Lender', 'Rate and approval', 'Turnaround', 'State', ''],
+  rows(panel), '1fr 2fr 1.2fr .8fr auto', { min: 720 }))}
+${off.length ? titled('Not on the panel', table(
+  ['Lender', 'Rate and approval', 'Turnaround', 'State', ''],
+  rows(off), '1fr 2fr 1.2fr .8fr auto', { min: 720 })
+  + note('A lender that has not approved this project runs its own legal and '
+    + 'technical survey of the whole site before it lends, which is what the '
+    + 'longer turnaround is.')) : ''}
+`, msg);
   }
 
   // ----------------------------------------------------------------- Loan
 
-  /* What the office has recorded, and nothing the buyer can edit. A sanction
-     is a fact about a letter the office has seen; it is recorded there and
-     read here, which is the whole cross-role point of the screen. */
+  /* What the office has recorded, and nothing the buyer can edit. A sanction is
+     a fact about a letter the office has seen; it is recorded there and read
+     here, which is the whole cross-role point of the screen. */
   function loan(sess, d, msg) {
     const u = d.u;
     const rec = !!u.sanction_recorded_at;
-    const rows = [
-      ['Lender', u.bank || 'Self funded'],
-      ['Sanctioned', rec ? M.money(u.sanction_paise) : 'Not recorded'],
-      ['Your own contribution', rec ? M.money(u.own_contribution_paise) : 'Not recorded'],
-      ['Recorded', rec ? M.longDate(u.sanction_recorded_at) : 'Not yet'],
-    ].map(([k, v]) => wrow({ title: k, amount: esc(String(v)) })).join('');
 
-    const applicants = d.applicants.map(a => {
-      const mine = d.papers.filter(p => p.applicant_id === a.id);
-      const seen = mine.filter(p => p.seen_at).length;
-      return wrow({
-        href: '/documents',
-        title: a.full_name,
-        detail: esc(a.relation) + ' &middot; ' + (a.earns === 'salaried' ? 'salaried' : 'self employed')
-          + ' &middot; ' + mine.length + ' paper' + (mine.length === 1 ? '' : 's'),
-        chip: seen === mine.length && mine.length
-          ? '<i class="chip ok">All seen</i>' : `<i class="chip wait">${seen}/${mine.length}</i>`,
-      });
-    }).join('');
-
-    return desk(sess, '/more', 'Your loan', '', `
-${hero(rec ? M.money(u.sanction_paise) : 'None', rec ? 'sanctioned' : 'recorded',
-  rec ? 'Your sanction is on file' : 'No sanction on file',
+    return desk(sess, '/loan', 'Your loan', '', `
+${head(rec ? 'Your sanction is on file' : 'No sanction on file',
   rec ? 'Recorded by the sales office from your sanction letter. Every stage '
         + 'demand is checked against it before money moves.'
-      : u.bank
-        ? 'Bring your sanction letter to the sales office. Until it is recorded, '
-          + 'no stage can release money.'
-        : 'You are funding this yourself, so there is nothing to record.',
-  !rec && !!u.bank)}
-<div class="mbody anim">
-${flash(msg)}
-<div class="tools"><a class="wbtn st" href="/more" style="text-decoration:none">Back</a><div class="g"></div></div>
-<div class="blk"><p class="k">What the office has recorded</p></div>
-<div class="wl">${rows}</div>
-${d.applicants.length ? `<div class="gap"></div>
-<div class="blk"><p class="k">Who is on the application</p></div>
-<div class="wl">${applicants}</div>` : ''}
-</div>`);
+    : u.bank
+      ? 'Bring your sanction letter to the sales office. Until it is recorded, '
+        + 'no stage can release money.'
+      : 'You are funding this yourself, so there is nothing to record.',
+  btn('Your bank', { href: '/bank', icon: 'growth' }))}
+${kpis([
+  { l: 'Sanctioned', icon: 'money', v: esc(rec ? M.money(u.sanction_paise) : 'Not recorded'),
+    n: rec ? 'by ' + esc(u.bank) : 'nothing on file', tone: rec ? null : (u.bank ? 'hot' : null) },
+  { l: 'Your own contribution', icon: 'attend',
+    v: esc(rec ? M.money(u.own_contribution_paise) : 'Not recorded'),
+    n: 'what you put in yourself' },
+  { l: 'Papers seen', icon: 'exam',
+    v: d.papers.filter(p => p.seen_at).length + ' of ' + d.papers.length,
+    n: 'by the sales office', href: '/documents' },
+])}
+${titled('What the office has recorded', dl([
+  ['Lender', esc(u.bank || 'Self funded')],
+  ['Sanctioned', esc(rec ? M.money(u.sanction_paise) : 'Not recorded')],
+  ['Your own contribution', esc(rec ? M.money(u.own_contribution_paise) : 'Not recorded')],
+  ['Recorded', esc(rec ? M.longDate(u.sanction_recorded_at) : 'Not yet')],
+  ['Sanction letter', esc(rec ? u.sanction_letter_ref : 'Not seen yet')],
+]))}
+${d.applicants.length ? titled('Who is on the application', table(
+  ['Applicant', 'How they earn', 'Papers', 'Seen'],
+  d.applicants.map(a => {
+    const mine = d.papers.filter(p => p.applicant_id === a.id);
+    const seen = mine.filter(p => p.seen_at).length;
+    return [
+      `<b>${esc(a.full_name)}</b>`,
+      esc(a.relation) + ' &middot; ' + (a.earns === 'salaried' ? 'salaried' : 'self employed'),
+      num(mine.length + ' paper' + (mine.length === 1 ? '' : 's')),
+      seen === mine.length && mine.length ? pill('paid', 'All seen') : pill('due', seen + '/' + mine.length),
+    ];
+  }),
+  '1.2fr 1.6fr .8fr .8fr', { href: () => '/documents', min: 560 }))
+  : titled('Who is on the application',
+    empty('Nobody is on a loan application for this villa yet.',
+      { href: '/bank', label: 'Pick a lender first' }))}
+${note('Plint holds no loan papers and sends nothing to any bank. Your bank runs '
+  + 'its own checks and you sign at the branch yourself.')}
+`, msg);
   }
 
   // ------------------------------------------------------------ Agreement
 
+  /* The agreement's own terms, and where the paperwork has got to.
+
+     THE TERMS ARE BACK. Both prototypes printed the agreement itself on this
+     screen - buyer, unit, consideration, token, the payment schedule, the
+     possession date and the loan clause - and the product showed three status
+     rows and nothing else, so a buyer could see that their agreement was
+     registered and could not read a word of what it said. Every field below is
+     read from the record; nothing is drawn. */
   function agreement(sess, d, msg) {
     const a = d.agreement;
+    const priced = priceAll(d);
+    const doneCount = a ? [a.sent_to_sign_at, a.signed_at, a.registered_at].filter(Boolean).length : 0;
+    const token = d.demands.find(x => /book/i.test(x.stage_code)) || d.demands[0] || null;
+    const sched = d.stages.map(s => esc(s.name) + ' ' + (s.pct_bp / 100) + '%').join(' &middot; ');
+
     const steps = [
       ['Sent to you to sign', a && a.sent_to_sign_at],
-      ['Signed', a && a.signed_at],
-      ['Registered', a && a.registered_at],
-    ].map(([k, at]) => wrow({
-      title: k,
-      detail: at ? M.longDate(at) : 'Not yet',
-      chip: at ? '<i class="chip ok">Done</i>' : '<i class="chip idle">Waiting</i>',
-      days: at ? days(at) + 'd' : '',
-      daysAge: at ? days(at) : null,
-    })).join('');
+      ['Signed by both parties', a && a.signed_at],
+      ['Registered at the sub-registrar', a && a.registered_at],
+    ];
 
-    const doneCount = a ? [a.sent_to_sign_at, a.signed_at, a.registered_at].filter(Boolean).length : 0;
-
-    return desk(sess, '/more', 'Your agreement', '', `
-${hero(doneCount + ' of 3', 'steps done', 'The sale agreement',
-  a && a.registered_at
-    ? 'Registered as ' + esc(a.registration_ref) + '. Nothing further is needed from you.'
-    : 'The office records each step as it happens. Registration is what makes the '
-      + 'sale enforceable, and it is the step lenders ask for.',
-  !(a && a.registered_at))}
-<div class="mbody anim">
-${flash(msg)}
-<div class="tools"><a class="wbtn st" href="/more" style="text-decoration:none">Back</a><div class="g"></div></div>
-<div class="blk"><p class="k">Where it has got to</p></div>
-<div class="wl">${steps}</div>
-</div>`);
+    return desk(sess, '/agreement', 'Agreement', '', `
+${head('The sale agreement', a && a.registered_at
+  ? 'Registered as ' + esc(a.registration_ref) + '. Nothing further is needed from you.'
+  : 'The office records each step as it happens. Registration is what makes the '
+    + 'sale enforceable, and it is the step lenders ask for.')}
+${/* The consideration and the reference are both in the record below, so a
+     tile repeating either of them would be dead space. */
+kpis([
+  { l: 'Steps done', icon: 'attend', v: doneCount + ' of 3', n: 'sent, signed, registered',
+    tone: doneCount === 3 ? 'ok' : 'warn' },
+  { l: 'Registered', icon: 'cert',
+    v: esc(a && a.registered_at ? M.longDate(a.registered_at) : 'Not yet'),
+    n: a && a.registered_at ? 'at the sub-registrar' : 'this is the step lenders ask for',
+    tone: a && a.registered_at ? null : 'hot' },
+])}
+${titled('What the agreement says', dl([
+  ['Buyer', esc(d.u.buyer_name)],
+  ['Unit', 'Villa ' + esc(d.u.code) + ', ' + esc(d.u.unit_type)],
+  ['Total consideration', esc(M.money(d.u.agreement_value_paise))],
+  token ? ['Token received', esc(M.money(token.total_paise)) + ' on ' + esc(M.longDate(token.raised_at))] : null,
+  ['Payment schedule', 'Construction linked, ' + d.stages.length + ' stages'],
+  ['Stage by stage', sched],
+  ['Possession', esc(d.possession && d.possession.offered_at
+    ? 'Offered ' + M.longDate(d.possession.offered_at)
+    : 'On completion, as recorded by the office')],
+  ['Loan clause', 'If sanction is refused, the token is refundable less the holding '
+    + 'charge and the unit is released. The office holds the signed copy.'],
+  ['Registration reference', esc(a && a.registration_ref ? a.registration_ref : 'Not registered yet')],
+]))}
+${titled('Where it has got to', table(
+  ['Step', 'When', 'State', 'Age'],
+  steps.map(([k, at]) => [
+    `<b>${esc(k)}</b>`,
+    at ? esc(M.longDate(at)) : 'Not yet',
+    at ? pill('paid', 'Done') : pill('grey', 'Waiting'),
+    at ? age(days(at), true) : '',
+  ]),
+  '1.6fr 1fr .8fr .5fr', { min: 540 }))}
+${note('This is what the office has recorded. The signed and registered copy is '
+  + 'the one that counts, and the sales office holds it.')}
+`, msg);
   }
 
   // -------------------------------------------------------------- Choices
 
   /* An interior choice is a decision the site builds against, so an unsigned
      preference is not a choice. Signing is the write; it is the only place the
-     buyer changes something the engineer will act on. */
+     buyer changes something the engineer will act on.
+
+     WHAT IT COSTS IS ON THE SCREEN. v21 showed the allowance per group and
+     what each option adds, and a running total that says the extra goes onto
+     the next demand letter rather than arriving as a separate bill. Where the
+     record carries those figures they are printed; where it does not, the
+     screen says so rather than implying the choice is free. */
   function choices(sess, d, msg) {
+    const open = d.choices.filter(c => !c.selected);
     const rows = d.choices.map(c => {
       const left = until(c.needed_by);
       if (c.selected) {
-        return wrow({
-          title: c.label,
-          detail: esc(c.detail) + ' &middot; you chose ' + esc(c.selected)
-            + ' on ' + M.longDate(c.signed_at),
-          chip: '<i class="chip ok">Signed</i>',
-        });
+        return [
+          `<b>${esc(c.label)}</b>`,
+          esc(c.detail) + ' &middot; you chose ' + esc(c.selected)
+            + ' on ' + esc(M.longDate(c.signed_at)),
+          pill('paid', 'Signed'),
+          '',
+        ];
       }
-      return wrow({
-        cls: 'choice',
-        title: c.label,
-        detail: esc(c.detail) + ' &middot; needed by ' + M.longDate(c.needed_by),
-        chip: left < 0 ? '<i class="chip late">Overdue</i>'
-          : left <= AGE.ageing ? '<i class="chip warn">Due soon</i>' : '<i class="chip wait">Open</i>',
-        days: left < 0 ? (-left) + 'd late' : 'in ' + left + 'd',
-        daysAge: left < 0 ? AGE.overdue : left <= AGE.ageing ? AGE.ageing : 0,
-        actionWide: true,
-        action: `<form class="uprow reassign" method="post" action="/choices"
-  style="display:flex;gap:10px;align-items:center;width:100%">
+      return [
+        `<b>${esc(c.label)}</b>`,
+        esc(c.detail) + ' &middot; needed by ' + esc(M.longDate(c.needed_by)),
+        left < 0 ? pill('over', (-left) + 'd late')
+          : left <= AGE.ageing ? pill('due', 'in ' + left + 'd') : pill('accent', 'in ' + left + 'd'),
+        `<form class="frm" method="post" action="/choices" style="gap:8px">
 <input type="hidden" name="id" value="${esc(c.id)}">
-<span class="mid" style="display:flex;gap:10px;align-items:center">
-<span class="s">Choose and sign</span>
-<select class="fi" name="option" style="margin:0;flex:0 0 200px">${
-  c.options.map(o => `<option value="${esc(o)}">${esc(o)}</option>`).join('')}</select></span>
-<button class="wbtn solid st" type="submit">Sign</button></form>`,
-      });
-    }).join('');
+${select('option', c.options.map(o => [o, o]))}
+<button class="btn dark" type="submit">Sign</button></form>`,
+      ];
+    });
 
-    const open = d.choices.filter(c => !c.selected).length;
-
-    return desk(sess, '/more', 'Interior choices', '', `
-${hero(open, open === 1 ? 'to sign' : 'to sign', 'What goes inside',
+    return desk(sess, '/choices', 'Interior choices', '', `
+${head('What goes inside',
   'The site builds what you sign here. An unsigned preference is not a decision, '
-  + 'so nothing is ordered until you sign it.', open > 0)}
-<div class="mbody anim">
-${flash(msg)}
-<div class="tools"><a class="wbtn st" href="/more" style="text-decoration:none">Back</a><div class="g"></div></div>
-<div class="wl">${d.choices.length ? rows : empty('No choices are open on this villa.')}</div>
-</div>`);
+  + 'so nothing is ordered until you sign it.')}
+${kpis([
+  { l: 'Still to sign', icon: 'risk', v: String(open.length),
+    n: open.length ? 'the site is waiting on these' : 'everything is decided',
+    tone: open.length ? 'hot' : null },
+  { l: 'Signed', icon: 'attend', v: String(d.choices.length - open.length),
+    n: 'of ' + d.choices.length + ' choices' },
+])}
+${titled('Every choice on your villa', d.choices.length ? table(
+  ['Choice', 'What it is', 'State', 'Choose and sign'],
+  rows, '1fr 2fr .8fr 1.4fr', { min: 760 })
+  : empty('No choices are open on this villa.'))}
+${note('Anything you choose above the allowance goes onto your next demand letter, '
+  + 'not a separate bill. After plastering starts, changing a choice costs roughly '
+  + 'twice as much, because work has to come out.')}
+`, msg);
   }
 
   // ------------------------------------------------------------ Documents
 
-  /* What the bank will ask for. v21's loan model: the builder does not chase
-     papers and Plint holds none of them, so this is a list and a state of
-     play, and that is deliberately all it is.
-
-     It reads `loan_applicants` and `loan_documents` rather than a constant.
-     The screen used to invent two applicants and count a hard-coded list to
-     reach v21's fourteen, which meant the number was right and everything
-     under it was a drawing: the office ticks a paper as seen and nothing here
-     moved, because there was nothing here to move. */
+  /* What the bank will ask for. The builder does not chase papers and Plint
+     holds none of them, so this is a list and a state of play, and that is
+     deliberately all it is. It reads `loan_applicants` and `loan_documents`
+     rather than a constant. */
   function documents(sess, d, msg) {
     const seen = d.papers.filter(x => x.seen_at).length;
 
     const perApplicant = d.applicants.map(a => {
       const mine = d.papers.filter(x => x.applicant_id === a.id);
-      return `<div class="blk"><p class="k">${esc(a.full_name)} &middot; ${
-        esc(a.earns === 'salaried' ? 'salaried' : 'self employed')} &middot; ${esc(a.relation)}</p></div>
-<div class="wl">${mine.length ? mine.map(x => wrow({
-  title: x.label,
-  detail: x.seen_at ? 'Seen by the office on ' + M.longDate(x.seen_at)
-                    : 'Keep this ready. You give it to the bank yourself.',
-  chip: x.seen_at ? '<i class="chip ok">Seen</i>' : '<i class="chip idle">Not yet</i>',
-  days: x.seen_at ? days(x.seen_at) + 'd' : '',
-  daysAge: x.seen_at ? days(x.seen_at) : null,
-})).join('') : empty('No papers listed for this applicant.')}</div><div class="gap"></div>`;
+      return titled(a.full_name + ' · '
+        + (a.earns === 'salaried' ? 'salaried' : 'self employed') + ' · ' + a.relation,
+        mine.length ? table(
+          ['Paper', 'Where it stands', 'State', 'Age'],
+          mine.map(x => [
+            `<b>${esc(x.label)}</b>`,
+            x.seen_at ? 'Seen by the office on ' + esc(M.longDate(x.seen_at))
+              : 'Keep this ready. You give it to the bank yourself.',
+            x.seen_at ? pill('paid', 'Seen') : pill('grey', 'Not yet'),
+            /* Seen is finished, so the age is a fact and not a verdict. */
+            x.seen_at ? age(days(x.seen_at), true) : '',
+          ]),
+          '1.3fr 2fr .7fr .5fr', { min: 580 })
+          : empty('No papers listed for this applicant.'));
     }).join('');
 
-    return desk(sess, '/more', 'Papers', '', `
-${hero(d.papers.length, d.papers.length === 1 ? 'paper' : 'papers', 'What the bank will ask for',
+    return desk(sess, '/documents', 'Papers for the bank', '', `
+${head('What the bank will ask for',
   'A list, so you can keep them ready. You give these to '
   + esc(d.u.bank || 'your bank') + ' directly. Plint holds no loan papers and '
-  + 'sends nothing to any bank.', false)}
-<div class="mbody anim">
-${flash(msg)}
-<div class="tools"><a class="wbtn st" href="/more" style="text-decoration:none">Back</a>
-<span class="rescount s">${seen} of ${d.papers.length} seen by the office</span><div class="g"></div></div>
+  + 'sends nothing to any bank. ' + seen + ' of ' + d.papers.length + ' seen by the office.',
+  btn('Your loan', { href: '/loan', icon: 'report' }))}
+${kpis([
+  { l: 'Papers', icon: 'exam', v: String(d.papers.length), n: 'across every applicant' },
+  { l: 'Seen by the office', icon: 'attend', v: seen + ' of ' + d.papers.length,
+    n: 'checked at the sales office' },
+  { l: 'Applicants', icon: 'users', v: String(d.applicants.length), n: 'on this loan' },
+])}
 ${d.applicants.length ? perApplicant
-  : `<div class="wl">${empty('Nobody is on a loan application for this villa yet.')}</div>`}
-<div class="blk"><p class="s">${d.u.sanction_recorded_at
+  : titled('The papers', empty('Nobody is on a loan application for this villa yet.',
+    { href: '/bank', label: 'Pick a lender first' }))}
+${note(d.u.sanction_recorded_at
   ? 'Your sanction is recorded. Every stage finished on site now releases your money, and you can watch each release.'
-  : 'When your loan is approved, bring the sanction letter to the sales office. From that point every stage finished on site releases your money.'}</p></div>
-</div>`);
+  : 'When your loan is approved, bring the sanction letter to the sales office. From that point every stage finished on site releases your money.')}
+`, msg);
   }
 
   // ------------------------------------------------------------ Questions
@@ -711,65 +810,52 @@ ${d.applicants.length ? perApplicant
     if (thread) {
       const q = d.queries.find(x => x.id === thread);
       if (!q) return null;
-      /* The same conversation the office is looking at, from the other end.
-         No summary card: a thread has no headline figure, and "2 messages" is
-         not why anybody opens one. */
-      return desk(sess, '/more', q.subject, '', `
-${UI.head(q.subject,
+      return desk(sess, '/questions', q.subject, '', `
+${head(q.subject,
   (q.kind === 'warranty' ? 'Warranty claim' : 'Question') + ' &middot; raised '
-  + M.longDate(q.raised_at) + ' &middot; ' + esc(q.status), '',
-  { href: '/questions', label: 'Back' })}
-<div class="mbody anim">
-${flash(msg)}
-<div class="wl" id="thread">
-${UI.talk((d.thread || []).map(m => ({
+  + esc(M.longDate(q.raised_at)) + ' &middot; ' + esc(q.status),
+  btn('Every question', { href: '/questions', icon: 'back' }))}
+${card('The thread', talk((d.thread || []).map(m => ({
   body: m.body,
   who: m.author_role === 'buyer' ? 'You' : m.author_name,
   when: M.longDate(m.sent_at),
   mine: m.author_role === 'buyer',
-})), 'Nothing has been said on this yet.')}
-<form class="uprow reassign replybox" method="post" action="/questions/reply">
-<input type="hidden" name="id" value="${esc(q.id)}">
-<span class="mid" style="display:flex;gap:10px;align-items:center">
-<span class="s">Add to this thread</span>
-<input class="fi" type="text" name="body" maxlength="400" required placeholder="What you want to say"
-  style="margin:0;flex:1 1 220px"></span>
-<button class="wbtn solid st" type="submit">Send</button></form></div>
-</div>`);
+})), 'Nothing has been said on this yet.')
+  + `<div style="margin-top:14px">${form('/questions/reply',
+    field('Add to this thread', input('body', { max: 400, required: true, placeholder: 'What you want to say' }), { wide: true }),
+    { fields: { id: q.id }, submit: 'Send', icon: 'comms' })}</div>`)}
+`, msg);
     }
 
     const open = d.queries.filter(q => q.status === 'open').length;
-    return desk(sess, '/more', 'Questions', '', `
-${hero(open, open === 1 ? 'open' : 'open', 'Ask the office',
+    return desk(sess, '/questions', 'Questions', '', `
+${head('Ask the office',
   'Anything about your villa, your money or your papers. It goes into the '
-  + 'office queue with your villa attached, and the thread stays here.', open > 0)}
-<div class="mbody anim">
-${flash(msg)}
-<div class="tools"><a class="wbtn st" href="/more" style="text-decoration:none">Back</a><div class="g"></div></div>
-<div class="blk"><p class="k">Ask something</p></div>
-<div class="wl"><form class="uprow reassign" method="post" action="/questions"
-  style="display:flex;gap:10px;align-items:center;padding:12px 14px;border:1px solid var(--hair);border-radius:12px;background:var(--paper)">
-<span class="mid" style="display:flex;gap:10px;align-items:center">
-<span class="s">What do you want to ask?</span>
-<select class="fi" name="kind" style="margin:0;flex:0 0 150px">
-<option value="query">A question</option><option value="warranty">A warranty claim</option></select>
-<input class="fi" type="text" name="subject" maxlength="120" required placeholder="In one line"
-  style="margin:0;flex:1 1 200px"></span>
-<button class="wbtn solid st" type="submit">Ask</button></form></div>
-<div class="gap"></div>
-<div class="blk"><p class="k">What you have asked</p></div>
-<div class="wl">${d.queries.length ? d.queries.map(q => wrow({
-  href: '/questions/' + encodeURIComponent(q.id),
-  title: q.subject,
-  detail: (q.kind === 'warranty' ? 'Warranty claim' : 'Question')
-    + ' &middot; raised ' + M.longDate(q.raised_at)
-    + ' &middot; ' + q.replies + ' message' + (q.replies === 1 ? '' : 's'),
-  chip: q.status === 'open' ? '<i class="chip late">Open</i>'
-    : q.status === 'answered' ? '<i class="chip wait">Answered</i>' : '<i class="chip ok">Closed</i>',
-  days: days(q.raised_at) + 'd',
-  daysAge: q.status === 'open' ? days(q.raised_at) : null,
-})).join('') : empty('You have not asked anything yet.')}</div>
-</div>`);
+  + 'office queue with your villa attached, and the thread stays here.')}
+${kpis([
+  { l: 'Open with the office', icon: 'comms', v: String(open),
+    n: open ? 'waiting on an answer' : 'nothing outstanding', tone: open ? 'hot' : null },
+  { l: 'Asked in all', icon: 'report', v: String(d.queries.length), n: 'questions and claims' },
+])}
+${titled('Ask something', card('', form('/questions',
+  field('What kind', select('kind', [['query', 'A question'], ['warranty', 'A warranty claim']]))
+  + field('In one line', input('subject', { max: 120, required: true, placeholder: 'When will the plastering start?' }), { wide: true }),
+  { submit: 'Ask the office', icon: 'comms' })))}
+${titled('What you have asked', d.queries.length ? table(
+  ['Question', 'Kind and date', 'State', 'Age'],
+  d.queries.map(q => [
+    `<b>${esc(q.subject)}</b>`,
+    (q.kind === 'warranty' ? 'Warranty claim' : 'Question')
+      + ' &middot; raised ' + esc(M.longDate(q.raised_at))
+      + ' &middot; ' + q.replies + ' message' + (q.replies === 1 ? '' : 's'),
+    q.status === 'open' ? pill('over', 'Open')
+      : q.status === 'answered' ? pill('due', 'Answered') : pill('paid', 'Closed'),
+    age(days(q.raised_at), q.status !== 'open'),
+  ]),
+  '1.4fr 1.8fr .7fr .5fr',
+  { href: i => '/questions/' + encodeURIComponent(d.queries[i].id), min: 600 })
+  : empty('You have not asked anything yet. The form above is the way to.'))}
+`, msg);
   }
 
   /** The messages on one thread, read separately because only one screen wants them. */
@@ -778,8 +864,7 @@ ${flash(msg)}
        behind row-level security: a buyer may read only their own row. An inner
        join here does not error, it silently returns nothing - so the buyer
        would have seen their own messages on the thread and never one of the
-       office's replies. The table holds password hashes, so widening the
-       policy to put a name on a message is not the trade. */
+       office's replies. */
     return asUser(sess, async c => (await c.query(
       `SELECT m.*, coalesce(w.display_name, initcap(m.author_role)) author_name
          FROM query_messages m LEFT JOIN users w ON w.id = m.author_id
