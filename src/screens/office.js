@@ -381,11 +381,17 @@ module.exports = function office(ctx) {
              JOIN unit_stages s ON s.id = d.unit_stage_id
              LEFT JOIN demands dm ON dm.unit_stage_id = s.id
             WHERE d.state IN ('sending','delivered') AND dm.paid_at IS NULL`)).rows[0].n),
+        /* Per lender, not one SQL total. This figure is the same quantity the
+           Lenders screen puts above its own rows, and that one is summed from
+           what those rows print - so summing it any other way here makes two
+           screens disagree about what the lenders owe. They differed by a lakh
+           for exactly one build. */
         receivable: (await c.query(
           `SELECT coalesce(sum(dm.total_paise), 0) v FROM demands dm
              JOIN unit_stages s ON s.id = dm.unit_stage_id
              JOIN units u ON u.id = s.unit_id
-            WHERE dm.paid_at IS NULL AND u.bank IS NOT NULL`)).rows[0].v,
+            WHERE dm.paid_at IS NULL AND u.bank IS NOT NULL
+            GROUP BY u.bank`)).rows.map(r => r.v),
         /* The money the office is waiting on evidence for: stages the engineer
            has marked but nobody has certified, so no pack and no demand. */
         waiting: (await c.query(
@@ -831,7 +837,8 @@ module.exports = function office(ctx) {
         { l: 'Villas sold', icon: 'hostel', v: String(d.rows.villas), n: 'Eterna Phase 1' },
         { l: 'Certified this month', icon: 'cert', v: String(Number(s.this_month)), n: 'stages signed off' },
         { l: 'Packs at the lender', icon: 'money', v: String(d.rows.atLender), n: 'sent, awaiting disbursement' },
-        { l: 'Receivable from lenders', icon: 'growth', v: esc(M.crore(d.rows.receivable)), n: 'billed and unpaid' },
+        { l: 'Receivable from lenders', icon: 'growth',
+          v: esc(M.crore(M.sumAsShown(d.rows.receivable))), n: 'billed and unpaid' },
       ])
       + `<div class="g2">`
       + card('Packs ready to send',

@@ -65,6 +65,7 @@ module.exports = function rowBuilder({ esc }) {
    * @param {string} [r.action]  a control, or `{ text }` for a status word
    * @param {string} [r.href]    makes the whole row the link
    * @param {string} [r.cls]     extra classes
+   * @param {string} [r.tags]    space-separated words a filter may match on
    */
   function wrow(r) {
     const code = r.code ? esc(r.code) : '';
@@ -96,9 +97,14 @@ module.exports = function rowBuilder({ esc }) {
        list. Where there is no action the money moves up beside the detail. */
     const noact = r.amount && !r.action ? ' noact' : '';
     const cls = 'wrow' + (code ? ' hascode' : '') + noact + (r.cls ? ' ' + r.cls : '');
+    /* What a filter can match this row on. The filter runtime reads
+       `data-tags`, so a screen that wants its list narrowed passes the words
+       and the row carries them; a screen that does not passes nothing and the
+       attribute is not written at all. */
+    const tags = r.tags ? ` data-tags="${esc(r.tags)}"` : '';
     return r.href
-      ? `<a class="${cls}" href="${r.href}" style="text-decoration:none;color:inherit">${inner}</a>`
-      : `<div class="${cls}">${inner}</div>`;
+      ? `<a class="${cls}"${tags} href="${r.href}" style="text-decoration:none;color:inherit">${inner}</a>`
+      : `<div class="${cls}"${tags}>${inner}</div>`;
   }
 
   /** The column headings, for the desktop table only. */

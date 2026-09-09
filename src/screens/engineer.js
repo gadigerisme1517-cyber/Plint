@@ -55,6 +55,37 @@ module.exports = function engineerScreens(ctx) {
     ['Weather stoppage', 'No work possible'],
   ];
 
+  /* THE SAME FILTER PATTERN THE HEAD OFFICE HAS.
+
+     It was only there, so the engineer's sixteen villas, twenty-seven
+     certificates and forty log entries could not be narrowed at all. The
+     markup and the class names are office.css's, to the letter: when these
+     screens move onto that system this is already the right markup.
+
+     A bar asks one question. Several bars combine. The count says how many of
+     how many, Clear appears when something is filtering, and a list narrowed
+     to nothing says so. */
+  const tagOf = v => String(v || 'none').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+  const filters = (scope, opts) =>
+    `<div class="filters" data-scope="${scope}">${opts.map((o, i) =>
+      `<button class="chip ${i === 0 ? 'on' : ''}" data-filter="${esc(o[1])}" type="button">`
+      + `${esc(o[0])}</button>`).join('')}</div>`;
+
+  const search = (scope, hint) =>
+    `<div class="filters"><input class="chip" type="search" data-search="${scope}"`
+    + ` placeholder="${esc(hint)}" style="flex:1 1 220px"></div>`;
+
+  const showing = (scope, what, total) =>
+    `<div class="fcount" data-count="${scope}"><span><span class="fnum">${total}</span>`
+    + ` ${esc(what)}</span>`
+    + `<button class="chip" type="button" data-clear="${scope}" hidden>Clear filters</button></div>`;
+
+  /* The line a filtered-to-nothing list shows instead of going blank. */
+  const noneMatch = (scope, said) =>
+    `<div class="emptyrow filtered-empty" hidden><p class="b ink">${esc(said)}</p>`
+    + `<p class="s"><button class="chip" type="button" data-clear="${scope}">Clear filters</button></p></div>`;
+
   const days = d => Math.max(0, Math.round((Date.now() - new Date(d).getTime()) / 86400000));
   const chip = n => ageChip(n);
   /* From the shared layer. Three files had their own copy, all three drawing a
@@ -190,6 +221,10 @@ ${chased.length ? `<div class="blk"><p class="k">Office is chasing you</p></div>
         days: since === null ? '' : since + 'd',
         daysAge: since,
         chip: ageChip(since),
+        /* By the stage in hand, by the lender, and by whether it has gone
+           quiet - the three things an engineer scans this list for. */
+        tags: tagOf(v.next_stage) + ' ' + (v.bank ? tagOf(v.bank) : 'self')
+          + (since === null || since >= AGE.overdue ? ' quiet' : ' seen'),
       });
     }).join('');
 
@@ -206,9 +241,18 @@ ${UI.head('Villas to update',
       { cap: 'Photographed', value: String(d.mine.length - behind), tone: 'ok' },
     ] }))}
 <div class="mbody anim">${flash(msg)}
-<div class="wl">${d.mine.length ? `<div class="whead"><span class="id">Villa</span>
+${d.mine.length ? search('engvillas', 'Find a villa, a buyer or a lender')
+  + filters('engvillas', [['Every stage', '*'],
+    ...[...new Set(d.mine.map(v => v.next_stage).filter(Boolean))].map(n => [n, tagOf(n)])])
+  + filters('engvillas', [['Every lender', '*'],
+    ...[...new Set(d.mine.map(v => v.bank).filter(Boolean))].map(b => [b, tagOf(b)]),
+    ['Self funded', 'self']])
+  + filters('engvillas', [['All', '*'], ['Gone quiet', 'quiet'], ['Photographed', 'seen']])
+  + showing('engvillas', 'villas', d.mine.length) : ''}
+<div class="wl" id="engvillas">${d.mine.length ? `<div class="whead"><span class="id">Villa</span>
 <span class="mid">Next stage and buyer</span><span class="stc">Evidence</span>
 <span class="amt"></span><span class="actc">Action</span></div>${rows}`
+  + noneMatch('engvillas', 'No villa of yours matches that.')
   : '<div class="emptyrow"><p class="b ink">No villas are assigned to you.</p></div>'}</div>
 </div>`);
   }
@@ -342,12 +386,17 @@ ${Object.entries(LOG_KINDS).map(([k, [label, detail]]) => `<a class="lgb st"
 <span class="s">${esc(detail)}</span></a>`).join('')}</div></div>
 <div class="gap"></div>
 <div class="blk"><p class="k">Recent</p></div>
-<div class="wl">${d.log.length ? d.log.map(e => wrow({
+${d.log.length ? search('englog', 'Find an entry')
+  + filters('englog', [['Everything', '*'],
+    ...[...new Set(d.log.map(e => e.kind))].map(k => [k, tagOf(k)])])
+  + showing('englog', 'entries', d.log.length) : ''}
+<div class="wl" id="englog">${d.log.length ? d.log.map(e => wrow({
   title: e.title,
   detail: esc(e.detail || '') + (e.detail ? ' &middot; ' : '') + esc(e.logger),
   days: days(e.logged_at) + 'd ago',
   chip: '<i class="chip wait">' + esc(e.kind) + '</i>',
-})).join('')
+  tags: tagOf(e.kind),
+})).join('') + noneMatch('englog', 'No entry of that kind.')
   : empty('Nothing logged yet.')}</div>
 </div>`);
   }
@@ -367,7 +416,13 @@ ${UI.head('Waiting for your signature',
         tone: UI.countTone(pend.filter(x => x.shots < 2).length, false) },
     ] }))}
 <div class="mbody anim">${flash(msg)}
-<div class="wl">${pend.length ? `<div class="whead"><span class="id">Villa</span>
+${pend.length ? search('engcerts', 'Find a villa, a buyer or a stage')
+  + filters('engcerts', [['All', '*'], ['Ready to sign', 'ready'],
+    ['Short of photographs', 'thin']])
+  + filters('engcerts', [['Every stage', '*'],
+    ...[...new Set(pend.map(x => x.stage_name))].map(n => [n, tagOf(n)])])
+  + showing('engcerts', 'waiting for your signature', pend.length) : ''}
+<div class="wl" id="engcerts">${pend.length ? `<div class="whead"><span class="id">Villa</span>
 <span class="mid">Stage and buyer</span><span class="stc">Evidence</span>
 <span class="amt">Amount</span><span class="actc">Action</span></div>` : ''}
 ${pend.length ? pend.map(x => {
@@ -386,7 +441,11 @@ ${pend.length ? pend.map(x => {
           : '<a class="wbtn solid st" href="/engineer/cert/' + encodeURIComponent(x.id)
             + '" style="text-decoration:none">Review</a>',
     actionIsText: thin,
+    /* Ready to sign or short of photographs, and by the stage - the two things
+       that decide which certificate to open next. */
+    tags: (thin ? 'thin' : 'ready') + ' ' + tagOf(x.stage_name),
   }); }).join('')
+  + noneMatch('engcerts', 'No certificate of yours matches that.')
   : '<div class="emptyrow"><p class="b ink">Nothing waiting. Every stage you verified has been certified.</p></div>'}
 </div></div>`);
   }

@@ -166,3 +166,16 @@ a.btn.dark { color: #fff; }
    fallback for a row that has none. */
 .tr { grid-template-columns: 1fr; }
 
+
+
+/* --------------------------------------------------------- GREEN IS A STATE
+
+   The reference fills its progress bar with `--green`, which makes green the
+   largest coloured area on the dashboard - the first thing the eye lands on,
+   and it lands on it whatever the number says. Green marks a positive state on
+   a row. It is not the accent of a page.
+
+   The fill becomes the accent, which is what the accent is for; green stays
+   exactly where it belongs, on `.p-paid` and `.mini-v.g`, marking one row's
+   state. Nothing is removed. */
+.bar span { background: var(--accent); }

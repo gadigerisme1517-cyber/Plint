@@ -553,8 +553,11 @@ body { padding: 0; margin: 0; background: var(--hair-2); }
    brand. It is there to say "this is the summary, not another panel", which a
    flat white card next to other flat white cards cannot say. */
 .hero {
-  background: linear-gradient(104deg,
-    var(--paper) 0%, var(--paper) 58%, var(--brand-soft) 140%);
+  /* Flat. This was a 104-degree wash from paper into brand-soft, and it was
+     the only gradient this project added rather than inherited. Flat means
+     flat: the card is separated from the ground by its hairline and its
+     shadow, which is what the rest of the product does. */
+  background: var(--paper);
   border: 1px solid var(--hair);
   border-radius: var(--r-card);
   box-shadow: var(--card-shadow);
@@ -1293,3 +1296,77 @@ img, svg, table { max-width: 100%; }
   padding: 64px 24px;
 }
 .offline-note .mark { display: block; margin: 0 auto 22px; }
+
+
+/* ============================================================================
+   8. FLAT, AND NO GOLD
+
+   THE DESIGN LAW, APPLIED TO A STYLESHEET THIS PROJECT MAY NOT EDIT.
+
+   plint.css is the prototype's file, kept verbatim, and it carries ten
+   gradients and a gold-family warn tone. Both break the law the product is
+   held to: flat, no gradients; no gold, rose gold, beige or tan. The file
+   itself is not edited - it is history and it is quoted, not owned - so the
+   corrections are made here, where every rule that overrides it already
+   lives.
+
+   Every one of the ten is named. If plint.css is retired and this whole layer
+   goes with it, nothing here is lost, because the system it is correcting will
+   have gone too.
+   ========================================================================= */
+
+/* The sign-in slate: a 160deg navy wash, and three more building the
+   photograph, grid and section treatments layered on top of it. */
+.desk.auth,
+.authleft.photo .authbg::after,
+.authleft.grid .authbg,
+.authleft.grid .authbg::after,
+.authleft.section .authbg::after {
+  background-image: none !important;
+}
+/* The slate keeps a ground, it just stops being a gradient. */
+.desk.auth { background-color: #0E1F47; }
+
+/* The scrim printed under a photograph's caption. A caption needs to be
+   readable over a photograph; a flat wash does that without a gradient. */
+.strip .cap { background-image: none !important; background-color: rgba(16, 18, 21, .72); }
+
+/* And the gold. `--warn` is #A15C07 with #FCF0DB under it - ochre on beige -
+   and one chip ground is #FFF4E0. The law says no gold, beige or tan, so the
+   warning tone becomes the same red family the rest of the product warns in,
+   one step lighter so it still reads as "getting there" rather than "late". */
+:root {
+  --warn: #B4530B;
+  --warn-soft: #FFF2E8;
+}
+.chip.warn { background: var(--warn-soft) !important; color: var(--warn) !important; }
+
+
+/* ============================================================================
+   9. THE FILTER PATTERN, ON THE SCREENS THAT ARE NOT THE HEAD OFFICE YET
+
+   Filtering existed only in the head office, so the engineer's sixteen villas,
+   twenty-seven certificates and forty log entries had no way to be narrowed.
+   The behaviour is now shared by every shell; these are the styles it needs
+   where office.css is not loaded.
+
+   The values are office.css's, to the pixel, deliberately: when these screens
+   move onto that system the markup and the measurements are already the same
+   and the migration removes this block rather than translating it.
+   ========================================================================= */
+
+.filters { display: flex; gap: 8px; margin-bottom: 14px; overflow-x: auto; padding-bottom: 2px; }
+.filters .chip {
+  border: 1px solid var(--hair); background: #fff; border-radius: 9px;
+  padding: 7px 13px; font: 500 12.5px/1 'Instrument Sans', system-ui, sans-serif;
+  color: var(--ink-2); cursor: pointer; white-space: nowrap;
+}
+.filters .chip.on { background: var(--ink); color: #fff; border-color: var(--ink); font-weight: 600; }
+.filters input.chip { cursor: text; min-width: 0; }
+.fcount { font-size: 12.5px; color: var(--ink-2); display: flex; align-items: center;
+          gap: 10px; margin: -6px 0 12px; }
+.fcount .chip {
+  border: 1px solid var(--hair); background: #fff; border-radius: 9px;
+  padding: 5px 11px; font: 500 12px/1 'Instrument Sans', system-ui, sans-serif;
+  color: var(--ink-2); cursor: pointer;
+}

@@ -634,202 +634,6 @@ test('nothing on v21 s stylesheet is named after something v21 hides', async () 
   assert.match(await body('/office', 'office'), /<div class="bar"><span style="width:\d+%"/,
     'the office bar draws nothing');
 });
-test('the skin is v21 s, and this file does not restate it', async () => {
-  /* plint.css is v21 byte for byte, so every colour, every hairline and every
-     shadow in the product is already declared there. A second palette in
-     app.css is not a skin, it is a fork: two files that will disagree with
-     each other the first time either is edited, and the one that wins is
-     whichever happens to be later.
-
-     There was one. Warmer ink, warmer greys, a 16px card radius and a diffuse
-     shadow, built to a different reference. It is gone, and this holds it
-     gone. */
-  const css = fs.readFileSync(path.join(__dirname, '..', 'public/app.css'), 'utf8');
-  assert.ok(css.length > 5000, 'read ' + css.length + ' bytes of app.css, not a stylesheet');
-  const root = /:root \{[\s\S]*?\n\}/.exec(css);
-  assert.ok(root, 'app.css defines no tokens of its own');
-
-  const v21 = fs.readFileSync(path.join(__dirname, '..', 'public/plint.css'), 'utf8');
-  const v21root = /:root\{([^}]*)\}/.exec(v21);
-  assert.ok(v21root, 'plint.css declares no tokens, so it is not v21');
-  const theirs = [...v21root[1].matchAll(/(--[\w-]+):/g)].map(m => m[1]);
-  assert.ok(theirs.length > 10, 'only found ' + theirs.length + ' v21 tokens');
-  for (const t of theirs) {
-    assert.ok(!new RegExp('\\' + t + ':').test(root[0]),
-      t + ' is declared again in app.css: v21 already sets it, and two declarations '
-      + 'of one token is a fork, not a skin');
-  }
-
-  // Comments and the token block itself are not rules.
-  const rules = css.replace(root[0], '').replace(/\/\*[\s\S]*?\*\//g, '');
-
-  /* And no hex colour outside the tokens. A hue in a rule is a hue that one
-     screen has and the others do not. */
-  /* A hex is allowed only where v21 itself types one - `.msg.office` has a
-     bare `#C9D9FB` for its border - because copying v21's value is the whole
-     point of this pass. Anything else is a hue one screen has and the others
-     do not. */
-  const hexes = [...rules.matchAll(/#[0-9a-fA-F]{3,8}/g)].map(m => m[0])
-    .filter(h => !v21.includes(h));
-  assert.deepStrictEqual(hexes, [],
-    'a colour is typed into a rule instead of coming from a token: ' + hexes.join(', '));
-});
-
-test('app.css does not overrule a value v21 already sets on a phone', async () => {
-  /* THE GUARD THIS PASS EXISTS FOR.
-
-     plint.css is v21 verbatim, so any difference between the built screens and
-     the design file is a declaration here landing on a selector v21 also
-     styles. This walks every one of them at 375px and fails on anything that
-     is not in the list below - and everything in that list is either chrome
-     v21 has no equivalent for, or a frame that has to come off before the mock
-     can be an application.
-
-     It is a whitelist rather than a count so that adding a divergence is a
-     deliberate act with a reason written next to it. */
-  const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, '');
-  /* `0 var(--gutter)` and `0 26px` are the same declaration, and so are
-     v21's bare `'Instrument Sans'` and the same stack with the fallbacks this
-     application adds for a phone that has not loaded the webfont yet. Both are
-     normalised or the guard fills with differences that are not differences. */
-  const same = v => v.replace(/var\(--gutter\)/g, '26px')
-                     .replace(/, system-ui, sans-serif/g, '')
-                     .replace('!important', '').trim();
-  const at375 = m => {
-    if (!m) return true;
-    for (const lo of m.match(/min-width:\s*(\d+)px/g) || []) {
-      if (Number(lo.match(/\d+/)[0]) > 375) return false;
-    }
-    for (const hi of m.match(/max-width:\s*(\d+)px/g) || []) {
-      if (Number(hi.match(/\d+/)[0]) < 375) return false;
-    }
-    return true;
-  };
-  const parse = css => {
-    const out = [];
-    const walk = (text, media) => {
-      let i = 0;
-      while (i < text.length) {
-        const at = text.indexOf('@', i), brace = text.indexOf('{', i);
-        if (brace < 0) break;
-        if (at >= 0 && at < brace) {
-          let d = 0, k = text.indexOf('{', at);
-          if (k < 0) break;
-          for (let j = k; j < text.length; j++) {
-            if (text[j] === '{') d++;
-            else if (text[j] === '}' && --d === 0) { k = j; break; }
-          }
-          const head = text.slice(at, text.indexOf('{', at)).trim();
-          if (head.startsWith('@media')) walk(text.slice(text.indexOf('{', at) + 1, k), head);
-          i = k + 1;
-          continue;
-        }
-        const sel = text.slice(i, brace).trim();
-        const close = text.indexOf('}', brace);
-        if (close < 0) break;
-        const decls = {};
-        for (const d of text.slice(brace + 1, close).split(';')) {
-          const c = d.indexOf(':');
-          if (c < 0) continue;
-          decls[d.slice(0, c).trim().toLowerCase()] = d.slice(c + 1).trim();
-        }
-        if (sel && Object.keys(decls).length) out.push([media, sel, decls]);
-        i = close + 1;
-      }
-    };
-    walk(strip(css), null);
-    return out;
-  };
-
-  const dir = path.join(__dirname, '..', 'public');
-  const v21 = parse(fs.readFileSync(path.join(dir, 'plint.css'), 'utf8'));
-  const app = parse(fs.readFileSync(path.join(dir, 'app.css'), 'utf8'));
-
-  const theirs = new Map();
-  for (const [media, sel, decls] of v21) {
-    if (!at375(media)) continue;
-    for (const one of sel.split(',').map(s => s.trim())) {
-      for (const p of Object.keys(decls)) theirs.set(one + '|' + p, decls[p]);
-    }
-  }
-
-  /* Every selector below is either chrome v21 does not have, or the frame
-     coming off. The reason is the point of the entry. */
-  const allowed = new Set([
-    // v21 wraps every view in a 392px card on a slate. All of it goes.
-    'body|background', '.wrap|max-width', '.bar|display', '.sysbar|display',
-    '.stagearea|display', '.phone|max-width', '.phone|height', '.phone|border-radius',
-    '.phone|box-shadow', '.phone|overflow', '.phone.wide|max-width', '.phone.wide|height',
-    '.phone.wide|border-radius', '.desk|border-radius', '.desk|min-height',
-    '.desk|overflow', '.desk|display', '.scroll|overflow-y', '.mbody|flex',
-    '.main|min-height', '.topbar|display', '.side|display',
-    // The application scrolls the document, not three boxes inside it.
-    '.wl|padding', '.wl|margin-bottom', '.wl|background', '.wl|border',
-    '.wl|border-radius', '.wl|box-shadow', '.wl|overflow',
-    // The gutter moves from the shell onto the block, which is where v21 has
-    // it - `.top`, `.blk`, `.lede` are padded and the scroller is not.
-    '.mhead|padding', '.mbody|padding', '.blk|padding', '.lede|padding',
-    '.tools|padding', '.top|padding',
-    // The row is v21's `.item` rather than v21's `.wrow`, because v21's phone
-    // list is `.item` and this markup has one row component for both.
-    '.wrow|display', '.wrow|align-items', '.wrow|gap', '.wrow|padding',
-    '.wrow|border-bottom', '.wrow|border-radius', '.wrow|background',
-    '.wrow .id|font', '.wrow .id|display', '.wrow .days|font-size', '.wrow .days|color',
-    '.wrow .amt|font', '.wrow .amt|text-align', '.wrow .mid p|margin-top',
-    '.wrow .mid p.s|margin-top', '.wrow .mid|flex',
-    // The toolbar is a card in the desk and there is no desk on a phone.
-    '.tools|border', '.tools|background', '.tools|border-radius', '.tools|margin-bottom',
-    '.tools|gap',
-    // The header. v21's `.hstrip`/`.kpi`/`.pgt` belong to the desk; on a phone
-    // the same three pieces are `.lede`'s k, mega and cap.
-    '.hstrip|align-items', '.pgt|color', '.kpi|flex-direction', '.kpi|align-items',
-    '.kpi|gap', '.kpin|font', '.kpin|letter-spacing',
-    // Controls that have to be reachable, or fit, at 375px.
-    '.ib|display', '.tab|padding', '.tabs|gap', '.lgrid|grid-template-columns',
-    '.agebars|height', '.agebars|gap', '.msg|max-width',
-    // The desktop, which v21 has no design for at all.
-    '.wbtn|padding', '.wbtn|font', '.wbtn|border-radius',
-    '.sortb|padding', '.sortb|font', '.sortb|border-radius', '.act|border-radius',
-    /* The desk table's column headings. There are no columns on a phone. */
-    '.whead|display',
-    /* `--hair-2` is the ground v21 puts behind the DESK, because it is the
-       ground a card sits on. There are no cards on a phone: v21's phone is
-       `.phone { background: var(--paper) }` from the brand row to the tab
-       bar, with hairlines doing all of the separating. */
-    '.desk|background', '.main|background', '.mbody|background',
-    /* v21's desk gives the trailing cells fixed widths - days 48px, amount
-       92px, action 78px - because it is a table. v21's phone row is `.item`
-       and has none of them, so they size to their content. */
-    '.wrow .days|flex', '.wrow .amt|flex', '.wrow .actc|flex',
-    /* `.pgt` is the desk's page title, 600 17px/22px. On a phone the same
-       words are the label above the figure, which is v21's `.lede .k`. */
-    '.pgt|font', '.pgt|letter-spacing',
-  ]);
-
-  /* And `.phone.wide` in full. v21 only ever puts `wide` on its desktop mock,
-     so its whole rule set is a desktop one with a single responsive line in
-     it. This markup carries `wide` at every width - it is what stops the
-     buyer's screen being a 392px card in the middle of a monitor - which
-     brought 48px side paddings and 76px figures down onto real phones. Below
-     900px those are put back to v21's own PHONE values, so every line here is
-     v21 overriding v21. */
-  const wideMock = k => k.startsWith('.phone.wide');
-
-  const bad = [];
-  for (const [media, sel, decls] of app) {
-    if (!at375(media)) continue;
-    for (const one of sel.split(',').map(s => s.trim())) {
-      for (const [p, v] of Object.entries(decls)) {
-        const key = one + '|' + p;
-        if (!theirs.has(key) || allowed.has(key) || wideMock(key)) continue;
-        if (same(theirs.get(key)) === same(v)) continue;
-        bad.push(key + ' -> v21 says ' + theirs.get(key) + ', this says ' + v);
-      }
-    }
-  }
-  assert.deepStrictEqual(bad, [],
-    'app.css overrules v21 at 375px without saying why:\n  ' + bad.join('\n  '));
-});
 test('the office board groups by who is holding it up, and accounts for every villa', async () => {
   /* THIS TEST EXISTS BECAUSE THE VIEW WAS DELETED ONCE.
 
@@ -1066,6 +870,70 @@ test('the sideways-scroll backstop does not cost a scrollbar', async () => {
   assert.ok(!/\bbody\b[^{]*\{[^}]*overflow-x:\s*hidden/.test(css),
     'body uses overflow-x: hidden, which gives it its own scrollbar');
   assert.match(css, /html\s*\{\s*overflow-x:\s*clip/, 'no horizontal backstop at all');
+});
+
+test('the design law: flat, and no gold', async () => {
+  /* THIS REPLACES TWO GUARDS THAT ENFORCED v21.
+
+     Those guards said app.css must not restate a value plint.css already sets,
+     and must not override one at 375px without a documented reason. They were
+     right for as long as v21 was the reference. v21 has been retired: the head
+     office system is the design now, and the law it is held to is flat, no
+     gradients, and no gold, rose gold, beige or tan.
+
+     Under the old rule the corrections below WERE the violation. Under the new
+     one they are the compliance. The guard follows the law, not the file. */
+  const read = f => fs.readFileSync(path.join(__dirname, '..', 'public', f), 'utf8');
+  const app = read('app.css'), office = read('office.css'), proto = read('plint.css');
+
+  /* FLAT. plint.css carries ten gradients and is quoted verbatim, so each one
+     has to be turned off by name in the layer above it. Count them, then prove
+     every selector that owns one is overridden. */
+  const owners = [...proto.matchAll(/([^{}]+)\{([^}]*gradient\([^}]*)\}/g)]
+    .map(m => m[1].trim().split('\n').pop().trim());
+  assert.ok(owners.length >= 7,
+    'plint.css has ' + owners.length + ' gradient rules; the override list below was written for more');
+  for (const sel of new Set(owners)) {
+    assert.ok(app.includes(sel),
+      'plint.css draws a gradient on "' + sel + '" and nothing turns it off');
+  }
+  assert.match(app, /background-image: none !important;/,
+    'the gradients are named but never actually switched off');
+
+  /* And nothing may add one back. `gradient(` may appear in app.css only
+     inside a comment explaining the override. */
+  const code = s => s.replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.ok(!/gradient\(/.test(code(app)),
+    'app.css draws a gradient of its own again');
+  assert.ok(!/gradient\(/.test(code(office)),
+    'office.css draws a gradient');
+
+  /* NO GOLD, ROSE GOLD, BEIGE OR TAN. Warm hues where red leads green leads
+     blue by a clear margin - the family #A15C07 and #FCF0DB sat in. */
+  const gold = hex => {
+    const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16),
+          b = parseInt(hex.slice(5, 7), 16);
+    if (Math.max(r, g, b) - Math.min(r, g, b) < 12) return false;   // grey
+    return r >= g && g > b && (r - b) > 25 && r > 120 && g > 90;
+  };
+  /* Comments stripped first. The block that explains WHICH hues were retoned
+     names them, and naming them is not shipping them — the first version of
+     this guard failed on its own explanation. */
+  for (const [name, css] of [['app.css', app], ['office.css', office]]) {
+    const bad = [...new Set(code(css).match(/#[0-9a-fA-F]{6}\b/g) || [])].filter(gold);
+    assert.deepStrictEqual(bad, [], name + ' carries a gold, beige or tan hue: ' + bad.join(', '));
+  }
+  /* plint.css still contains them - it is a verbatim quotation - so what is
+     proven here is that the layer above retones them. */
+  assert.match(app, /--warn:\s*#B4530B/, 'the ochre warn tone is not retoned');
+  assert.match(app, /--warn-soft:\s*#FFF2E8/, 'the beige warn ground is not retoned');
+
+  /* GREEN IS A STATE, NOT AN ACCENT. The largest coloured area on the office
+     dashboard was the progress fill, and it was green. */
+  assert.match(office, /\.bar span \{ background: var\(--accent\); \}/,
+    'the progress fill is green again, which makes green the accent of the page');
+  assert.ok(office.includes('.p-paid{background:var(--greenbg);color:var(--green)}'),
+    'green has been removed rather than demoted - it still marks a paid row');
 });
 
 test('the worklists reflow to v21 s rows, not to a table', async () => {

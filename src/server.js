@@ -294,7 +294,7 @@ function page(title, sess, body, wide, current) {
   return `${HEAD}${appbar(sess, current, true, title)}<div class="wrap">
 <div class="stagearea"><div class="phone${wide ? ' wide solo' : ''}">
 <div class="scroll anim">${body}</div></div></div></div>
-${tabbar(sess, current)}${SW}</body></html>`;
+${tabbar(sess, current)}${FILTER_JS}${SW}</body></html>`;
 }
 
 /** Office and engineer: a sidebar on a desktop, the same destinations as tabs on a phone. */
@@ -347,18 +347,19 @@ const OLOGO = (px, ring, dot) =>
    redirects - which is what keeps the back button honest and makes every
    action work with no JavaScript at all. The prototype could call `toast()`
    from an onclick because nothing it did was real. */
-const OFFICE_JS = `<script>
-(function () {
-  var side = document.getElementById('side'), scrim = document.getElementById('scrim2');
-  function open(){ side.classList.add('open'); scrim.classList.add('on'); }
-  function shut(){ side.classList.remove('open'); scrim.classList.remove('on'); }
-  document.getElementById('ham').addEventListener('click', open);
-  scrim.addEventListener('click', shut);
-  var t = document.getElementById('toast');
-  if (t && t.textContent.trim()) {
-    requestAnimationFrame(function(){ t.classList.add('on'); });
-    setTimeout(function(){ t.classList.remove('on'); }, 4200);
-  }
+/* THE FILTER RUNTIME, SHARED BY EVERY SHELL.
+
+   It began inside the head office's shell, which is why the engineer's lists -
+   sixteen villas, twenty-seven certificates, forty log entries - had no way to
+   be narrowed at all. It is one behaviour and it belongs to the product, not
+   to one role.
+
+   It reads `data-scope` on a bar of chips, `data-search` on a box, `data-tags`
+   on a row, and `data-count` on the line that says how many are showing. Any
+   screen that emits those gets filtering; no screen has to know how it works.
+*/
+const FILTER_JS = `<script>
+window.__plintFilters = function () {
   /* Filters. The one kind of control on these screens that changes nothing on
      the server: it narrows what is already on the page.
 
@@ -437,6 +438,25 @@ const OFFICE_JS = `<script>
   [].forEach.call(document.querySelectorAll('[data-search]'),
     function (b) { scopes[b.dataset.search] = 1; });
   Object.keys(scopes).forEach(apply);
+};
+/* The office shell starts it after wiring its own drawer and toast; every
+   other shell has no wiring of its own, so it starts here. */
+if (!document.getElementById('side')) window.__plintFilters();
+</script>`;
+
+const OFFICE_JS = `<script>
+(function () {
+  var side = document.getElementById('side'), scrim = document.getElementById('scrim2');
+  function open(){ side.classList.add('open'); scrim.classList.add('on'); }
+  function shut(){ side.classList.remove('open'); scrim.classList.remove('on'); }
+  document.getElementById('ham').addEventListener('click', open);
+  scrim.addEventListener('click', shut);
+  var t = document.getElementById('toast');
+  if (t && t.textContent.trim()) {
+    requestAnimationFrame(function(){ t.classList.add('on'); });
+    setTimeout(function(){ t.classList.remove('on'); }, 4200);
+  }
+  window.__plintFilters();
 })();
 </script>`;
 
@@ -470,7 +490,7 @@ function officePage(sess, side, main, msg) {
 </div>
 </div>
 <div class="toast" id="toast">${msg ? esc(msg) : ''}</div>
-${OFFICE_JS}${SW}</body></html>`;
+${FILTER_JS}${OFFICE_JS}${SW}</body></html>`;
 }
 
 function desk(sess, tab, title, sub, main, sidebar, drawer) {
@@ -487,7 +507,7 @@ ${sidebar || dests.map(([href, label]) => `<a class="sbtn st" href="${href}" ari
 <div class="topbar"><div class="crumb"><span>NVT Eterna</span><b>${esc(title)}</b></div></div>
 ${main}
 </div></div></div>
-${tabbar(sess, tab)}${drawer || ''}${SW}</body></html>`;
+${tabbar(sess, tab)}${drawer || ''}${FILTER_JS}${SW}</body></html>`;
 }
 
 // -------------------------------------------------------------------- login
