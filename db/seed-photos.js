@@ -51,14 +51,22 @@ async function plate({ code, stage, caption, when, gps }) {
 }
 
 async function fill(c, { quiet } = {}) {
-  const rows = (await c.query(
-    `SELECT e.id, e.caption, e.taken_at, e.gps, u.code, t.name stage_name
+  /* Every row, not only the ones with no `mime`.
+
+     The deployed demo runs on a plan with no persistent disk: the evidence
+     directory is inside the container and is gone on every deploy. A row that
+     was filled last time therefore still points at a file that no longer
+     exists, and the screens would show broken tiles. A plate is deterministic
+     - the same row always makes the same bytes and therefore the same hash -
+     so a missing file is simply written again and the row does not change. */
+  const all = (await c.query(
+    `SELECT e.id, e.caption, e.taken_at, e.gps, e.mime, e.sha256, u.code, t.name stage_name
        FROM evidence e
        JOIN unit_stages s ON s.id = e.unit_stage_id
        JOIN units u ON u.id = s.unit_id
        JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
-      WHERE e.mime IS NULL
       ORDER BY e.id`)).rows;
+  const rows = all.filter(r => !r.mime || !EV.exists(r.sha256));
   if (!rows.length) return { filled: 0, already: true };
 
   /* Whoever the office is, because somebody has to have uploaded it and the
@@ -77,12 +85,27 @@ async function fill(c, { quiet } = {}) {
         { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }),
       gps: r.gps,
     });
-    const stored = await EV.store(buf);
-    await c.query(
-      `UPDATE evidence SET sha256 = $2, mime = $3, byte_size = $4,
-              uploaded_by = $5, uploaded_at = $6
-        WHERE id = $1`,
-      [r.id, stored.sha256, stored.mime, stored.byteSize, by.id, r.taken_at]);
+    /* `store()` refuses to overwrite - it writes with `wx` - so a file that is
+       already there for this hash is left exactly as it is. */
+    let stored;
+    try {
+      stored = await EV.store(buf);
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+      stored = null;
+    }
+    if (stored && stored.sha256 !== r.sha256) {
+      await c.query(
+        `UPDATE evidence SET sha256 = $2, mime = $3, byte_size = $4,
+                uploaded_by = $5, uploaded_at = $6
+          WHERE id = $1`,
+        [r.id, stored.sha256, stored.mime, stored.byteSize, by.id, r.taken_at]);
+    } else if (!r.mime) {
+      await c.query(
+        `UPDATE evidence SET mime = $2, byte_size = $3, uploaded_by = $4, uploaded_at = $5
+          WHERE id = $1`,
+        [r.id, 'image/jpeg', buf.length, by.id, r.taken_at]);
+    }
     filled++;
     if (!quiet && filled % 100 === 0) console.log('  ' + filled + ' of ' + rows.length);
   }
@@ -98,7 +121,8 @@ async function main() {
     const out = await fill(c);
     await c.query('COMMIT');
     console.log('\n── evidence files\n  '
-      + (out.already ? 'every photograph already has a file' : 'wrote ' + out.filled + ' plates'));
+      + (out.already ? 'every photograph already has a file'
+        : 'wrote ' + out.filled + ' plates'));
   } catch (e) {
     await c.query('ROLLBACK').catch(() => {});
     throw e;
