@@ -190,7 +190,11 @@ ${titled('Waiting on your signature',
     const rows = d.mine.map(v => {
       const since = v.last_shot ? days(v.last_shot) : null;
       return [
-        `<b>${esc(v.code)}</b>`,
+        /* The code is the way in. A row carrying a control cannot itself be a
+           link - a form inside an anchor is not valid HTML - and on a phone the
+           control is behind the table's sideways scroll, so without this the
+           register had no reachable way into a villa at 375. */
+        `<a href="/engineer/villa/${encodeURIComponent(v.code)}"><b>${esc(v.code)}</b></a>`,
         `<b>${esc(v.next_stage || 'All stages done')}</b><br><span class="hsub">`
           + esc(v.buyer_name) + ' &middot; ' + esc(v.bank || 'self funded') + '</span>',
         agePill(since),
@@ -376,7 +380,10 @@ ${titled('Recent', table(
     const rows = pend.map(x => {
       const thin = thinOf(x);
       return [
-        `<b>${esc(x.code)}</b>`,
+        /* As on the villa register: the code is the way in, because the action
+           at the end of the row is behind a sideways scroll on a phone. */
+        `<a href="${thin ? '/engineer/villa/' + encodeURIComponent(x.code)
+          : '/engineer/cert/' + encodeURIComponent(x.id)}"><b>${esc(x.code)}</b></a>`,
         `<b>${esc(x.stage_name)}</b><br><span class="hsub">${esc(x.buyer_name)} &middot; marked by `
           + esc(x.marked_by) + ' on ' + esc(M.longDate(x.marked_at)) + '</span>',
         thin ? pill('due', x.shots + ' photo' + (x.shots === 1 ? '' : 's')) : pill('accent', 'ready'),

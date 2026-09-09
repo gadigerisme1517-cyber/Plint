@@ -418,3 +418,10 @@ textarea.fi { resize: vertical; min-height: 62px; line-height: 20px; }
 .plainapp { display: block; }
 .main.plain { max-width: 520px; margin: 0 auto; padding: 46px 16px 60px; }
 .plainbrand { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+
+/* A link inside a table cell is the way into a row that carries a control of
+   its own - the row cannot be an anchor, because a form inside an anchor is
+   not valid HTML. It has to look like a link. */
+.tr a { color: var(--accent); text-decoration: none; }
+.tr a:hover { text-decoration: underline; }
+.tr.hd a, a.tr { color: inherit; }
