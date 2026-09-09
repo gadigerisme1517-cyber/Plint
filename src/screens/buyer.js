@@ -268,7 +268,7 @@ ${dem ? titled('What was raised', table(
     num(M.money(dem.total_paise)),
     `<a class="btn" href="/doc/demand/${esc(s.id)}.pdf">Letter</a>`,
   ]],
-  '1fr 1fr 1.4fr .9fr auto', { min: 640 })) : ''}
+  '1fr 1fr 1.6fr .9fr auto', { min: 780 })) : ''}
 ${titled('Photographs from site', photos(shotRows(shots),
   'No photographs of this stage yet. The engineer takes them on site.')
   + note('Each photograph is stamped and hash locked at capture. Tap one to see it full size. '
