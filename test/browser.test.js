@@ -238,7 +238,10 @@ test('the office drawer opens at 375 and the scrim closes it', async () => {
     () => Math.round(document.querySelector('.side').getBoundingClientRect().left) === 0,
     null, { timeout: 4000 });
   const left = await page.$eval('.side', e => Math.round(e.getBoundingClientRect().left));
-  assert.strictEqual(left, 0, 'the drawer did not slide in: left is ' + left);
+  /* `Math.round(-0.4)` is negative zero, and `strictEqual` compares with
+     Object.is - which says -0 is not 0. A drawer sitting exactly where it
+     should was reported as broken, with a message reading "left is 0". */
+  assert.ok(Math.abs(left) < 1, 'the drawer did not slide in: left is ' + left);
 
   /* Clicked to the RIGHT of the drawer. `.scrim2` is `inset: 0`, so its centre
      - where a plain click lands - is underneath the 250px drawer on a 375px
