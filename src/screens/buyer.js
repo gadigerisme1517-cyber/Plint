@@ -592,12 +592,13 @@ ${head(rec ? 'Your sanction is on file' : 'No sanction on file',
         + 'no stage can release money.'
       : 'You are funding this yourself, so there is nothing to record.',
   btn('Your bank', { href: '/bank', icon: 'growth' }))}
-${kpis([
+${/* Only the headline figure repeats a row of the record below; the rest of
+     the tiles say something the record does not. */
+kpis([
   { l: 'Sanctioned', icon: 'money', v: esc(rec ? M.money(u.sanction_paise) : 'Not recorded'),
     n: rec ? 'by ' + esc(u.bank) : 'nothing on file', tone: rec ? null : (u.bank ? 'hot' : null) },
-  { l: 'Your own contribution', icon: 'attend',
-    v: esc(rec ? M.money(u.own_contribution_paise) : 'Not recorded'),
-    n: 'what you put in yourself' },
+  { l: 'Applicants', icon: 'users', v: String(d.applicants.length),
+    n: 'on this loan' },
   { l: 'Papers seen', icon: 'exam',
     v: d.papers.filter(p => p.seen_at).length + ' of ' + d.papers.length,
     n: 'by the sales office', href: '/documents' },
