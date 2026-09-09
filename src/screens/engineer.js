@@ -556,27 +556,26 @@ ${target ? `<span id="addphoto"></span>` + titled('Add a photograph', card('', f
     submit: 'Add photograph', icon: 'cam' })
   + `<p class="hsub" style="margin-top:10px">Stamped and locked at capture. This is the bank's evidence.</p>`))
   : ''}
-${titled('Mark complete',
-  /* EVERY remaining stage. This was `.slice(0, 2)` with nothing saying so. */
-  workable.length ? table(
-    ['Stage', 'What it is', 'Evidence', 'Amount', 'Action'],
-    workable.map(s => [
-      `<b>${esc(s.name)}</b>` + (s.status === 'marked' ? ' ' + pill('due', 'marked') : ''),
-      esc(s.description || ''),
-      s.shots ? pill('paid', s.shots + ' photo' + (s.shots === 1 ? '' : 's'))
-        : pill('due', 'no photograph'),
-      num(M.money(priced[s.seq].totalPaise)),
-      s.status === 'pending'
-        ? (s.shots > 0
-          ? `<form method="post" action="/engineer/mark">
-<input type="hidden" name="id" value="${esc(s.id)}">
+${/* A STAGE TO MARK IS A CARD, NOT A ROW.
+
+     A table scrolls sideways on a phone, which put "Mark done" and "Certify" -
+     the two controls this screen exists for - off the right-hand edge at 375.
+     A decision gets its own surface; a record stays a table. Every remaining
+     stage is here, not the first two of however many. */
+  workable.length ? titled('Mark complete', '') + workable.map(st => titled(st.name,
+    card('', `<p class="hsub">${esc(st.description || '')} &middot; ${esc(M.money(priced[st.seq].totalPaise))}</p>
+<div class="frm" style="margin-top:12px">${st.status === 'pending'
+      ? (st.shots > 0
+        ? `<form method="post" action="/engineer/mark">
+<input type="hidden" name="id" value="${esc(st.id)}">
 <button class="btn dark" type="submit">Mark done</button></form>`
-          /* An anchor to the camera on this same screen, rather than a link
-             back to the screen you are already standing on. */
-          : `<a class="btn" href="#addphoto">Photograph it first</a>`)
-        : `<a class="btn dark" href="/engineer/cert/${encodeURIComponent(s.id)}">Certify</a>`,
-    ]), '1.1fr 1.8fr .9fr .9fr auto', { min: 820 })
-    : empty('Every stage on this villa is done.'))}
+        : `<a class="btn" href="#addphoto">Photograph it first</a>`)
+      : `<a class="btn dark" href="/engineer/cert/${encodeURIComponent(st.id)}">Certify</a>`}
+${st.shots ? pill('paid', st.shots + ' photograph' + (st.shots === 1 ? '' : 's'))
+      : pill('due', 'no photograph')}</div>`),
+    st.status === 'marked' ? pill('due', 'marked on site') : ''))
+    .join('')
+  : titled('Mark complete', empty('Every stage on this villa is done.'))}
 ${live ? note('Marking this sends ' + esc(M.money(priced[live.seq].totalPaise)) + ' to '
   + esc(u.unit.buyer_name) + ', due in fourteen days'
   + (u.unit.bank ? ', and the evidence pack to ' + esc(u.unit.bank) : '') + '. You do none of it.') : ''}`;
