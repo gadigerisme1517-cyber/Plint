@@ -92,6 +92,8 @@ function step(label, args, extra = {}) {
   return r.status === 0;
 }
 
+const startedAt = Date.now();
+
 (async () => {
   /* The mutation audit deliberately breaks source files on disk while it runs.
      A test run started alongside it reads that broken code and reports
@@ -127,6 +129,24 @@ function step(label, args, extra = {}) {
   } finally {
     await dropScratch().catch(e => console.error('could not drop scratch: ' + e.message));
   }
+
+  /* A report on disk, beside the exit code.
+
+     scripts/ship.js reads this as well as the exit status, so a run that dies
+     without saying anything cannot be mistaken for a green one, and a stale
+     report from an earlier run is refused on its timestamp. An exit code is
+     one number, and it has already been swallowed once by a shell pipeline. */
+  const report = {
+    passed: failed.length === 0,
+    failed,
+    suites: SUITES.length,
+    startedAt,
+    finishedAt: Date.now(),
+    node: process.version,
+  };
+  fs.mkdirSync(path.join(__dirname, '..', 'var'), { recursive: true });
+  fs.writeFileSync(path.join(__dirname, '..', 'var', 'last-run.json'),
+    JSON.stringify(report, null, 2) + '\n');
 
   console.log('\n' + '─'.repeat(60));
   if (failed.length) {

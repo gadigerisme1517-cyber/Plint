@@ -13,7 +13,8 @@
     "test": "node test/run.js",
     "audit": "node scripts/mutation-audit.js",
     "backup": "bash scripts/backup.sh",
-    "preflight": "node scripts/preflight.js"
+    "preflight": "node scripts/preflight.js",
+    "ship": "node scripts/ship.js"
   },
   "keywords": [],
   "author": "",
