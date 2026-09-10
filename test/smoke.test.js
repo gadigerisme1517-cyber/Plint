@@ -3,7 +3,8 @@
    logins, the buyer screen under RLS, certification, and both documents. */
 const server = require('../src/server');
 const fs = require('fs');
-const { pool } = require('../src/db');
+const { pool, asUser } = require('../src/db');
+const M = require('../src/money');
 
 const BASE = 'http://127.0.0.1:3100';
 let pass = 0, fail = 0;
@@ -64,8 +65,23 @@ const get = (p, cookie) => fetch(BASE + p, { headers: cookie ? { cookie } : {}, 
       }, body: new URLSearchParams({ id: 'us-B-14-brick' }),
     });
     const msg = decodeURIComponent(r.headers.get('location') || '');
-    ok(/certified/.test(msg) && /₹33,60,000/.test(msg),
-       'certifying B-14 blockwork raises a demand for ₹33,60,000');
+    /* THE FIGURE IS READ, NOT WRITTEN DOWN HERE.
+
+       It was the constant ₹33,60,000, which was the stage's ten per cent plus
+       GST and nothing else. Since interior options acquired prices, a demand
+       also carries whatever the buyer had signed for above the allowance and
+       not yet been billed for - so a constant here would either be wrong or
+       would have to be kept in step with the seed by hand. The demand that was
+       actually written is the thing to check the message against. */
+    const dm = (await asUser({ id: 'u-office', role: 'office' }, c => c.query(
+      `SELECT base_paise, extras_paise, gst_paise, total_paise FROM demands
+        WHERE unit_stage_id = 'us-B-14-brick'`))).rows[0];
+    ok(!!dm, 'certifying B-14 blockwork wrote a demand');
+    ok(/certified/.test(msg) && msg.includes(M.money(dm.total_paise)),
+       'certifying B-14 blockwork raises a demand for ' + M.money(dm.total_paise));
+    ok(Number(dm.total_paise)
+       === Number(dm.base_paise) + Number(dm.extras_paise) + Number(dm.gst_paise),
+       'that demand adds up: base plus extras plus GST');
   } else {
     /* Do not simply pass. An earlier run having certified it is a claim, and
        the claim is checkable: the demand exists. Reporting ok() here without

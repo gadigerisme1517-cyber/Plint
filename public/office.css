@@ -467,6 +467,12 @@ textarea.fi { resize: vertical; min-height: 62px; line-height: 20px; }
   .tr.hd { display: none; }
   .tr > div { padding: 1px 0; }
   .tr > div:empty { display: none; }
+  /* ADDED. A stacked cell is 343px wide and a reference is one word: a RERA
+     registration is 36 characters with nothing to break at, and it pushed the
+     whole page sideways. Every long token this product prints is of that kind
+     - a registration, a UTR, an APF code, a hash - so the rule belongs on the
+     cell rather than on any one of them. */
+  .tr > div { overflow-wrap: anywhere; }
   /* ADDED. The header is gone, so the cell says which column it came from.
      `:empty` still matches an element whose only content is this ::before,
      so a blank cell stays hidden rather than becoming a bare label. */
@@ -517,3 +523,27 @@ textarea.fi { resize: vertical; min-height: 62px; line-height: 20px; }
 .outbox .oba { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
 .outbox .obe { font-size: 12.5px; color: var(--red); }
 .outbox .obn { margin-top: 10px; font-size: 12.5px; color: var(--grey); }
+
+/* ------------------------------------------------------------- the notices
+   ADDED. What somebody else did that this person has to know about. One
+   component for all three roles: `notifications` has had two writers and no
+   reader since migration 012, and both writers told the person pressing the
+   button that somebody would see it.
+
+   An unread one is a card on the surface; a read one steps back to the page
+   ground rather than disappearing, because "what did the office say last
+   week" is a question people ask. */
+.ntl { display: flex; flex-direction: column; gap: 10px; }
+.nt { background: var(--surface); border-radius: 14px; box-shadow: var(--sh);
+  padding: 14px 16px; }
+.nt.ntread { background: transparent; box-shadow: none;
+  border: 1px solid var(--hair); }
+.nthd { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.nthd b { font-family: var(--disp); font-weight: 700; font-size: 14px; }
+.nthd .hsub { margin-left: auto; }
+.ntd { margin-top: 6px; }
+.nta { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.nta form { display: contents; }
+@media (max-width: 560px) {
+  .nthd .hsub { margin-left: 0; flex: 1 1 100%; }
+}

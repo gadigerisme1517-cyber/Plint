@@ -51,6 +51,11 @@ const SUITES = [
      green. It drives a real browser, so it is slower than the rest put
      together and it runs late. */
   'browser.test.js',
+  /* Six things that had been carried half-built, and the tests that stop each
+     one going quiet again. It runs HERE, after every suite that reads the
+     seeded villa, because it certifies a stage on B-14 and settles a demand
+     there - and the suites above assert what B-14 looks like. */
+  'closed.test.js',
   'pwa.test.js',        // manifest, icons, and the worker's cache allowlist
   'config.test.js',
   'tls.test.js',

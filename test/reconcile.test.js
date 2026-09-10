@@ -67,7 +67,8 @@ test('every stored demand equals what the calculation layer prices today', async
       `SELECT s.id, s.unit_id, t.seq FROM unit_stages s
          JOIN stage_templates t ON t.code = s.stage_code`)).rows,
     demands: (await c.query(
-      'SELECT unit_stage_id, base_paise, gst_paise, extras_paise, total_paise FROM demands')).rows,
+      `SELECT unit_stage_id, base_paise, gst_paise, extras_paise, total_paise, raised_at
+         FROM demands`)).rows,
     bps: await bpsFor(c),
   }));
 
@@ -76,6 +77,7 @@ test('every stored demand equals what the calculation layer prices today', async
   const priced = new Map(units.map(u =>
     [u.id, M.schedule(u.agreement_value_paise, bps)]));
   const codeOf = new Map(units.map(u => [u.id, u.code]));
+  const valueOf = new Map(units.map(u => [u.id, u.agreement_value_paise]));
 
   assert.ok(demands.length > 100, `${demands.length} seeded demands to reconcile`);
 
@@ -85,10 +87,29 @@ test('every stored demand equals what the calculation layer prices today', async
     const want = priced.get(unitId)[seq];
     const where = `${codeOf.get(unitId)} stage ${seq}`;
 
+    /* THE BASE IS THE SCHEDULE'S, ALWAYS. Extras are not part of it: they are
+       what the buyer signed for above the allowance, they belong to the villa
+       and not to the stage's percentage, and the schedule must still sum to
+       the agreement value with them excluded. */
     assert.strictEqual(d.base_paise, want.basePaise, `${where}: stored base disagrees`);
-    assert.strictEqual(d.gst_paise, want.gstPaise, `${where}: stored GST disagrees`);
-    assert.strictEqual(d.extras_paise, 0);
-    assert.strictEqual(d.total_paise, want.totalPaise, `${where}: stored total disagrees`);
+
+    /* GST AND THE TOTAL ARE PRICED ON BASE PLUS EXTRAS, which is what
+       `priceStage` has always done and what nothing ever gave it a non-zero
+       value for until interior options had prices. A demand that carries an
+       extra is re-priced here with that extra, from the demand's own column -
+       so this still compares the stored figure against the layer and not
+       against itself. */
+    const withExtras = M.priceStage({
+      agreementValuePaise: valueOf.get(unitId),
+      scheduleBps: bps, index: seq,
+      extrasPaise: Number(d.extras_paise),
+      raisedAt: new Date(d.raised_at),
+    });
+    assert.strictEqual(d.gst_paise, withExtras.gstPaise, `${where}: stored GST disagrees`);
+    assert.strictEqual(d.total_paise, withExtras.totalPaise, `${where}: stored total disagrees`);
+    assert.strictEqual(d.total_paise,
+      Number(d.base_paise) + Number(d.extras_paise) + Number(d.gst_paise),
+      `${where}: the stored figures do not add up to their own total`);
   }
 });
 
@@ -149,9 +170,36 @@ test('B-14: the screen, the ledger and the stored demands all agree', async () =
 
   const shown = amountsOn(await buyerScreenOf('arjun@example.in', '/journey'));
   assert.strictEqual(shown.length, 10, 'ten stage rows');
+
+  /* WHAT A STAGE COSTS, AND WHAT IT COST.
+     The schedule says what a stage will cost. Once a demand exists that stage
+     HAS a cost, and since a signed interior choice reaches the demand it is
+     billed on, the two legitimately differ - the demand is bigger by the extra
+     and the GST on it. The screen must show the letter that went out, not the
+     schedule it was priced from, so the stronger property is asserted here:
+     where there is a demand the screen matches the demand, and the demand
+     itself re-derives from the money layer given its own extras and its own
+     raised date. Where there is no demand, the schedule still governs. */
+  const dems = await asUser(OFFICE, c => c.query(
+    `SELECT d.total_paise, d.extras_paise, d.raised_at, t.seq
+       FROM demands d JOIN unit_stages s ON s.id = d.unit_stage_id
+       JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = 'eterna-p1'
+      WHERE s.unit_id = 'unit-B-14'`).then(r => r.rows));
+  const demAt = i => dems.find(x => Number(x.seq) === i);   // seq is 0-based here
+
   priced.forEach((p, i) => {
-    assert.strictEqual(shown[i], M.money(p.totalPaise),
-      `stage ${i} on screen is ${shown[i]}, the layer says ${M.money(p.totalPaise)}`);
+    const dm = demAt(i);
+    const want = dm ? Number(dm.total_paise) : p.totalPaise;
+    assert.strictEqual(shown[i], M.money(want),
+      `stage ${i} on screen is ${shown[i]}, the record says ${M.money(want)}`);
+    if (dm) {
+      const re = M.priceStage({
+        agreementValuePaise: u.agreement_value_paise, scheduleBps: bps, index: i,
+        extrasPaise: Number(dm.extras_paise || 0), raisedAt: new Date(dm.raised_at),
+      });
+      assert.strictEqual(re.totalPaise, Number(dm.total_paise),
+        `stage ${i}'s stored demand does not re-price from the layer`);
+    }
   });
 
   // And the ledger accounts for the whole schedule, nothing lost or double
@@ -169,7 +217,7 @@ test('A-07: the awkward value reconciles too, and the last stage carries the pai
         WHERE s.unit_id='unit-A-07' ORDER BY t.seq`)).rows,
     bps: await bpsFor(c),
     demands: (await c.query(
-      `SELECT d.total_paise, t.seq FROM demands d
+      `SELECT d.total_paise, d.base_paise, t.seq FROM demands d
          JOIN unit_stages s ON s.id = d.unit_stage_id
          JOIN stage_templates t ON t.code = s.stage_code
         WHERE s.unit_id='unit-A-07' ORDER BY t.seq`)).rows,
@@ -182,8 +230,14 @@ test('A-07: the awkward value reconciles too, and the last stage carries the pai
 
   const shown = amountsOn(await buyerScreenOf('sharma@example.in', '/journey'));
   assert.strictEqual(shown.length, 10);
+  /* THE SCREEN SHOWS WHAT WAS BILLED WHERE ANYTHING WAS BILLED, and the
+     schedule's figure where nothing has been. Those are the same number until
+     a stage's demand carries an interior extra the buyer signed for, and then
+     the demand is the truth: it is the letter that went out. */
+  const billed = new Map(demands.map(d => [d.seq, Number(d.total_paise)]));
   priced.forEach((p, i) => {
-    assert.strictEqual(shown[i], M.money(p.totalPaise), `A-07 stage ${i} disagrees`);
+    const want = billed.has(i) ? billed.get(i) : p.totalPaise;
+    assert.strictEqual(shown[i], M.money(want), `A-07 stage ${i} disagrees`);
   });
 
   // The last stage is the one that differs from pricing alone. If any call
@@ -192,10 +246,14 @@ test('A-07: the awkward value reconciles too, and the last stage carries the pai
   assert.strictEqual(priced[9].basePaise, alone + 1,
     'the last stage carries the paise the first nine left behind');
 
-  // Stored demands agree with the same figures.
+  // Stored demands agree with what the screen shows, which is themselves.
   for (const d of demands) {
-    assert.strictEqual(d.total_paise, priced[d.seq].totalPaise,
+    assert.strictEqual(M.money(d.total_paise), shown[d.seq],
       `A-07 stored demand for stage ${d.seq} disagrees with the screen`);
+    /* And the stage's own base is still exactly its share of the schedule:
+       an extra is added to a demand, never blended into the percentage. */
+    assert.strictEqual(Number(d.base_paise), priced[d.seq].basePaise,
+      `A-07 stage ${d.seq}: an extra has been blended into the base`);
   }
 
   const total = led.paidPaise + led.demandedPaise + led.remainingPaise;
@@ -216,7 +274,8 @@ test('the demand letter prints the stored figure, which is the ledger figure', a
 
   for (const code of ['B-14', 'A-07']) {
     const row = (await asUser(OFFICE, c => c.query(
-      `SELECT d.unit_stage_id, d.total_paise, t.seq, u.agreement_value_paise
+      `SELECT d.unit_stage_id, d.total_paise, d.extras_paise, d.raised_at,
+              t.seq, u.agreement_value_paise
          FROM demands d
          JOIN unit_stages s ON s.id = d.unit_stage_id
          JOIN units u ON u.id = s.unit_id
@@ -225,7 +284,15 @@ test('the demand letter prints the stored figure, which is the ledger figure', a
     assert.ok(row, code + ' has a demand');
 
     const bps = await asUser(OFFICE, bpsFor);
-    const want = M.schedule(row.agreement_value_paise, bps)[row.seq].totalPaise;
+    /* Priced with the demand's own extras, for the reason given above: an
+       interior option signed above the allowance is part of what that letter
+       asks for, and the letter prints the stored total either way. */
+    const want = M.priceStage({
+      agreementValuePaise: row.agreement_value_paise,
+      scheduleBps: bps, index: row.seq,
+      extrasPaise: Number(row.extras_paise),
+      raisedAt: new Date(row.raised_at),
+    }).totalPaise;
     assert.strictEqual(row.total_paise, want,
       code + ': the stored demand the PDF prints disagrees with the layer');
 

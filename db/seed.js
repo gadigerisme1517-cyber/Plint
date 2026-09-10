@@ -111,6 +111,43 @@ async function main() {
   await c.query(`INSERT INTO users VALUES ('u-buyer-a07','sharma@example.in',$1,'buyer','M. Sharma',null,null)`,
     [hash('plint')]);
 
+  /* THE PROJECT'S OWN REGISTRATION, shown to every buyer on it. Migration 023
+     backfills this on a database that already has the project; a fresh one is
+     seeded here, because the migration runs before the seed. After the logins,
+     because a document records who added it. */
+  await c.query(
+    `INSERT INTO project_documents (id, project_id, kind, label, reference, url, added_by)
+     VALUES ('pd-rera-' || $1, $1, 'rera_certificate',
+             'RERA registration, NVT Eterna',
+             'PRM/KA/RERA/1251/446/PR/171021/001234',
+             'https://rera.karnataka.gov.in/projectViewDetails', 'u-office')`, [PROJECT]);
+
+  /* THE SANCTIONED PLAN AND THE FLOOR PLANS.
+     The registration alone left the engineer's "What it is built to" section
+     empty on every villa - it deliberately excludes the registration, because
+     a certificate is not what somebody builds a slab to - and a section that
+     never appears is a section nobody can tell is there. These are the three a
+     buyer and an engineer actually open: the sanctioned plan for the project,
+     and a floor plan for each of the two unit types on it. */
+  for (const [kind, label, unitType, ref] of [
+    ['approved_plan', 'Sanctioned plan, revision C', null,
+     'BBMP/ADTP/JD-NORTH/0741/2025-26'],
+    ['floor_plan', 'Floor plan, 4 BHK lake facing', '4 BHK, 3,640 sq ft, lake facing',
+     'NVT/E1/FP/4B-LF/RC'],
+    ['floor_plan', 'Floor plan, 3 BHK', '3 BHK, 2,100 sq ft',
+     'NVT/E1/FP/3B/RC'],
+    ['specification', 'Specification schedule, phase 1', null,
+     'NVT/E1/SPEC/2026-01'],
+  ]) {
+    await c.query(
+      `INSERT INTO project_documents
+         (id, project_id, kind, label, unit_type, reference, url, issued_on, added_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'u-office')`,
+      ['pd-' + kind.slice(0, 4) + '-' + (unitType ? unitType.slice(0, 5).replace(/\W/g, '') : 'all'),
+       PROJECT, kind, label, unitType, ref,
+       'https://nvtlifestyle.in/eterna/approvals', '2025-11-14']);
+  }
+
   // ------------------------------------------------------------- 48 villas
   const r = lcg(11);
   const villas = [];

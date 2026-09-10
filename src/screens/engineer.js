@@ -28,6 +28,7 @@ module.exports = function engineerScreens(ctx) {
   const {
     head, kpis, pill, btn, table, card, titled, dl, note, empty, photos,
     filters, search, showing, field, input, select, file, form, age, agePill, num, tagOf, AGE,
+    notices,
   } = K;
 
   /* v21's six kinds of log entry, with the quick entries it offers under each.
@@ -125,13 +126,55 @@ module.exports = function engineerScreens(ctx) {
         `SELECT l.*, coalesce(staff_name(l.logged_by), 'somebody at the office') logger
            FROM site_log l ORDER BY l.logged_at DESC LIMIT 40`)).rows;
 
-      return { mine, certs, visits, snags, log, byProject: await schedules(c) };
+      /* WHAT THE OFFICE HAS ASKED OF HIM. `/office/ask` has written one of
+         these every time a site went quiet, saying in its own comment that
+         "the engineer reads this on their own screen". Nothing read it. */
+      const notes = (await c.query(
+        `SELECT n.id, n.severity, n.title, n.detail, n.created_at, n.read_at,
+                (SELECT u.code FROM units u WHERE u.id = n.unit_id) code
+           FROM notifications n
+          ORDER BY n.read_at NULLS FIRST, n.created_at DESC LIMIT 40`)).rows;
+
+      return { mine, certs, visits, snags, log, notes, byProject: await schedules(c) };
     });
   }
 
-  const NAV = [['/engineer', 'On you today'], ['/engineer/villas', 'Villas'],
+  const NAV = [['/engineer', 'On you today'], ['/engineer/news', 'From the office'],
+               ['/engineer/villas', 'Villas'],
                ['/engineer/visits', 'Visits'], ['/engineer/log', 'Site log'],
                ['/engineer/snags', 'Snags'], ['/engineer/certs', 'Certificates']];
+
+  /* ------------------------------------------------------- from the office
+
+     The other half of `/office/ask`. When a villa has gone three weeks with no
+     photograph the office asks for one, and until now that request was written
+     to a table nobody read and repeated in the site log, where it looked like
+     something the engineer had written himself. */
+  function news(sess, d, msg) {
+    const unread = d.notes.filter(n => !n.read_at);
+    return desk(sess, '/engineer/news', 'From the office', '', `
+${head('What the office has asked you',
+  unread.length
+    ? unread.length + (unread.length === 1 ? ' thing' : ' things')
+      + ' you have not read. Everything here is a request, not an instruction '
+      + 'about the work: the office cannot see the site.'
+    : 'Nothing waiting. When the office asks for a photograph or flags a villa, '
+      + 'it lands here.',
+  btn('On you today', { href: '/engineer', icon: 'home' }))}
+${kpis([
+  { l: 'Unread', icon: 'bell', v: String(unread.length), n: 'newest first',
+    tone: unread.length ? 'hot' : null },
+  { l: 'In all', icon: 'doc', v: String(d.notes.length), n: 'the last forty' },
+])}
+${titled('Newest first', notices(d.notes.map(n => ({
+  id: n.id, severity: n.severity, title: n.title, detail: n.detail,
+  when: M.longDate(n.created_at), read_at: n.read_at,
+  href: n.code ? '/engineer/villa/' + encodeURIComponent(n.code) : null,
+  hrefLabel: n.code ? 'Open ' + n.code : null,
+})), { readAt: '/notice/read',
+  empty: 'Nothing from the office. What is on you today is on the first screen.' }))}
+`, msg);
+  }
 
   // ------------------------------------------------------- On you today
 
@@ -542,13 +585,24 @@ done on site and a qualified engineer certifies it.</p>`}</div>`)}
         `SELECT e.caption, e.taken_at, e.gps, e.sha256, s.stage_code
            FROM evidence e JOIN unit_stages s ON s.id = e.unit_stage_id
           WHERE s.unit_id = $1 ORDER BY e.taken_at DESC LIMIT 12`, [unit.id])).rows;
+      /* WHAT THIS VILLA IS BEING BUILT TO. The engineer signs a certificate
+         saying a stage is complete per the sanctioned plan, and until this
+         table existed there was no way to open the sanctioned plan from the
+         screen that signs it. */
+      const plans = (await c.query(
+        `SELECT * FROM project_documents
+          WHERE project_id = $1 AND superseded_at IS NULL
+            AND kind IN ('approved_plan', 'floor_plan', 'specification')
+            AND (unit_type IS NULL OR unit_type = $2)
+          ORDER BY kind, label`, [unit.project_id, unit.unit_type])).rows;
+
       /* The same outer join as the queue above, and for the same reason. */
       const snagRows = (await c.query(
         `SELECT sn.*, coalesce(w.display_name, u.buyer_name, 'the buyer') raiser
            FROM snags sn JOIN units u ON u.id = sn.unit_id
            LEFT JOIN users w ON w.id = sn.raised_by
           WHERE sn.unit_id = $1 ORDER BY sn.status, sn.raised_at`, [unit.id])).rows;
-      return { unit, stages, shots, snags: snagRows };
+      return { unit, stages, shots, snags: snagRows, plans };
     });
     if (!u) return null;
 
@@ -596,6 +650,17 @@ ${FLAGS.map(([t, why], i) => `<label class="dlr" style="cursor:pointer;grid-temp
          or the one whose own "Photograph it first" sent the reader here. */
       const shootAt = workable.find(s => s.id === photoStage) || target;
       body = `
+${u.plans.length ? titled('What it is built to', table(
+  ['Document', 'Reference', ''],
+  u.plans.map(x => [
+    `<b>${esc(x.label)}</b>`
+      + (x.unit_type ? `<br><span class="hsub">${esc(x.unit_type)}</span>` : ''),
+    x.reference ? `<span class="num" style="font-size:12px">${esc(x.reference)}</span>`
+      : `<span class="hsub">no reference</span>`,
+    (x.sha256 ? `<a class="btn dark" href="/plan/${esc(x.id)}">Open the drawing</a> ` : '')
+      + (x.url ? `<a class="btn" href="${esc(x.url)}" target="_blank"
+          rel="noopener noreferrer">On the register</a>` : ''),
+  ]), '1.6fr 1.4fr auto', { min: 620 })) : ''}
 ${titled('Photographs on this villa',
   photos(u.shots.map(s => ({
     sha256: s.sha256, caption: s.caption,
@@ -665,5 +730,6 @@ ${body}
 `, msg);
   }
 
-  return { load, me, villas, visits, snags, log, certs, certDetail, villa, LOG_KINDS, FLAGS, NAV };
+  return { load, me, villas, visits, snags, log, certs, certDetail, villa, news,
+           LOG_KINDS, FLAGS, NAV };
 };

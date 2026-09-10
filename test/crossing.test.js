@@ -105,6 +105,14 @@ const MATRIX = {
      entitled to know, and there is nothing in either that is not true of
      every buyer on every project. */
   breach_notices:   { buyer: 'none', engineer: 'none', office: 'all'  },
+  /* Pass 8's three. A price list, a published plan and a policy decision are
+     the same for everybody who can see the project, so all three are readable
+     by all three roles - and `choice_options` is the one of them bounded to a
+     villa, because a price belongs to a choice and a choice belongs to a
+     buyer. */
+  choice_options:   { buyer: 'own',  engineer: 'all',  office: 'all'  },
+  policy_decisions: { buyer: 'all',  engineer: 'all',  office: 'all'  },
+  project_documents:{ buyer: 'all',  engineer: 'all',  office: 'all'  },
   /* A buyer sees a hold that covers their own file and no other. Marked with
      a question because the demo database carries no hold to count. */
   legal_holds:      { buyer: 'own?', engineer: 'all',  office: 'all'  },
@@ -120,13 +128,14 @@ const MATRIX = {
   loan_applicants:  { buyer: 'own',  engineer: 'none', office: 'all'  },
   loan_documents:   { buyer: 'own',  engineer: 'none', office: 'all'  },
   login_attempts:   { buyer: 'gone', engineer: 'gone', office: 'gone' },
-  /* NOTIFICATIONS IS THE ODD ONE, AND WORTH NAMING TWICE. Its policy is
-     `for_role = current_role_name()`, so it IS narrower for the office - but
-     all five seeded rows are for_role='office', so the office reads every row
-     there is and no count can show the narrowing. It is also a table with
-     five rows, a policy, an INSERT path and NO READER ANYWHERE IN THE
-     PRODUCT: nothing on any of the three surfaces renders a notification. */
-  notifications:    { buyer: 'none', engineer: 'none', office: 'own?' },
+  /* NOTIFICATIONS. Its policy is `for_role = current_role_name()`, so every
+     role reads a strict subset and none of them reads all of it. Pass 7 could
+     only mark this 'own?' because every seeded row was for_role='office' and
+     no count could demonstrate the narrowing, and because there was no reader
+     on any surface to demonstrate it to. Pass 8 built the reader on all three
+     and seeded rows addressed to each, so the narrowing is now countable and
+     is declared as what it is. */
+  notifications:    { buyer: 'own',  engineer: 'own',  office: 'own'  },
   pack_deliveries:  { buyer: 'own',  engineer: 'all',  office: 'all'  },
   pack_queries:     { buyer: 'none', engineer: 'all',  office: 'all'  },
   possessions:      { buyer: 'own',  engineer: 'all',  office: 'all'  },
@@ -330,10 +339,14 @@ test('the tables no role may read are not read by that role\'s screens', () => {
      and the screen goes quietly short. Checked by file, because each file is
      one role. */
   const DENIED = {
+    /* `notifications` was on both of these lists and should never have been:
+       its policy hands each role the rows addressed to that role, so a buyer
+       and an engineer read their own. It was listed as denied because nothing
+       read it at all, which is a different thing and was Pass 8's job. */
     'screens/buyer.js': ['audit_log', 'blockers', 'site_log', 'pack_queries',
-                         'qpr_filings', 'escrow_movements', 'handoffs', 'notifications'],
+                         'qpr_filings', 'escrow_movements', 'handoffs'],
     'screens/engineer.js': ['loan_applicants', 'loan_documents', 'escrow_movements',
-                            'handoffs', 'notifications'],
+                            'handoffs'],
   };
   const bad = [];
   for (const [file, tables] of Object.entries(DENIED)) {

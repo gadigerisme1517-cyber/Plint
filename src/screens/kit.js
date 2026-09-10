@@ -443,6 +443,40 @@ module.exports = function kit({ esc }) {
     + inner + `<button class="btn${o.plain ? '' : ' dark'}" type="submit">`
     + (o.icon ? ic(o.icon) : '') + ' ' + esc(o.submit || 'Save') + '</button></form>';
 
+
+  /* ---------------------------------------------------------------- notices
+
+     WHAT SOMEBODY ELSE DID THAT THIS PERSON HAS TO KNOW ABOUT.
+
+     `notifications` has existed since migration 012 with a policy, an insert
+     path and TWO LIVE WRITERS - the engineer reporting a delay, and the office
+     asking a quiet site for a photograph - and no reader anywhere in the
+     product. Both of those writers tell the person pressing the button that
+     somebody will see it. Neither statement was true.
+
+     One component, drawn in this system, used by all three roles. Severity is
+     the pill vocabulary already agreed: `hot` is late or refused, `warn` is
+     waiting on somebody, `ok` is informational. */
+  const SEV = { hot: ['over', 'Needs you'], warn: ['due', 'Waiting'], ok: ['accent', 'For information'] };
+
+  const notices = (rows, o = {}) => rows.length
+    ? `<div class="ntl">${rows.map(n => {
+        const [tone, word] = SEV[n.severity] || SEV.ok;
+        return `<div class="nt${n.read_at ? ' ntread' : ''}">`
+          + `<div class="nthd">${pill(tone, word)}`
+          + `<b>${esc(n.title)}</b>`
+          + `<span class="hsub">${esc(n.when || '')}</span></div>`
+          + (n.detail ? `<p class="hsub ntd">${esc(n.detail)}</p>` : '')
+          + (n.href || !n.read_at
+            ? `<div class="nta">`
+              + (n.href ? `<a class="btn" href="${n.href}">${esc(n.hrefLabel || 'Open it')}</a>` : '')
+              + (n.read_at ? '' : act(o.readAt || '#', { id: n.id }, 'Mark it read', { plain: true }))
+              + `</div>`
+            : '')
+          + `</div>`;
+      }).join('')}</div>`
+    : empty(o.empty || 'Nothing new. This is where you are told what somebody else did.');
+
   /* The line that reports what the last write did, for a screen that renders
      it in the body rather than as the shell's toast. */
   const flash = m => (m ? `<div class="note flash">${esc(m)}</div>` : '');
@@ -451,6 +485,6 @@ module.exports = function kit({ esc }) {
     I, ic, AGE, age, agePill,
     head, kpis, pill, btn, act, table, filters, search, showing,
     card, titled, row, dl, note, empty, board, who, initials, num, tagOf, ageBand,
-    timeline, photos, talk, field, input, select, file, form, flash,
+    timeline, photos, talk, field, input, select, file, form, flash, notices,
   };
 };

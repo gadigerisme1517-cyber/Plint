@@ -67,7 +67,11 @@ const SCREENS = {
    ("Payments in"), and the buyer can see what Plint holds about them. Pass 7
    adds the office's Data protection desk - the fiduciary for each project,
    the sub-processors, the legal holds and the breach notices. */
-const DESTINATIONS = { buyer: 12, engineer: 6, office: 25 };
+/* Pass 8 closes the open list, and three of the six closures are a screen a
+   role did not have: everybody can now read what somebody else did about them,
+   the buyer can see the plans and the approvals, and the office has the desk
+   that records them. */
+const DESTINATIONS = { buyer: 14, engineer: 7, office: 27 };
 
 const cookies = {};
 before(async () => {

@@ -52,13 +52,20 @@ const DOCS = {
 };
 
 /* Interior selections that stop the site if they are not made. */
+/* WHAT EACH OPTION COSTS ABOVE THE ALLOWANCE, in rupees. The first on every
+   list is the standard specification and is included, which is why it is zero
+   rather than blank. These are demonstration figures like every other number
+   in this file: a builder prices their own list on /office/choices, and
+   migration 022 leaves every option at zero on a database that already
+   exists rather than inventing one. */
 const CHOICE_SET = [
   ['floor',   'Flooring, living and bedrooms', 'Vitrified tile or engineered wood.',
-   ['Vitrified tile, 800x800', 'Engineered wood, oak', 'Vitrified tile, 600x600'], 20],
+   [['Vitrified tile, 800x800', 0], ['Engineered wood, oak', 185000],
+    ['Vitrified tile, 600x600', 0]], 20],
   ['kitchen', 'Kitchen counter',               'Granite or quartz, edge profile included.',
-   ['Black granite', 'White quartz', 'Grey quartz'], 34],
+   [['Black granite', 0], ['White quartz', 62000], ['Grey quartz', 48000]], 34],
   ['bath',    'Bathroom fittings',             'The full set, one manufacturer.',
-   ['Jaquar', 'Kohler', 'Grohe'], 48],
+   [['Jaquar', 0], ['Kohler', 74000], ['Grohe', 96000]], 48],
 ];
 
 const LOG_SEED = [
@@ -198,15 +205,32 @@ async function seedState(c, villas, engineers) {
   const rc = lcg(401);
   for (const v of villas) {
     const unit = 'unit-' + v.code;
-    for (const [key, label, detail, options, dueIn] of CHOICE_SET) {
+    for (const [key, label, detail, priced, dueIn] of CHOICE_SET) {
       const made = rc() < .58;
+      const options = priced.map(o => o[0]);
+      const chose = made ? Math.floor(rc() * options.length) : null;
+      const id = 'ch-' + v.code + '-' + key;
       await c.query(
-        `INSERT INTO choices VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-        [ 'ch-' + v.code + '-' + key, unit, key, label, detail, options,
+        `INSERT INTO choices (id, unit_id, choice_key, label, detail, options,
+                              needed_by, selected, signed_at, signed_by, extra_paise)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [ id, unit, key, label, detail, options,
           ahead(dueIn - Math.floor(rc() * 30)),
-          made ? options[Math.floor(rc() * options.length)] : null,
+          made ? options[chose] : null,
           made ? ago(Math.floor(rc() * 40)) : null,
-          made ? (v.code === 'B-14' ? 'u-buyer-b14' : 'u-office') : null ]);
+          made ? (v.code === 'B-14' ? 'u-buyer-b14' : 'u-office') : null,
+          /* The price AS SIGNED, copied at signing exactly as `choice_sign`
+             copies it. A signed choice carries the amount agreed; the price
+             list beside it may move afterwards and this may not. */
+          made ? priced[chose][1] * 100 : null ]);
+      /* And the price list itself: one row per option, in rupees here and
+         paise in the column, the same boundary every money field crosses. */
+      for (let oi = 0; oi < priced.length; oi++) {
+        await c.query(
+          `INSERT INTO choice_options (id, choice_id, seq, label, extra_paise)
+           VALUES ($1,$2,$3,$4,$5)`,
+          [id + '-' + oi, id, oi, priced[oi][0], priced[oi][1] * 100]);
+      }
     }
   }
 
@@ -319,6 +343,31 @@ async function seedState(c, villas, engineers) {
     const [sev, title, detail, d] = NOTIF_SEED[i];
     await c.query(`INSERT INTO notifications VALUES ($1,$2,'office',null,$3,$4,$5,$6,null)`,
       ['nt-' + i, PROJECT, sev, title, detail, ago(d)]);
+  }
+
+  /* AND THE OTHER TWO ROLES, which had none because nothing read them.
+     These are exactly what the product's own two writers produce: the site
+     reporting a delay, which the buyer is told about in the buyer's words,
+     and the office asking a quiet villa for a photograph. Without them the
+     reader built in Pass 8 opens empty on two of the three surfaces and looks
+     like a screen that does not work. */
+  for (const [i, role, code, sev, title, detail, d] of [
+    [0, 'buyer', 'B-14', 'warn',
+     'Work on your villa has stopped: material not delivered',
+     'Blocks ordered 28 August, the vendor now says 12 September. The site '
+       + 'engineer reported this and the office has it. Nothing is billed while a '
+       + 'stage is stopped.', 2],
+    [1, 'buyer', 'B-14', 'ok',
+     'Two photographs added to first floor slab',
+     'Taken on site and stamped. They are on your villa screen.', 6],
+    [2, 'engineer', 'B-09', 'warn',
+     'B-09: the office has asked for a photograph',
+     'No photograph has reached the office in three weeks. Priya Menon has asked '
+       + 'for one of whatever is standing today.', 1],
+  ]) {
+    await c.query(
+      `INSERT INTO notifications VALUES ($1,$2,$3,$4,$5,$6,$7,$8,null)`,
+      ['nt-' + role + '-' + i, PROJECT, role, 'unit-' + code, sev, title, detail, ago(d)]);
   }
 }
 

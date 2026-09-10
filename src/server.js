@@ -258,10 +258,13 @@ const NAV = {
     { item: { href: '/choices', label: 'Interior choices', icon: 'settings' } },
     { item: { href: '/questions', label: 'Questions', icon: 'comms' } },
     { item: { href: '/more', label: 'Everything else', icon: 'bolt' } },
+    { item: { href: '/plans', label: 'Plans and approvals', icon: 'exam' } },
+    { item: { href: '/news', label: 'What has changed', icon: 'bell' } },
     { item: { href: '/data', label: 'What Plint holds', icon: 'users' } },
   ],
   engineer: [
     { item: { href: '/engineer', label: 'On you today', icon: 'home' } },
+    { item: { href: '/engineer/news', label: 'From the office', icon: 'bell' } },
     { grp: 'The site' },
     { item: { href: '/engineer/villas', label: 'Villas', icon: 'hostel' } },
     { item: { href: '/engineer/visits', label: 'Visits', icon: 'cal' } },
@@ -316,7 +319,7 @@ function navList(sess, current) {
 const BUYER_GET = new Set([
   'journey', 'villa', 'visit', 'money', 'more',
   'bank', 'loan', 'agreement', 'choices', 'questions', 'stage', 'documents',
-  'receipt', 'data', 'data.json',
+  'receipt', 'data', 'data.json', 'news', 'plans',
 ]);
 
 /* THE FILTER RUNTIME, SHARED BY EVERY SHELL.
@@ -623,10 +626,21 @@ async function certify(sess, stageId) {
     // Priced inside its own schedule, not on its own, so the last stage
     // carries the residual and the ten demands sum to the agreement value.
     const bps = (await schedules(c)).get(s.project_id);
+    /* WHAT THE BUYER SIGNED FOR ABOVE THE ALLOWANCE.
+       `extras_paise` has been a column since the first migration and
+       `priceStage` has charged GST on base + extras since the money layer was
+       written; nothing ever computed one, so every demand this product has
+       raised carried zero. It is the sum of the signed interior choices no
+       demand has carried yet, read here and marked billed below, in the same
+       transaction that raises the demand - so an extra cannot be billed twice
+       and cannot be lost between two statements. */
+    const extras = Number((await c.query(
+      'SELECT unbilled_extras($1) n', [s.unit_id])).rows[0].n) || 0;
     const price = M.priceStage({
       agreementValuePaise: s.agreement_value_paise,
       scheduleBps: bps,
       index: s.seq,
+      extrasPaise: extras,
       raisedAt: new Date(),
     });
     const seq = (await c.query(
@@ -638,6 +652,24 @@ async function certify(sess, stageId) {
       `INSERT INTO demands VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,null)`,
       [demandId, stageId, docNo,
        price.raisedAt, price.dueAt, price.basePaise, price.gstPaise, price.extrasPaise, price.totalPaise]);
+
+    /* And the choices that extra came from are billed against this demand, so
+       the next certification does not carry them again.
+
+       THROUGH A FUNCTION, because certification runs as the engineer and
+       `ch_write` does not let the site edit a buyer's choice: a plain UPDATE
+       here matched nothing, said nothing, and would have billed the same extra
+       on every later stage. The count is checked rather than assumed - if the
+       rows priced into this demand are not the rows marked, that is a
+       discrepancy in the money layer and it is worth a loud failure. */
+    if (extras > 0) {
+      const marked = Number((await c.query(
+        'SELECT extras_billed($1,$2) n', [s.unit_id, demandId])).rows[0].n);
+      if (!marked) {
+        throw new Error('priced ' + extras + ' paise of extras into ' + docNo
+          + ' and marked none of them billed');
+      }
+    }
 
     /* No audit write here. A trigger on unit_stages writes it, from the
        row's own certified_by, certified_at and certificate_hash plus the
@@ -947,6 +979,8 @@ const server = http.createServer(async (req, res) => {
       if (p === '/questions') return html(200, BUY.questions(sess, d, null, msg));
       if (p === '/documents') return html(200, BUY.documents(sess, d, msg));
       if (p === '/data')      return html(200, BUY.data(sess, d, msg));
+      if (p === '/news')      return html(200, BUY.news(sess, d, msg));
+      if (p === '/plans')     return html(200, BUY.plans(sess, d, msg));
 
       /* THE COPY THEY CAN TAKE AWAY. Assembled from the same session and the
          same rows the screen shows, so what leaves is exactly what they were
@@ -1024,6 +1058,7 @@ const server = http.createServer(async (req, res) => {
       if (p === '/engineer/visits')  return html(200, ENG.visits(sess, d, msg));
       if (p === '/engineer/snags')   return html(200, ENG.snags(sess, d, msg));
       if (p === '/engineer/certs')   return html(200, ENG.certs(sess, d, msg));
+      if (p === '/engineer/news')    return html(200, ENG.news(sess, d, msg));
       if (p === '/engineer/log')     return html(200, ENG.log(sess, d, null, msg));
 
       if (p.startsWith('/engineer/log/')) {
@@ -1170,6 +1205,22 @@ const server = http.createServer(async (req, res) => {
            VALUES ($1,$2,'office',$3,'warn',$4,$5)`,
           ['nt-' + crypto.randomUUID(), s.project_id, s.unit_id,
            s.code + ': ' + reason, detail + ' — reported by ' + sess.name]);
+        /* AND THE BUYER, WHICH IS THE HALF THAT WAS NEVER WRITTEN.
+
+           This screen's own note says "<buyer> is told the stage has moved and
+           why, the same day. Silence is what generates the phone calls." The
+           delay went to `blockers`, which a buyer's policy does not let them
+           read, and to a notification addressed to the office. The buyer was
+           told nothing at all. The wording here is the buyer's, not the site's:
+           they are not told which trade is short, they are told their stage has
+           stopped and what is being done. */
+        await c.query(
+          `INSERT INTO notifications (id, project_id, for_role, unit_id, severity, title, detail)
+           VALUES ($1,$2,'buyer',$3,'warn',$4,$5)`,
+          ['nt-' + crypto.randomUUID(), s.project_id, s.unit_id,
+           'Work on your villa has stopped: ' + reason.toLowerCase(),
+           detail + ' The site engineer reported this today and the office has it. '
+             + 'Nothing is billed while a stage is stopped.']);
         return s;
       });
       res.writeHead(302, { location: r
@@ -1330,6 +1381,24 @@ const server = http.createServer(async (req, res) => {
     /* Reassigning a villa. The write goes through assign_engineer(), which is
        SECURITY DEFINER because units has no UPDATE policy - the same route
        record_sanction takes, and for the same reason. */
+    /* --------------------------------------------------------- mark it read
+
+       One route for all three roles, because the policy is the boundary: a
+       session may update the rows addressed to its own role and no others, so
+       there is nothing for this handler to check that the database is not
+       already checking. It lands back where it was pressed. */
+    if (p === '/notice/read' && req.method === 'POST' && sess.role) {
+      const f = form(await body(req));
+      const home = { buyer: '/news', engineer: '/engineer/news', office: '/office/news' };
+      const ok = f.id && await asUser(sess, c => c.query(
+        `UPDATE notifications SET read_at = now() WHERE id = $1 AND read_at IS NULL`,
+        [f.id]).then(r => r.rowCount > 0)).catch(() => false);
+      res.writeHead(302, { location: (home[sess.role] || '/') + '?m='
+        + encodeURIComponent(ok ? 'Marked read. It stays on the list.'
+                                : 'That was already read, or is not yours.') });
+      return res.end();
+    }
+
     /* ----------------------------------------------------- data protection
 
        Four writes, all office-only, all through SECURITY DEFINER functions
@@ -1338,6 +1407,39 @@ const server = http.createServer(async (req, res) => {
        are the three things that follow which are software rather than
        paperwork - naming the fiduciary's officer, freezing a file, and
        recording that the fiduciary was told about a breach. */
+    /* ------------------------------------------------- a recorded decision
+
+       The three Pass 7 named as the builder's to make. This route records one
+       and proposes nothing: there is no default in the form, none in the
+       function behind it, and none anywhere else. A GET with only a topic
+       opens the form; a POST with a decision and a reason records it. */
+    if (p === '/office/policy' && req.method === 'POST' && sess.role === 'office') {
+      const f = form(await body(req));
+      const back = m => {
+        res.writeHead(302, { location: '/office/dpdp?m=' + encodeURIComponent(m) });
+        res.end();
+      };
+      const TOPICS = ['erasure', 'withdrawal', 'breach_process'];
+      if (!TOPICS.includes(f.topic || '')) return back('That is not one of the three.');
+      /* Pressing "Record it" with nothing typed is not a decision: it opens
+         the form. The screen sends the topic alone the first time. */
+      if (!(f.decision || '').trim() || !(f.reason || '').trim()) {
+        res.writeHead(302, { location: '/office/dpdp?view=' + encodeURIComponent(f.topic)
+          + '&m=' + encodeURIComponent(
+            'Write what has been decided and why. Plint has no suggestion to offer: '
+            + 'this is the builder’s decision and it is not a field with a default.') });
+        return res.end();
+      }
+      const r = await asUser(sess, c => c.query(
+        'SELECT policy_decide($1,$2,$3,$4::date) id',
+        [f.topic, (f.decision || '').slice(0, 400), (f.reason || '').slice(0, 400),
+         /^\d{4}-\d{2}-\d{2}$/.test(f.from || '') ? f.from : null])
+        .then(x => x.rows[0].id)).catch(e => ({ err: e.message.replace(/^.*?:\s*/, '') }));
+      if (r && r.err) return back(r.err);
+      return back('Recorded, with your name and the date against it. Every buyer on '
+        + 'this console now reads that answer instead of "not decided".');
+    }
+
     if (p === '/office/grievance' && req.method === 'POST' && sess.role === 'office') {
       const f = form(await body(req));
       const back = m => {
@@ -1418,9 +1520,17 @@ const server = http.createServer(async (req, res) => {
       const modes = ['neft', 'rtgs', 'imps', 'upi', 'cheque', 'draft', 'cash'];
       if (!modes.includes(f.mode)) return back('That is not a way money arrives.');
       if (!/^\d{4}-\d{2}-\d{2}$/.test(f.received || '')) return back('That is not a date.');
+      /* WHO PAID IT. A lender-paid receipt is a disbursement against that
+         villa's sanction; a buyer-paid one is their own contribution. The
+         amount is the demand's either way - this says where it came from. */
+      if (!['buyer', 'lender'].includes(f.payer || 'buyer')) {
+        return back('A payment comes from the buyer or from their lender.');
+      }
       const r = await asUser(sess, async c => {
-        const no = (await c.query('SELECT receipt_issue($1,$2,$3,$4::date) no',
-          [f.demand, f.mode, (f.reference || '').trim().slice(0, 60), f.received])).rows[0].no;
+        const no = (await c.query(
+          'SELECT receipt_issue($1,$2,$3,$4::date,$5,$6) no',
+          [f.demand, f.mode, (f.reference || '').trim().slice(0, 60), f.received,
+           f.payer || 'buyer', (f.payer_name || '').trim() || null])).rows[0].no;
         if (!no) return null;
         return (await c.query(
           `SELECT r.receipt_no, dm.doc_no, dm.total_paise, u.code
@@ -1433,7 +1543,32 @@ const server = http.createServer(async (req, res) => {
       return back(r
         ? r.receipt_no + ' issued to ' + r.code + ' for ' + M.money(r.total_paise)
           + '. ' + r.doc_no + ' is settled and the buyer can see the receipt.'
+          + ((f.payer || 'buyer') === 'lender'
+            ? ' It counts against their sanction as a disbursement.' : '')
         : 'That demand could not be settled. It may already be paid.');
+    }
+
+    /* WHAT AN INTERIOR OPTION COSTS. In rupees on the form, paise in the
+       database, converted once here - the same boundary every other money
+       field in this product crosses at. */
+    if (p === '/office/option-price' && req.method === 'POST' && sess.role === 'office') {
+      const f = form(await body(req));
+      const back = m => {
+        res.writeHead(302, { location: '/office/choices?m=' + encodeURIComponent(m) });
+        res.end();
+      };
+      const rupees = Number(f.rupees);
+      if (!Number.isInteger(rupees) || rupees < 0) {
+        return back('An extra is a whole number of rupees, and it is not a discount.');
+      }
+      const r = await asUser(sess, c => c.query(
+        'SELECT choice_option_price($1,$2) ok', [f.id, rupees * 100])
+        .then(x => x.rows[0].ok)).catch(e => ({ err: e.message.replace(/^.*?:\s*/, '') }));
+      if (r && r.err) return back(r.err);
+      return back(r
+        ? (rupees ? 'Priced at ' + M.money(rupees * 100) + ' above the allowance, plus GST.'
+                  : 'Recorded as included in the allowance.')
+        : 'No such option.');
     }
 
     if (p === '/office/assign' && req.method === 'POST' && sess.role === 'office') {
@@ -1848,21 +1983,22 @@ const server = http.createServer(async (req, res) => {
     if (p === '/choices' && req.method === 'POST' && sess.role === 'buyer') {
       const f = form(await body(req));
       const back = m => { res.writeHead(302, { location: '/choices?m=' + encodeURIComponent(m) }); res.end(); };
-      const r = await asUser(sess, async c => {
-        /* `selected = ANY(options)` and `choices_signed_whole` are both table
-           constraints, so an option that is not on the list, or a selection
-           without a signature, is refused by the database rather than by this
-           line. Signing an already-signed choice is refused here: it is not a
-           constraint violation, it is a second decision on a settled one. */
-        const row = await c.query(
-          `UPDATE choices SET selected = $2, signed_at = now(), signed_by = $3
-            WHERE id = $1 AND selected IS NULL
-            RETURNING label, selected`,
-          [f.id, f.option, sess.id]);
-        return row.rows[0] || null;
-      });
+      /* SIGNING COPIES A PRICE NOW, so it goes through `choice_sign` rather
+         than being an UPDATE written here: the amount must be read from the
+         option the buyer picked, inside the same statement, and never taken
+         from what the browser posted. The function checks the villa is theirs,
+         refuses an option that is not on the list, and refuses a second
+         signature on a settled choice. */
+      const r = await asUser(sess, async c => (await c.query(
+        'SELECT * FROM choice_sign($1,$2)', [f.id, f.option])).rows[0] || null)
+        .catch(e => ({ err: e.message.replace(/^.*?:\s*/, '') }));
+      if (r && r.err) return back(r.err);
       return back(r
         ? r.label + ': ' + r.selected + ' signed. The site builds that.'
+          + (Number(r.extra_paise) > 0
+            ? ' ' + M.money(r.extra_paise) + ' above the allowance goes onto your '
+              + 'next demand letter, plus GST.'
+            : ' It is within the allowance, so there is nothing extra to pay.')
         : 'That choice could not be signed. It may already be settled.');
     }
 
@@ -1932,6 +2068,80 @@ const server = http.createServer(async (req, res) => {
         'x-content-type-options': 'nosniff',
       });
       return res.end(bytes);
+    }
+
+    /* ------------------------------------------------------- one drawing
+
+       A plan is not evidence about one villa: it is the same document for
+       every buyer of that unit type and the policy on the table says so. The
+       row is still fetched as the asking session, so the shape of this handler
+       is identical to the photograph one above and there is no second way in. */
+    const plan = /^\/plan\/([A-Za-z0-9-]{1,40})$/.exec(p);
+    if (plan && sess.role) {
+      const row = await asUser(sess, c => c.query(
+        'SELECT sha256, mime, label FROM project_documents WHERE id = $1', [plan[1]]))
+        .then(r => r.rows[0]);
+      if (!row || !row.sha256 || !row.mime) {
+        return html(404, page('Not found', sess, notFound('No such drawing.')));
+      }
+      let bytes;
+      try { bytes = await EV.read(row.sha256); }
+      catch { return html(404, page('Not found', sess, notFound('No such drawing.'))); }
+      res.writeHead(200, {
+        'content-type': row.mime,
+        'content-length': bytes.length,
+        'cache-control': 'private, max-age=3600',
+        'x-content-type-options': 'nosniff',
+      });
+      return res.end(bytes);
+    }
+
+    /* Recording one. A reference, a link, a drawing, or any two of them - the
+       function refuses a row that is none of the three. An uploaded drawing
+       goes through the same content-addressed store as a site photograph and
+       is hashed the same way; nothing else about it is the same, which is why
+       it is a different table. */
+    if (p === '/office/document' && req.method === 'POST' && sess.role === 'office') {
+      const back = m => {
+        res.writeHead(302, { location: '/office/plans?m=' + encodeURIComponent(m) });
+        res.end();
+      };
+      let parsed;
+      try {
+        const raw = await MP.read(req, EV.MAX_BYTES + 4096);
+        parsed = MP.parse(raw, req.headers['content-type']);
+      } catch (e) {
+        return back(e.code === 'TOO_LARGE'
+          ? 'That drawing is larger than the ' + Math.round(EV.MAX_BYTES / 1048576) + ' MB limit.'
+          : 'That upload could not be read.');
+      }
+      const f = parsed.fields;
+      const KINDS = ['rera_certificate', 'approved_plan', 'floor_plan',
+                     'specification', 'commencement', 'occupancy', 'other'];
+      if (!KINDS.includes(f.kind || '')) return back('That is not a kind of document.');
+
+      let stored = null;
+      if (parsed.files.drawing && parsed.files.drawing.data.length) {
+        try { stored = await EV.store(parsed.files.drawing.data); }
+        catch (e) {
+          return back(e.code === 'BAD_TYPE'
+            ? 'A drawing is uploaded as a JPEG or a PNG. A certificate is better '
+              + 'recorded as its number and a link to the register.'
+            : 'That drawing could not be stored.');
+        }
+      }
+      const r = await asUser(sess, c => c.query(
+        'SELECT project_document_add($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) id',
+        [f.project, f.kind, (f.label || '').slice(0, 120), (f.unit_type || '').slice(0, 60),
+         (f.reference || '').slice(0, 120), (f.url || '').slice(0, 300),
+         stored && stored.sha256, stored && stored.mime, stored && stored.byteSize,
+         /^\d{4}-\d{2}-\d{2}$/.test(f.issued || '') ? f.issued : null])
+        .then(x => x.rows[0].id)).catch(e => ({ err: e.message.replace(/^.*?:\s*/, '') }));
+      if (r && r.err) return back(r.err);
+      return back(r
+        ? 'Recorded. Every buyer on that project can see it'
+          + (stored ? ' and open the drawing.' : '.')
+        : 'That document could not be recorded.');
     }
 
     if (p === '/evidence/upload' && req.method === 'POST') {

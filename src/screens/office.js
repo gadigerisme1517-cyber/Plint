@@ -40,6 +40,11 @@
 module.exports = function office(ctx) {
   const { esc, officePage, M, asUser, schedules, stageTotal } = ctx;
 
+  /* The audit log's one reader. It is required here rather than handed in by
+     server.js because it touches no request state: it is a query and a
+     vocabulary, and there is exactly one of each. */
+  const AUDIT = require('../audit');
+
   const days = d => Math.max(0, Math.round((Date.now() - new Date(d).getTime()) / 86400000));
   const until = d => Math.round((new Date(d).getTime() - Date.now()) / 86400000);
 
@@ -63,13 +68,14 @@ module.exports = function office(ctx) {
   const K = require('./kit')({ esc });
   const { I, ic, head, kpis, pill, btn, act, table, filters, search, showing,
           card, titled, row, dl, note, empty, board, who, initials, num, tagOf, ageBand,
-          field, input, select, file, form } = K;
+          field, input, select, file, form, notices } = K;
 
   // -------------------------------------------------------------------- nav
 
   /* The reference's shape exactly: a flat list of `{item}` and `{grp}`. */
   const NAV = [
     { item: { id: 'dashboard', label: 'Dashboard', icon: 'home' } },
+    { item: { id: 'news', label: 'What has happened', icon: 'bell', count: 'news' } },
     { grp: 'Money stuck' },
     { item: { id: 'packs', label: 'Ready to send', icon: 'report', count: 'packs' } },
     { item: { id: 'wait', label: 'At the lender', icon: 'money', count: 'wait' } },
@@ -89,6 +95,7 @@ module.exports = function office(ctx) {
     { item: { id: 'warranty', label: 'Warranty', icon: 'risk', count: 'warranty' } },
     { grp: 'Compliance' },
     { item: { id: 'rera', label: 'RERA filing', icon: 'cert' } },
+    { item: { id: 'plans', label: 'Plans and approvals', icon: 'exam' } },
     { item: { id: 'escrow', label: 'Escrow drawdown', icon: 'money' } },
     { item: { id: 'possession', label: 'After possession', icon: 'home' } },
     { item: { id: 'dpdp', label: 'Data protection', icon: 'users', count: 'holds' } },
@@ -166,6 +173,36 @@ module.exports = function office(ctx) {
 
   const villaHref = code => '/office/villa/' + encodeURIComponent(code);
 
+  /* An audit row names its actor by id, because a name can change and an id
+     cannot. Three things can supply the readable one, in this order: the
+     figures, where the trigger copied a name in at the time and that is what
+     was true then; `staff_name`, which resolves a staff id now; and the id
+     itself, which is shown rather than hidden when neither works - a buyer's
+     id resolves to nothing by design, and an empty column would be a worse
+     answer than an unfamiliar one. */
+  const coalesceName = a => (a.figures && (a.figures.marked_by || a.figures.certified_by))
+    || a.actor_name || a.actor_id;
+
+  /* The two or three figures out of an audit row that a person reading a villa
+     file actually wants. Not the whole jsonb: it carries the certificate hash
+     and the whole schedule, which is the record and not the summary. */
+  const figuresOf = a => {
+    const f = a.figures || {};
+    const bits = [];
+    if (f.stage_name) bits.push(esc(f.stage_name));
+    if (f.doc_no) bits.push(esc(f.doc_no));
+    if (f.receipt_no) bits.push(esc(f.receipt_no));
+    if (f.total_paise) bits.push('<b>' + esc(M.money(f.total_paise)) + '</b>');
+    if (f.photographs != null) bits.push(esc(f.photographs + ' photographs'));
+    if (f.reference) bits.push(esc(f.reference));
+    if (f.mode) bits.push(esc(String(f.mode).toUpperCase()));
+    if (f.certificate_hash) {
+      bits.push('<span class="num" style="font-size:11px;color:var(--faint)">'
+        + esc(String(f.certificate_hash).slice(0, 16)) + '…</span>');
+    }
+    return bits.join(' &middot; ') || '<span class="hsub">no figures recorded</span>';
+  };
+
   /* The lenders on a set of rows, so a filter offers the ones that are there
      rather than a fixed list that goes stale. */
   const lendersIn = rows => [...new Set(rows.map(r => r.bank).filter(Boolean))].sort();
@@ -192,7 +229,8 @@ module.exports = function office(ctx) {
           WHERE selected IS NULL AND needed_by < CURRENT_DATE)                          choices,
         (SELECT count(*) FROM snags WHERE status = 'open')                              warranty,
         (SELECT count(*) FROM demands WHERE paid_at IS NULL)                             unpaid,
-        (SELECT count(*) FROM legal_holds WHERE released_at IS NULL)                     holds
+        (SELECT count(*) FROM legal_holds WHERE released_at IS NULL)                     holds,
+        (SELECT count(*) FROM notifications WHERE read_at IS NULL)                       news
       `, [String(PACK_LATE_DAYS), String(QUIET_DAYS)])).rows[0];
     for (const k of Object.keys(r)) r[k] = Number(r[k]);
     return r;
@@ -211,6 +249,27 @@ module.exports = function office(ctx) {
   /* One read per destination, written beside the screen that consumes it. */
   async function forScreen(c, k) {
     switch (k) {
+
+      /* The plans, the approvals and the floor plans. Superseded rows are
+         kept and shown as superseded: a villa certified against revision B is
+         evidence about revision B. */
+      case 'plans': return {
+        list: (await c.query(
+          `SELECT pd.*, p.name project_name FROM project_documents pd
+             JOIN projects p ON p.id = pd.project_id
+            ORDER BY pd.superseded_at NULLS FIRST, p.name, pd.kind, pd.label`)).rows,
+        projects: (await c.query('SELECT id, name FROM projects ORDER BY name')).rows,
+      };
+
+      /* What somebody else did. The policy hands this session the rows
+         addressed to the office and no others. */
+      case 'news': return {
+        list: (await c.query(
+          `SELECT n.id, n.severity, n.title, n.detail, n.created_at, n.read_at,
+                  (SELECT u.code FROM units u WHERE u.id = n.unit_id) code
+             FROM notifications n
+            ORDER BY n.read_at NULLS FIRST, n.created_at DESC LIMIT 40`)).rows,
+      };
 
       /* DATA PROTECTION. Who is fiduciary and who is processor, per project;
          everyone Plint hands data to; what is frozen and why; and whether a
@@ -240,6 +299,13 @@ module.exports = function office(ctx) {
              FROM breach_notices b ORDER BY b.detected_at DESC`)).rows,
         retention: (await c.query(
           `SELECT * FROM retention_policy ORDER BY category, table_name`)).rows,
+        /* The three Pass 7 named and left. Every one of them is unanswered
+           until somebody records an answer, and the screen says so rather
+           than defaulting to anything. */
+        decisions: (await c.query(
+          `SELECT d.*, coalesce(staff_name(d.decided_by), 'the office') by_name
+             FROM policy_decisions d
+            ORDER BY d.superseded_at NULLS FIRST, d.decided_at DESC`)).rows,
         units: (await c.query(
           `SELECT u.id, u.code, p.name project FROM units u
              JOIN projects p ON p.id = u.project_id ORDER BY u.code`)).rows,
@@ -258,6 +324,9 @@ module.exports = function office(ctx) {
              JOIN stage_templates t ON t.code = s.stage_code AND t.project_id = u.project_id
             WHERE dm.paid_at IS NULL
             ORDER BY dm.due_at`)).rows,
+        drawdown: (await c.query(
+          `SELECT * FROM loan_drawdown WHERE sanction_paise IS NOT NULL
+              AND disbursed_paise > 0 ORDER BY left_to_draw_paise LIMIT 200`)).rows,
         got: (await c.query(
           `SELECT r.*, dm.doc_no, dm.total_paise, dm.paid_at,
                   u.code, u.buyer_name, t.name stage_name,
@@ -573,6 +642,16 @@ module.exports = function office(ctx) {
       };
 
       case 'choices': return {
+        /* THE PRICE LIST. Every option on a choice nobody has signed yet, so
+           the office can say what each one costs above the allowance. A signed
+           choice is not in this list: its price is what was agreed. */
+        options: (await c.query(
+          `SELECT co.*, ch.label choice_label, ch.unit_id, u.code, ch.selected
+             FROM choice_options co
+             JOIN choices ch ON ch.id = co.choice_id
+             JOIN units u ON u.id = ch.unit_id
+            WHERE ch.selected IS NULL
+            ORDER BY ch.label, u.code, co.seq`)).rows,
         list: (await c.query(
           `SELECT ch.*, u.code, u.buyer_name FROM choices ch
              JOIN units u ON u.id = ch.unit_id
@@ -1149,6 +1228,130 @@ ${pill('over', b.age + 'd')}</a>`).join('')
         });
   };
 
+  /* --------------------------------------------------------------- plans
+
+     WHERE THE APPROVED PLAN, THE FLOOR PLANS AND THE REGISTRATION LIVE.
+
+     Named absent in three audits and built here. What a buyer asks for first -
+     the RERA number, the sanctioned plan, the floor plan of their own unit
+     type - was nowhere in this product, and `projects.builder_ref` had carried
+     the registration since onboarding without a single screen showing it to
+     the person it was registered for. */
+  SCREENS.plans = (sess, d) => {
+    const list = d.rows.list;
+    const live = list.filter(x => !x.superseded_at);
+    const KINDS = [
+      ['rera_certificate', 'RERA registration'], ['approved_plan', 'Approved plan'],
+      ['floor_plan', 'Floor plan'], ['specification', 'Specification'],
+      ['commencement', 'Commencement certificate'],
+      ['occupancy', 'Occupancy certificate'], ['other', 'Something else'],
+    ];
+    const said = k => (KINDS.find(x => x[0] === k) || ['', k])[1];
+    const missing = d.rows.projects.filter(p =>
+      !live.some(x => x.project_id === p.id && x.kind === 'rera_certificate'));
+
+    return head('Plans and approvals',
+      'What every buyer on a project is entitled to see: the registration, the '
+      + 'sanctioned plan, and the floor plan of their own unit type.')
+      + kpis([
+        { l: 'On file', icon: 'doc', v: String(live.length), n: 'across every project' },
+        { l: 'Without a registration', icon: 'risk', v: String(missing.length),
+          n: missing.length ? 'projects whose buyers see nothing' : 'every project has one',
+          tone: missing.length ? 'hot' : null },
+        { l: 'Drawings', icon: 'cam', v: String(live.filter(x => x.sha256).length),
+          n: 'uploaded and hash locked' },
+        { l: 'Superseded', icon: 'back', v: String(list.length - live.length),
+          n: 'kept, not deleted' },
+      ])
+      + titled('What is on file', table(
+        ['Project', 'Document', 'What it is', 'Reference', 'Added', ''],
+        list.map(x => [
+          `<b>${esc(x.project_name || x.project_id)}</b>`,
+          `<b>${esc(x.label)}</b>`
+            + (x.unit_type ? `<br><span class="hsub">${esc(x.unit_type)}</span>` : '')
+            + (x.superseded_at ? '<br>' + pill('grey', 'superseded') : ''),
+          esc(said(x.kind)),
+          /* A registration number is one unbroken token about forty characters
+             long, and the grid gave it a column it did not fit in: it ran
+             under the date beside it. It wraps here rather than being
+             shortened, because half a registration number is worse than two
+             lines of one. */
+          x.reference ? `<span class="num" style="font-size:12px;
+              overflow-wrap:anywhere">${esc(x.reference)}</span>`
+            : `<span class="hsub">—</span>`,
+          num(M.longDate(x.added_at)),
+          (x.sha256 ? `<a class="btn" href="/plan/${esc(x.id)}">Open</a> ` : '')
+            + (x.url ? `<a class="btn" href="${esc(x.url)}" target="_blank"
+                rel="noopener noreferrer">Register</a>` : ''),
+        ]),
+        '.9fr 1.3fr .8fr 1.5fr .7fr auto',
+        { min: 940,
+          empty: 'Nothing on file. Every buyer on every project is being shown an '
+               + 'empty screen until something is recorded here.' }))
+      + titled('Record one', card('', form('/office/document',
+        field('Project', select('project',
+          d.rows.projects.map(p => [p.id, p.name]), { required: true }))
+        + field('What it is', select('kind', KINDS, { required: true }))
+        + field('Name it', input('label', { required: true, max: 120,
+          placeholder: 'Sanctioned plan, revision C' }))
+        + field('Unit type, for a floor plan', input('unit_type', { max: 60,
+          placeholder: '3 BHK, 2,100 sq ft' }))
+        + field('Reference number', input('reference', { max: 120,
+          placeholder: 'PRM/KA/RERA/...' }))
+        + field('Where it is published', input('url', { max: 300,
+          placeholder: 'https://rera.karnataka.gov.in/...' }))
+        + field('Issued on', input('issued', { type: 'date' }))
+        + `<span class="ffile">${file('drawing', { id: 'plan-file', label: 'A drawing, optional' })}</span>`,
+        { upload: true, submit: 'Record it', icon: 'doc' }))
+        + note('A reference, a link or a drawing - one of the three is enough, and the '
+          + 'function refuses a row that is none of them. A certificate is better '
+          + 'recorded as its number and a link to the register than as a photograph of '
+          + 'a piece of paper: the register is the authority, not the copy.'))
+      + note('A revision supersedes rather than replaces. The older drawing stays '
+        + 'readable, because a stage certified last March was built to what was current '
+        + 'last March, and the evidence pack has to be able to say so.');
+  };
+
+  /* ---------------------------------------------------------------- news
+
+     THE READER `notifications` NEVER HAD.
+
+     Five seeded rows, a policy, an insert path and two live writers - the
+     engineer reporting a delay from site, and this console asking a quiet
+     villa for a photograph - and nothing on any of the three surfaces rendered
+     one. The engineer's screen says "the office sees it" as it writes; it was
+     not true until this screen existed. */
+  SCREENS.news = (sess, d) => {
+    const unread = d.rows.list.filter(n => !n.read_at);
+    const hot = unread.filter(n => n.severity === 'hot');
+    return head('What has happened',
+      unread.length
+        ? unread.length + (unread.length === 1 ? ' thing' : ' things')
+          + ' nobody at this desk has read yet. The site writes here when it '
+          + 'reports a delay; so does this console when it asks something of a villa.'
+        : 'Nothing unread. Everything the site has reported has been seen.',
+      btn('The worklist', { icon: 'growth', href: '/office/stages' }))
+      + kpis([
+        { l: 'Unread', icon: 'bell', v: String(unread.length), n: 'newest first',
+          tone: unread.length ? 'hot' : null },
+        { l: 'Needs somebody', icon: 'risk', v: String(hot.length),
+          n: hot.length ? 'marked hot by whoever wrote it' : 'none marked hot',
+          tone: hot.length ? 'hot' : null },
+        { l: 'In all', icon: 'doc', v: String(d.rows.list.length), n: 'the last forty' },
+      ])
+      + titled('Newest first', notices(d.rows.list.map(n => ({
+        id: n.id, severity: n.severity, title: n.title, detail: n.detail,
+        when: ago(n.created_at), read_at: n.read_at,
+        href: n.code ? villaHref(n.code) : null,
+        hrefLabel: n.code ? 'Open ' + n.code : null,
+      })), { readAt: '/notice/read',
+        empty: 'Nothing has been reported. The site writes here when it flags a '
+             + 'delay, and this console writes here when it asks for a photograph.' }))
+      + note('A notification reaches one role and stays there. What the site sends '
+        + 'to this desk is not visible to a buyer, and what this desk sends to the '
+        + 'site is not visible to either of them.');
+  };
+
   /* ---------------------------------------------------------------- DPDP
 
      WHO IS WHO, AND THE THREE THINGS A PROCESSOR HAS TO BE ABLE TO DO.
@@ -1171,7 +1374,7 @@ ${pill('over', b.age + 'd')}</a>`).join('')
      WHAT IS NOT HERE, deliberately: what may be erased and when, what a buyer
      may withdraw mid-contract, and the breach process itself. Those are the
      builder's to decide. */
-  SCREENS.dpdp = (sess, d) => {
+  SCREENS.dpdp = (sess, d, msg, view) => {
     const open = d.rows.holds.filter(h => !h.released_at);
     const missing = d.rows.projects.filter(p => !p.grievance_name);
     const KINDS = [['assessment', 'Assessment'], ['appeal', 'Appeal'],
@@ -1290,12 +1493,78 @@ ${pill('over', b.age + 'd')}</a>`).join('')
           + 'meet the Board’s timeline. What the builder then does - who they notify, '
           + 'in what form and by when - is theirs, and this console does not model it. '
           + 'What is recorded here is the fact that they were told, and when.'))
+      /* ------------------------------------------ the three that are not ours
+
+         Pass 7 named these and left them, and "left" has looked the same on
+         screen as "nobody thought about it". They are questions with a place
+         to put the answer now: a decision, a reason, a person and a date, the
+         same shape as a legal hold. Nothing here proposes a value. */
+      + (view && ['erasure', 'withdrawal', 'breach_process'].includes(view)
+        ? titled('Record the decision on: ' + view.replace('_', ' '),
+          card('', form('/office/policy',
+            field('What has been decided', input('decision', { required: true, max: 400,
+              placeholder: 'In your own words. There is no list to pick from.' }))
+            + field('Why', input('reason', { required: true, max: 400,
+              placeholder: 'What it follows from - the advice, the clause, the statute.' }))
+            + field('In force from, optional', input('from', { type: 'date' })),
+            { fields: { topic: view }, submit: 'Record this decision', icon: 'cert' }))
+          + note('Plint offers no default here and never will. What goes in this box '
+            + 'is quoted to every buyer on this console as the builder’s answer, '
+            + 'with your name and today’s date against it.'))
+        : '')
+      + titled('Three decisions this product will not make for you', (() => {
+        const TOPICS = [
+          ['erasure', 'What may be erased, and when',
+           'A buyer asks for their data to be deleted. Some of it is a tax record '
+           + 'for eight years and some of it is the evidence a bank released money '
+           + 'against. Which parts go, at what point, and what is kept and why.'],
+          ['withdrawal', 'What a buyer may withdraw mid-contract',
+           'A buyer withdraws consent while their villa is half built. What stops '
+           + 'and what continues, given that the contract itself needs the data to '
+           + 'be processed at all.'],
+          ['breach_process', 'What happens on a breach, beyond telling you',
+           'Plint tells you at once and records that it did. Who at your end is '
+           + 'called, in what form, within how long, and what you then file with '
+           + 'the Board.'],
+        ];
+        const live = t => d.rows.decisions.find(x => x.topic === t && !x.superseded_at);
+        return table(
+          ['The question', 'Decision in force', 'Recorded', ''],
+          TOPICS.map(([topic, title, why]) => {
+            const dec = live(topic);
+            return [
+              `<b>${esc(title)}</b><br><span class="hsub">${esc(why)}</span>`,
+              dec ? `<b>${esc(dec.decision)}</b><br><span class="hsub">${esc(dec.reason)}</span>`
+                : pill('over', 'Not decided'),
+              dec ? num(M.longDate(dec.decided_at))
+                    + `<br><span class="hsub">${esc(dec.by_name)}</span>`
+                : `<span class="hsub">waiting on the builder</span>`,
+              act('/office/policy', { topic }, dec ? 'Change it' : 'Record it', { plain: !!dec }),
+            ];
+          }),
+          '1.8fr 1.4fr .8fr auto', { min: 880 });
+      })())
+      + note('Plint has no default for any of these and will not acquire one. Until a '
+        + 'decision is recorded the buyer’s own screen says it has not been made '
+        + 'and says who has to make it, which is the only honest thing it can say.')
+      + (d.rows.decisions.some(x => x.superseded_at) ? titled('Superseded decisions', table(
+        ['Topic', 'What it was', 'Until', 'Who'],
+        d.rows.decisions.filter(x => x.superseded_at).map(x => [
+          `<b>${esc(x.topic)}</b>`, esc(x.decision),
+          num(M.longDate(x.superseded_at)), esc(x.by_name),
+        ]), '.8fr 2fr .7fr .8fr', { min: 700 })) : '')
       + titled('How long each kind is kept', table(
         ['Table', 'Kept', 'Kind', 'Why that number'],
         d.rows.retention.map(r => [
           `<span class="num" style="font-size:12px">${esc(r.table_name)}</span>`,
-          r.keep_years == null ? pill('grey', 'while live')
-            : pill('accent', r.keep_years + (r.keep_years === 1 ? ' year' : ' years')),
+          /* Two different things used to share one grey pill. A session has no
+             clock and is swept on another basis; the hold register has no
+             clock because it is never destroyed. The category is what tells
+             them apart, so the pill reads it. */
+          r.keep_years != null
+            ? pill('accent', r.keep_years + (r.keep_years === 1 ? ' year' : ' years'))
+            : r.category === 'permanent' ? pill('paid', 'kept, always')
+            : pill('grey', 'while live'),
           esc(r.category),
           esc(r.basis),
         ]),
@@ -1342,7 +1611,15 @@ ${pill('over', b.age + 'd')}</a>`).join('')
           + `${esc(picked.stage_name)} · <b>${esc(M.money(picked.total_paise))}</b>, `
           + `due ${esc(M.longDate(picked.due_at))}.</p><div style="margin-top:12px">`
           + form('/office/receipt',
-            field('How it came', select('mode', MODES, { value: 'neft', required: true }))
+            /* WHO PAID IT. A lender-paid receipt is a disbursement against the
+               sanction, and until it was asked for here Plint could not tell
+               the two apart - so a buyer's loan screen could name a sanction
+               and never say how much of it had been released. */
+            field('Who paid it', select('payer',
+              [['lender', 'The lender' + (picked.bank ? ' · ' + picked.bank : '')],
+               ['buyer', 'The buyer, from their own money']],
+              { value: picked.bank ? 'lender' : 'buyer', required: true }))
+            + field('How it came', select('mode', MODES, { value: 'neft', required: true }))
             + field('Reference', input('reference', { required: true, max: 60,
               placeholder: 'NEFT UTR, cheque number, UPI id' }))
             + field('Received on', input('received', { type: 'date', required: true, value: today })),
@@ -1366,16 +1643,38 @@ ${pill('over', b.age + 'd')}</a>`).join('')
         '1.5fr 1.6fr .8fr .8fr auto',
         { min: 780, empty: 'Every demand raised has been settled.' }))
       + titled('Receipts issued', table(
-        ['Receipt', 'Villa and stage', 'How', 'Received', 'Amount'],
+        ['Receipt', 'Villa and stage', 'Who paid', 'How', 'Received', 'Amount'],
         got.map(r => [
           `<b>${esc(r.receipt_no)}</b><br><span class="hsub">${esc(r.doc_no)}</span>`,
           who(r.code, r.stage_name, villaHref(r.code)),
+          r.payer === 'lender'
+            ? pill('accent', 'Lender') + `<br><span class="hsub">${esc(r.payer_name || '')}</span>`
+            : pill('grey', 'The buyer'),
           esc(r.mode.toUpperCase()) + ' · ' + esc(r.reference),
           num(M.longDate(r.received_on)),
           `<span class="num" style="font-weight:700">${esc(M.crore(r.total_paise))}</span>`,
         ]),
-        '1.2fr 1.6fr 1.4fr .8fr .8fr',
-        { min: 820, empty: 'No payment has been recorded yet.' }));
+        '1.1fr 1.4fr .9fr 1.2fr .7fr .7fr',
+        { min: 940, empty: 'No payment has been recorded yet.' }))
+      + titled('Loan drawdown, by villa', table(
+        ['Villa', 'Lender', 'Sanctioned', 'Released', 'Left to draw'],
+        d.rows.drawdown.map(x => [
+          `<b>${esc(x.code)}</b>`,
+          esc(x.bank || 'self funded'),
+          num(M.crore(x.sanction_paise)),
+          num(M.crore(x.disbursed_paise)) + `<br><span class="hsub">${x.releases} release`
+            + (x.releases === 1 ? '' : 's') + '</span>',
+          Number(x.left_to_draw_paise) < 0
+            ? pill('over', 'over by ' + M.crore(-Number(x.left_to_draw_paise)))
+            : `<span class="num" style="font-weight:700">${esc(M.crore(x.left_to_draw_paise))}</span>`,
+        ]),
+        '.7fr 1fr .9fr 1.1fr .9fr',
+        { min: 780, href: i => villaHref(d.rows.drawdown[i].code),
+          empty: 'No villa has both a recorded sanction and money released against it yet.' }))
+      + note('Every figure in that table is derived from the ledger: released is the '
+        + 'total of the demands a lender’s money settled, read from the demands '
+        + 'themselves. Plint holds no second copy of a disbursed amount, so this '
+        + 'table cannot disagree with the receipts above it.');
   };
 
   /* ----------------------------------------------------------------- wait */
@@ -1791,7 +2090,35 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
           tags: i => (list[i].selected ? 'made' : 'open')
             + (!list[i].selected && list[i].needed_by && until(list[i].needed_by) < 0 ? ' late' : ''),
           noneMatch: 'No choice is in that state.',
-        });
+        })
+      /* ------------------------------------------------------ the price list
+
+         The buyer's screen has always said an extra goes onto the next demand
+         letter. Until this form existed there was no way to say what an extra
+         was, so every option was quoted at nothing and every demand carried
+         extras of zero. */
+      + titled('What each option costs above the allowance',
+        d.rows.options.length ? table(
+          ['Villa', 'Choice', 'Option', 'Extra, plus GST', ''],
+          d.rows.options.map(o => [
+            `<b>${esc(o.code)}</b>`,
+            esc(o.choice_label),
+            `<b>${esc(o.label)}</b>`,
+            Number(o.extra_paise) > 0
+              ? `<span class="num" style="font-weight:700">${esc(M.money(o.extra_paise))}</span>`
+              : pill('grey', 'included'),
+            form('/office/option-price',
+              field('', input('rupees', { type: 'number', min: '0', max: 20,
+                value: Math.round(Number(o.extra_paise) / 100), inputmode: 'numeric' })),
+              { fields: { id: o.id }, submit: 'Set it', icon: 'money', plain: true }),
+          ]),
+          '.6fr 1fr 1.2fr .9fr auto',
+          { min: 820 })
+          : empty('Every choice on this project has been signed, so there is no '
+            + 'price left to set. A signed choice keeps the price it was signed at.'))
+      + note('In rupees, above the allowance. A signed choice cannot be re-priced: '
+        + 'the amount on it is what the buyer agreed to, and it is that amount, not '
+        + 'this list, that reaches their next demand letter.');
   };
 
   /* --------------------------------------------------------------- visits */
@@ -2122,6 +2449,16 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
            FROM queries q WHERE q.unit_id = $1 ORDER BY q.raised_at DESC`, [u.id])).rows;
       const paid = stages.filter(s => s.paid_at).reduce((t, s) => t + Number(s.total_paise), 0);
 
+      /* THE TRAIL, WIRED IN AT LAST.
+
+         src/audit.js has existed since migration 003 and was referenced by one
+         test and by nothing in the product: the record that protects everybody
+         could not be read from any screen. It is read here, on the villa's own
+         file, because that is where somebody asks "who did what to this, and
+         when". `AUDIT.forUnit` composes the four targets a villa's history is
+         spread across - the unit, its stages, its demands and its receipts. */
+      const trail = await AUDIT.forUnit(c, u.id);
+
       const main = head(u.code + ' · ' + u.buyer_name,
         (u.unit_type || '') + ' · ' + (u.bank || 'self funded')
         + ' · ' + esc(u.engineer_name || 'no engineer assigned'),
@@ -2160,7 +2497,22 @@ ${d.rows.engineers.map(e => `<option value="${esc(e.id)}"${e.id === s.assigned_e
               q.status === 'closed' ? pill('paid', 'closed') : pill('due', 'open'),
             ]),
             '2fr 1fr 1fr .8fr 1fr',
-            { href: i => '/office/question/' + encodeURIComponent(qs[i].id) }) : '');
+            { href: i => '/office/question/' + encodeURIComponent(qs[i].id) }) : '')
+        + `<div class="ct" style="margin:18px 0 12px">Everything done to this file</div>`
+        + table(['When', 'What', 'Who', 'What it recorded'],
+          trail.map(a => [
+            num(M.longDate(a.at)),
+            `<b>${esc(AUDIT.SAID[a.action] || a.action)}</b>`,
+            esc(coalesceName(a)) + `<br><span class="hsub">${esc(a.actor_role)}</span>`,
+            figuresOf(a),
+          ]),
+          '.7fr 1.1fr .9fr 2.2fr',
+          { min: 820,
+            empty: 'Nothing has been done to this villa that writes an audit row yet.' })
+        + note('These rows are written by the database itself, from the row being '
+          + 'changed, not by the screen that changed it. Nothing can edit or delete '
+          + 'one - not this console, not the application role, and not the owner of '
+          + 'the schema.');
       return { main, n };
     });
   }

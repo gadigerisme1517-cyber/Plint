@@ -60,14 +60,15 @@ const SCREENS = {
            '/office/silent', '/office/signoff', '/office/villas', '/office/documents',
            '/office/choices', '/office/visits', '/office/warranty', '/office/rera',
            '/office/escrow', '/office/possession', '/office/dpdp',
+           '/office/news', '/office/plans',
            '/office/schedule', '/office/lenders',
            '/office/logins', '/office/settings', '/office/help'],
-  engineer: ['/engineer', '/engineer/villas', '/engineer/visits', '/engineer/log',
+  engineer: ['/engineer', '/engineer/news', '/engineer/villas', '/engineer/visits', '/engineer/log',
              '/engineer/certs', '/engineer/snags', '/engineer/log/material',
              '/engineer/villa/A-01', '/engineer/villa/A-01?mode=flag',
              '/engineer/villa/A-01?mode=snag'],
   buyer: ['/journey', '/villa/B-14', '/visit', '/money', '/more', '/bank', '/loan',
-          '/agreement', '/choices', '/questions', '/documents',
+          '/agreement', '/choices', '/questions', '/documents', '/news', '/plans',
           '/stage/book', '/questions/q-b14-1'],
 };
 
