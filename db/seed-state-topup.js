@@ -127,13 +127,145 @@ async function ensurePass6(c) {
   return out;
 }
 
+/* ----------------------------------------------------------------- pass 8
+
+   THREE THINGS PASS 8 BUILT THAT A DATABASE SEEDED BEFORE IT WOULD SHOW EMPTY.
+
+   The migrations create the tables and the policies; they cannot create demo
+   rows, because on a fresh database they run before there is a project or a
+   user to hang one off. So the deployed demo would have got the plans screen
+   with one registration on it and nothing else, "What it is built to" blank on
+   every villa, a price list where every option reads "included", and the new
+   notification reader opening empty on two of the three roles.
+
+   Every insert here is keyed on a fixed id and does nothing on a second run.
+   ========================================================================= */
+async function ensurePass8(c) {
+  const out = [];
+  const { CHOICE_SET } = require('./seed-state');
+
+  // --------------------------------------------------- the plans themselves
+  const project = (await c.query(
+    `SELECT id FROM projects ORDER BY id LIMIT 1`)).rows[0];
+  const office = (await c.query(
+    `SELECT id FROM users WHERE role = 'office' ORDER BY id LIMIT 1`)).rows[0];
+  /* Guarded on the kind rather than on the id: `db/seed.js` writes these with
+     ids of its own, and a database that has been through the full seed must
+     not get a second copy of a floor plan under a different key. */
+  const havePlans = project && (await c.query(
+    `SELECT count(*)::int n FROM project_documents
+      WHERE project_id = $1 AND kind IN ('approved_plan', 'floor_plan')`,
+    [project.id])).rows[0].n > 0;
+  if (project && office && !havePlans) {
+    /* The unit types are read from the villas rather than named here: a floor
+       plan that says "3 BHK, 2,100 sq ft" against a project whose villas say
+       something else is a floor plan no buyer is shown. */
+    const types = (await c.query(
+      `SELECT DISTINCT unit_type FROM units
+        WHERE project_id = $1 AND unit_type IS NOT NULL ORDER BY unit_type`,
+      [project.id])).rows.map(r => r.unit_type);
+
+    const docs = [
+      ['pd-appr-all', 'approved_plan', 'Sanctioned plan, revision C', null,
+       'BBMP/ADTP/JD-NORTH/0741/2025-26'],
+      ['pd-spec-all', 'specification', 'Specification schedule, phase 1', null,
+       'NVT/E1/SPEC/2026-01'],
+    ];
+    types.forEach((t, i) => docs.push([
+      'pd-floor-' + i, 'floor_plan',
+      'Floor plan, ' + t.split(',')[0].trim(), t,
+      'NVT/E1/FP/' + t.split(',')[0].trim().replace(/\W/g, '') + '/RC']));
+
+    let added = 0;
+    for (const [id, kind, label, unitType, ref] of docs) {
+      const r = await c.query(
+        `INSERT INTO project_documents
+           (id, project_id, unit_type, kind, label, reference, url, issued_on, added_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING RETURNING id`,
+        [id, project.id, unitType, kind, label, ref,
+         'https://nvtlifestyle.in/eterna/approvals', '2025-11-14', office.id]);
+      added += r.rowCount;
+    }
+    if (added) out.push(added + ' plans and approvals recorded');
+  }
+
+  // ------------------------------------------------ a price on every option
+  /* Migration 022 backfilled the option list from `choices.options` at zero,
+     because a migration has no business inventing a price. These are the ones
+     `db/seed.js` writes, matched by the option's own label, so an option that
+     is not on this list keeps the zero it was given. */
+  const PRICE = new Map();
+  for (const [, , , priced] of CHOICE_SET) {
+    for (const [label, rupees] of priced) PRICE.set(label, rupees * 100);
+  }
+  let priced = 0;
+  for (const [label, paise] of PRICE) {
+    if (!paise) continue;
+    const r = await c.query(
+      `UPDATE choice_options SET extra_paise = $2
+        WHERE label = $1 AND extra_paise = 0`, [label, paise]);
+    priced += r.rowCount;
+  }
+  if (priced) out.push(priced + ' interior options given their price');
+
+  /* And the price AS SIGNED on a choice that was signed before there were
+     prices. `choices_priced_when_signed` requires the column to be set on a
+     signed row, so migration 022 set it to zero; this brings it up to what
+     the option it names actually costs. Unsigned rows are left alone. */
+  const signed = await c.query(
+    `UPDATE choices ch SET extra_paise = co.extra_paise
+       FROM choice_options co
+      WHERE co.choice_id = ch.id AND co.label = ch.selected
+        AND ch.signed_at IS NOT NULL AND coalesce(ch.extra_paise, 0) = 0
+        AND co.extra_paise > 0 AND ch.billed_demand_id IS NULL`);
+  if (signed.rowCount) out.push(signed.rowCount + ' signed choices carry the price they were signed at');
+
+  // ------------------------------- something for the two new readers to read
+  const b14 = (await c.query(`SELECT id, project_id FROM units WHERE code = 'B-14'`)).rows[0];
+  const b09 = (await c.query(`SELECT id, project_id FROM units WHERE code = 'B-09'`)).rows[0];
+  const ago = d => new Date(Date.now() - d * 86400000);
+  let notes = 0;
+  for (const [id, u, role, sev, title, detail, days] of [
+    ['nt-buyer-0', b14, 'buyer', 'warn',
+     'Work on your villa has stopped: material not delivered',
+     'Blocks ordered 28 August, the vendor now says 12 September. The site '
+       + 'engineer reported this and the office has it. Nothing is billed while a '
+       + 'stage is stopped.', 2],
+    ['nt-buyer-1', b14, 'buyer', 'ok',
+     'Two photographs added to first floor slab',
+     'Taken on site and stamped. They are on your villa screen.', 6],
+    ['nt-engineer-2', b09, 'engineer', 'warn',
+     'B-09: the office has asked for a photograph',
+     'No photograph has reached the office in three weeks. Priya Menon has asked '
+       + 'for one of whatever is standing today.', 1],
+  ]) {
+    if (!u) continue;
+    const r = await c.query(
+      `INSERT INTO notifications VALUES ($1,$2,$3,$4,$5,$6,$7,$8,null)
+       ON CONFLICT (id) DO NOTHING RETURNING id`,
+      [id, u.project_id, role, u.id, sev, title, detail, ago(days)]);
+    notes += r.rowCount;
+  }
+  if (notes) out.push(notes + ' notifications for the site and the buyer');
+
+  return out;
+}
+
 async function topUp(c) {
   const staff = await ensureStaff(c);
   const pass6 = await ensurePass6(c);
 
   const already = (await c.query('SELECT count(*)::int n FROM lenders')).rows[0].n;
   if (already > 0) {
-    return { skipped: 'lenders already present (' + already + ')', staff, pass6 };
+    /* LAST, AND ONLY ON THIS BRANCH.
+       Below, `seedState` writes the choices, the option prices and the two new
+       notifications itself, with ids of its own and no ON CONFLICT - so
+       running the Pass 8 fill first put those rows there and then made
+       seedState collide with them. This branch is the one that needs it: a
+       database that was seeded before Pass 8 existed. */
+    const pass8 = await ensurePass8(c);
+    return { skipped: 'lenders already present (' + already + ')', staff,
+             pass6: pass6.concat(pass8) };
   }
 
   const units = (await c.query('SELECT count(*)::int n FROM units')).rows[0].n;
@@ -172,7 +304,13 @@ async function topUp(c) {
   if (!engineers.length) return { skipped: 'no engineers on file' };
 
   await seedState(c, villas, engineers);
-  return { filled: villas.length + ' villas, ' + engineers.length + ' engineers', pass6 };
+  /* And the plans, which `seedState` does not write - they belong to the
+     project rather than to a villa, so `db/seed.js` writes them and this
+     branch has just done seedState's half without seed.js's. Everything else
+     in `ensurePass8` is a no-op against rows seedState has just written. */
+  const pass8 = await ensurePass8(c);
+  return { filled: villas.length + ' villas, ' + engineers.length + ' engineers',
+           pass6: pass6.concat(pass8) };
 }
 
 async function main() {
